@@ -1,0 +1,66 @@
+name: Android CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    env:
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk
+      ANDROID_HOME: ${{ github.workspace }}/android-sdk
+
+    steps:
+    # 1. Клонируем репозиторий
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    # 2. Устанавливаем JDK 17
+    - name: Setup JDK 17
+      uses: actions/setup-java@v3
+      with:
+        distribution: temurin
+        java-version: 17
+
+    # 3. Устанавливаем Android SDK
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v2
+      with:
+        api-level: 35
+        build-tools: 35.0.0
+        ndk: 25.2.9519653
+        cmake: 3.22.1
+
+    # 4. Кешируем Gradle
+    - name: Cache Gradle
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: gradle-\${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: gradle-
+
+    # 5. Ставим права на Gradle Wrapper
+    - name: Make Gradle Wrapper executable
+      run: chmod +x ./gradlew
+
+    # 6. Сборка проекта
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug --stacktrace
+
+    # 7. Опционально: запуск Unit тестов
+    - name: Run Unit Tests
+      run: ./gradlew testDebugUnitTest --stacktrace
+
+    # 8. Опционально: публикация артефакта
+    - name: Upload APK
+      uses: actions/upload-artifact@v3
+      with:
+        name: app-debug-apk
+        path: app/build/outputs/apk/debug/app-debug.apk
