@@ -1,55 +1,26 @@
-name: Build Kakdela P2P APK
+#!/bin/bash
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-  workflow_dispatch:
+# Скрипт для установки/обновления Gradle Wrapper
+# Укажите желаемую версию Gradle (актуальную можно посмотреть на https://gradle.org/releases/)
+GRADLE_VERSION="8.10.2"  # Измените на нужную версию
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+echo "Генерация Gradle Wrapper для версии $GRADLE_VERSION..."
 
-    steps:
-      # 1. Клонируем репозиторий
-      - name: Checkout repository
-        uses: actions/checkout@v4
+# Генерируем wrapper (используем локальный gradle, если установлен)
+gradle wrapper --gradle-version $GRADLE_VERSION --distribution-type bin
 
-      # 2. Делаем gradlew исполняемым
-      - name: Make gradlew executable
-        run: chmod +x ./gradlew
+# Если gradle не найден, можно скачать и использовать временно, но проще установить Gradle
 
-      # 3. Настройка JDK 21
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
+if [ $? -eq 0 ]; then
+    echo "Gradle Wrapper успешно сгенерирован!"
+    echo "Файлы: gradlew, gradlew.bat, gradle/wrapper/*"
 
-      # 4. Обновляем Gradle Wrapper до 8.9
-      - name: Recreate Gradle Wrapper (Gradle 8.9)
-        run: |
-          ./gradlew wrapper --gradle-version 8.9
-          chmod +x ./gradlew
+    # Добавляем в Git (если проект под Git)
+    git add gradlew gradlew.bat gradle/wrapper/
+    git commit -m "chore: add/update Gradle Wrapper to version $GRADLE_VERSION"
 
-      # 5. Настройка кеширования Gradle
-      - name: Setup Gradle caching
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.9
-          cache-enabled: true
-
-      # 6. Чистая сборка (рекомендуется при проблемах с KSP)
-      - name: Clean project
-        run: ./gradlew clean --no-daemon
-
-      # 7. Сборка Debug APK
-      - name: Assemble Debug APK
-        run: ./gradlew assembleDebug --stacktrace --no-daemon
-
-      # 8. Загрузка APK как артефакта
-      - name: Upload Debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: kakdela-p2p-debug
-          path: app/build/outputs/apk/debug/*.apk
+    echo "Файлы добавлены и закоммичены в Git."
+    echo "Теперь используйте ./gradlew build для сборки проекта."
+else
+    echo "Ошибка при генерации wrapper. Убедитесь, что Gradle установлен (gradle --version)."
+fi
