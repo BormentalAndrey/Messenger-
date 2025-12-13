@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.kakdela."
+    namespace = "com.kakdela.p2p"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.kakdela"
+        applicationId = "com.kakdela.p2p"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
