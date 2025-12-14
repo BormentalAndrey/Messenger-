@@ -50,7 +50,7 @@ fun ChatScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-
+        // Неоновый фон
         Image(
             painter = painterResource(id = R.drawable.chat_background),
             contentDescription = null,
@@ -60,7 +60,6 @@ fun ChatScreen(
         )
 
         Column(modifier = Modifier.fillMaxSize()) {
-
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -77,7 +76,6 @@ fun ChatScreen(
                             .padding(vertical = 4.dp),
                         horizontalArrangement = if (isOwn) Arrangement.End else Arrangement.Start
                     ) {
-
                         if (!isOwn) {
                             AvatarPlaceholder("А")
                             Spacer(modifier = Modifier.width(8.dp))
@@ -88,10 +86,7 @@ fun ChatScreen(
                         ) {
                             Surface(
                                 shape = RoundedCornerShape(16.dp),
-                                color = if (isOwn)
-                                    MaterialTheme.colorScheme.primary
-                                else
-                                    Color(0xFF2A2A2A),
+                                color = if (isOwn) MaterialTheme.colorScheme.primary else Color(0xFF2A2A2A),
                                 modifier = Modifier.widthIn(max = 300.dp)
                             ) {
                                 Text(
@@ -103,7 +98,7 @@ fun ChatScreen(
                             }
 
                             Text(
-                                text = "12:34",
+                                text = "12:34", // Можно заменить на реальное время из timestamp
                                 fontSize = 12.sp,
                                 color = Color.Gray,
                                 modifier = Modifier.padding(top = 4.dp)
