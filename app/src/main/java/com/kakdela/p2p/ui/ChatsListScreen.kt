@@ -23,6 +23,7 @@ import com.kakdela.p2p.data.Chat
 import java.text.SimpleDateFormat
 import java.util.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatsListScreen(
     navController: NavHostController,
@@ -38,7 +39,12 @@ fun ChatsListScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Как дела?", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        text = "Как дела?",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                     containerColor = Color.Black,
                     titleContentColor = MaterialTheme.colorScheme.primary
@@ -47,7 +53,7 @@ fun ChatsListScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { navController.navigate("new_chat") },
+                onClick = { /* TODO: новый чат */ },
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
                 Text("+", fontSize = 24.sp)
@@ -63,7 +69,6 @@ fun ChatsListScreen(
             items(chats, key = { it.id }) { chat ->
                 ChatListItem(
                     chat = chat,
-                    currentUserId = currentUserId,
                     onClick = {
                         navController.navigate("chat/${chat.id}")
                     }
@@ -76,7 +81,6 @@ fun ChatsListScreen(
 @Composable
 fun ChatListItem(
     chat: Chat,
-    currentUserId: String,
     onClick: () -> Unit
 ) {
     Row(
@@ -86,7 +90,7 @@ fun ChatListItem(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Аватарка-заглушка
+
         Box(
             modifier = Modifier
                 .size(56.dp)
@@ -120,21 +124,13 @@ fun ChatListItem(
             )
         }
 
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text = chat.timestamp?.let {
-                    SimpleDateFormat("HH:mm", Locale.getDefault()).format(it)
-                } ?: "",
-                color = Color.Gray,
-                fontSize = 12.sp
-            )
-            if (chat.unreadCount > 0) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Badge(containerColor = MaterialTheme.colorScheme.primary) {
-                    Text(chat.unreadCount.toString())
-                }
-            }
-        }
+        Text(
+            text = chat.timestamp?.let {
+                SimpleDateFormat("HH:mm", Locale.getDefault()).format(it)
+            } ?: "",
+            color = Color.Gray,
+            fontSize = 12.sp
+        )
     }
 
     HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
