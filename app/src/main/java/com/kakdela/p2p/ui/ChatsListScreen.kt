@@ -19,8 +19,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
-import java.text.SimpleDateFormat
-import java.util.*
 
 @Composable
 fun ChatsListScreen(navController: NavHostController) {
@@ -39,7 +37,7 @@ fun ChatsListScreen(navController: NavHostController) {
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        text = "Как дела?",
+                        "Как дела?",
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -51,33 +49,23 @@ fun ChatsListScreen(navController: NavHostController) {
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = {
-                    // Здесь можно открыть экран нового чата
-                },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = Color.Black
+                onClick = { /* Новый чат */ },
+                containerColor = MaterialTheme.colorScheme.primary
             ) {
-                Text("+", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                Text("+", fontSize = 28.sp)
             }
         }
-    ) { innerPadding ->
+    ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
-                .padding(innerPadding)
+                .padding(padding)
         ) {
             if (chats.isEmpty()) {
                 item {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Нет чатов. Начните новый!",
-                            color = Color.Gray,
-                            fontSize = 18.sp
-                        )
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Нет чатов", color = Color.Gray, fontSize = 18.sp)
                     }
                 }
             } else {
@@ -91,20 +79,13 @@ fun ChatsListScreen(navController: NavHostController) {
     }
 }
 
-data class ChatDisplay(
-    val id: String,
-    val title: String,
-    val lastMessage: String,
-    val time: String
-)
-
 @Composable
 fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
@@ -122,15 +103,10 @@ fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
             )
         }
 
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(Modifier.width(16.dp))
 
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = chat.title,
-                color = Color.White,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Medium
-            )
+        Column(Modifier.weight(1f)) {
+            Text(chat.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Medium)
             Text(
                 text = chat.lastMessage.ifEmpty { "Нет сообщений" },
                 color = Color.Gray,
@@ -139,12 +115,8 @@ fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
             )
         }
 
-        Text(
-            text = chat.time,
-            color = Color.Gray,
-            fontSize = 12.sp
-        )
+        Text(chat.time, color = Color.Gray, fontSize = 12.sp)
     }
 
-    HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
+    Divider(color = Color.DarkGray.copy(alpha = 0.3f))
 }
