@@ -1,6 +1,5 @@
 package com.kakdela.p2p.ui
 
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,36 +15,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
-import com.google.firebase.auth.ktx.auth
-import com.google.firebase.ktx.Firebase
-import com.kakdela.p2p.data.Chat
-import java.text.SimpleDateFormat
-import java.util.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatsListScreen(
-    navController: NavHostController,
-    viewModel: ChatsListViewModel = viewModel()
-) {
-    val chats by viewModel.chats.collectAsState()
-    val currentUserId = Firebase.auth.currentUser?.uid ?: ""
-
-    LaunchedEffect(Unit) {
-        viewModel.loadChats(currentUserId)
-    }
+fun ChatsListScreen(navController: NavHostController) {
+    // Заглушка с одним глобальным чатом — легко расширить на реальные чаты
+    val chats = listOf(
+        ChatItem("Глобальный чат", "Последнее сообщение...", "12:34"),
+        // Добавьте другие чаты по мере необходимости
+    )
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = {
-                    Text(
-                        text = "Как дела?",
-                        fontWeight = FontWeight.Bold
-                    )
-                },
+                title = { Text("Как дела?", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                     containerColor = Color.Black,
                     titleContentColor = MaterialTheme.colorScheme.primary
@@ -54,7 +37,7 @@ fun ChatsListScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { /* TODO: новый чат */ },
+                onClick = { /* Новый чат — можно добавить экран */ },
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
                 Text("+", fontSize = 24.sp)
@@ -67,31 +50,30 @@ fun ChatsListScreen(
                 .padding(padding)
                 .background(Color.Black)
         ) {
-            items(chats, key = { it.id }) { chat ->
-                ChatListItem(
-                    chat = chat,
-                    onClick = {
-                        navController.navigate("chat/${chat.id}")
-                    }
-                )
+            items(chats) { chat ->
+                ChatListItem(chat = chat) {
+                    navController.navigate("chat/global")
+                }
             }
         }
     }
 }
 
+data class ChatItem(
+    val title: String,
+    val lastMessage: String,
+    val time: String
+)
+
 @Composable
-fun ChatListItem(
-    chat: Chat,
-    onClick: () -> Unit
-) {
+fun ChatListItem(chat: ChatItem, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-
         Box(
             modifier = Modifier
                 .size(56.dp)
@@ -117,18 +99,15 @@ fun ChatListItem(
                 fontWeight = FontWeight.Medium
             )
             Text(
-                text = chat.lastMessage.ifEmpty { "Нет сообщений" },
+                text = chat.lastMessage,
                 color = Color.Gray,
                 fontSize = 14.sp,
-                maxLines = 1,
-                modifier = Modifier.padding(top = 4.dp)
+                maxLines = 1
             )
         }
 
         Text(
-            text = chat.timestamp?.let {
-                SimpleDateFormat("HH:mm", Locale.getDefault()).format(it)
-            } ?: "",
+            text = chat.time,
             color = Color.Gray,
             fontSize = 12.sp
         )
