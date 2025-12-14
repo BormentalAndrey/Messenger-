@@ -8,23 +8,18 @@ import kotlinx.coroutines.flow.asStateFlow
 
 class ChatViewModel : ViewModel() {
 
-    private val repo = ChatRepository()
+    private val repository = ChatRepository()
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages = _messages.asStateFlow()
 
     fun start(chatId: String) {
-        repo.listenMessages(chatId) {
+        repository.listen(chatId) {
             _messages.value = it
         }
     }
 
     fun send(chatId: String, message: Message) {
-        repo.sendMessage(chatId, message)
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        repo.stopListening()
+        repository.send(chatId, message)
     }
 }
