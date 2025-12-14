@@ -4,9 +4,17 @@ import androidx.lifecycle.ViewModel
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.firestore.ktx.toObject
 import com.google.firebase.ktx.Firebase
-import com.kakdela.p2p.data.ChatDisplay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.text.SimpleDateFormat
+import java.util.*
+
+data class ChatDisplay(
+    val id: String,
+    val title: String,
+    val lastMessage: String,
+    val time: String
+)
 
 class ChatsListViewModel : ViewModel() {
     private val db = Firebase.firestore
@@ -30,12 +38,17 @@ class ChatsListViewModel : ViewModel() {
                     list.add(ChatDisplay(doc.id, title, lastMessage, time))
                 }
 
-                // Добавляем глобальный чат, если его нет
+                // Глобальный чат всегда в списке
                 if (list.none { it.id == "global" }) {
                     list.add(ChatDisplay("global", "Глобальный чат", "Присоединяйтесь!", "Онлайн"))
                 }
 
-                _chats.value = list.sortedByDescending { it.time }
+                _chats.value = list.sortedByDescending { 
+                    // Сортировка по времени (глобальный внизу)
+                    if (it.id == "global") 0 else it.time.takeIf { it != "" }?.let { 
+                        try { SimpleDateFormat("HH:mm", Locale.getDefault()).parse(it)?.time ?: 0 } catch (e: Exception) { 0 }
+                    } ?: 0
+                }
             }
     }
 }
