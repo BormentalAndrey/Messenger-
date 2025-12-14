@@ -22,16 +22,21 @@ import com.google.firebase.ktx.Firebase
 import com.kakdela.p2p.data.AppContact
 import com.kakdela.p2p.data.ContactSyncManager
 import com.kakdela.p2p.utils.rememberContactsPermissionLauncher
+import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ContactsScreen(navController: NavHostController) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val currentUserId = Firebase.auth.currentUser?.uid ?: ""
+
     var contacts by remember { mutableStateOf<List<AppContact>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
+    var isLoading by remember { mutableStateOf(false) }
 
     val requestPermission = rememberContactsPermissionLauncher {
-        LaunchedEffect(Unit) {
+        scope.launch {
+            isLoading = true
             contacts = ContactSyncManager(context).syncContacts()
             isLoading = false
         }
@@ -45,26 +50,46 @@ fun ContactsScreen(navController: NavHostController) {
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text("Контакты", fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black)
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = Color.Black,
+                    titleContentColor = MaterialTheme.colorScheme.primary
+                )
             )
         }
     ) { padding ->
-        Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color.Black)) {
-            if (isLoading) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-            } else {
-                LazyColumn {
-                    items(contacts) { contact ->
-                        ContactItem(
-                            contact = contact,
-                            onClick = {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .padding(padding)
+        ) {
+            when {
+                isLoading -> {
+                    CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
+                }
+
+                contacts.isEmpty() -> {
+                    Text(
+                        "Контакты не найдены",
+                        color = Color.Gray,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+
+                else -> {
+                    LazyColumn {
+                        items(contacts) { contact ->
+                            ContactItem(contact) {
                                 if (contact.isRegistered && contact.uid != null) {
-                                    val participants = listOf(currentUserId, contact.uid).sorted()
-                                    val chatId = participants.joinToString("_")
+                                    val chatId = listOf(
+                                        currentUserId,
+                                        contact.uid
+                                    ).sorted().joinToString("_")
+
                                     navController.navigate("chat/$chatId")
                                 }
                             }
-                        )
+                        }
                     }
                 }
             }
@@ -81,35 +106,36 @@ fun ContactItem(contact: AppContact, onClick: () -> Unit) {
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Индикатор статуса
         Box(
             modifier = Modifier
                 .size(12.dp)
                 .clip(CircleShape)
-                .background(if (contact.isRegistered) Color(0xFF00FF00) else Color.Gray)
+                .background(if (contact.isRegistered) Color(0xFF00C853) else Color.Gray)
         )
 
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(Modifier.width(16.dp))
 
-        Column(modifier = Modifier.weight(1f)) {
+        Column(Modifier.weight(1f)) {
             Text(
-                text = contact.name,
+                contact.name,
                 color = Color.White,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.Medium
             )
             Text(
-                text = contact.phoneNumber.let { "+7 ${it.drop(1).chunked(3).joinToString(" ")}" },
+                contact.phoneNumber,
                 color = Color.Gray,
                 fontSize = 14.sp
             )
         }
 
-        if (contact.isRegistered) {
-            Text("В приложении", color = MaterialTheme.colorScheme.primary, fontSize = 14.sp)
-        } else {
-            Text("Пригласить", color = Color.Gray, fontSize = 14.sp)
-        }
+        Text(
+            if (contact.isRegistered) "В приложении" else "Пригласить",
+            color = if (contact.isRegistered)
+                MaterialTheme.colorScheme.primary
+            else Color.Gray,
+            fontSize = 14.sp
+        )
     }
 
     HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
