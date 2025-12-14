@@ -4,10 +4,10 @@ import com.google.firebase.auth.FirebaseAuth
 
 object AuthManager {
 
-    private val auth = FirebaseAuth.getInstance()
-
     fun ensureUser(onReady: (String) -> Unit) {
+        val auth = FirebaseAuth.getInstance()
         val user = auth.currentUser
+
         if (user != null) {
             onReady(user.uid)
         } else {
