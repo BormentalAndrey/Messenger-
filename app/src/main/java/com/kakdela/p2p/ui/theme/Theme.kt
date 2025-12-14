@@ -1,13 +1,13 @@
 package com.kakdela.p2p.ui.theme
 
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Typography
 import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// Ваша кастомная тёмная цветовая схема с неоновыми акцентами
+// Ваша неоновая тёмная цветовая схема
 private val DarkColorScheme = darkColorScheme(
     primary = Color(0xFF00FFF0),      // Неоновый голубой
     secondary = Color(0xFFFF00C8),     // Неоновый розовый
@@ -21,18 +21,16 @@ private val DarkColorScheme = darkColorScheme(
     onSurface = Color.White,
 )
 
-// Дефолтные shapes из Material3 (можно кастомизировать позже)
+// Дефолтные shapes и typography — прямо здесь, без конфликтов
 private val AppShapes = Shapes()
-
-// Дефолтная типографика Material3 (рекомендуется использовать стандартную)
 private val AppTypography = Typography()
 
 @Composable
 fun Theme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = DarkColorScheme,
-        typography = AppTypography,  // Правильный тип для Material3
-        shapes = AppShapes,          // Правильные shapes
+        typography = AppTypography,
+        shapes = AppShapes,
         content = content
     )
 }
