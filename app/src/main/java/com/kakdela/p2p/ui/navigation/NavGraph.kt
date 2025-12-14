@@ -6,48 +6,40 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
-import com.kakdela.p2p.ui.ChatScreen
 import com.kakdela.p2p.ui.ChatsListScreen
-import com.kakdela.p2p.ui.auth.PhoneAuthScreen
+import com.kakdela.p2p.ui.auth.EmailAuthScreen  // ← Новый экран по email
 
 @Composable
 fun NavGraph(navController: NavHostController) {
-    val currentUserId = Firebase.auth.currentUser?.uid ?: ""
+    val currentUser = Firebase.auth.currentUser
+    val startDestination = if (currentUser == null) "auth" else "chats"
 
     NavHost(
         navController = navController,
-        startDestination = if (currentUserId.isEmpty()) "auth" else "chats"
+        startDestination = startDestination
     ) {
-        // 1. Экран авторизации по номеру телефона
+        // Экран авторизации/регистрации по email
         composable("auth") {
-            PhoneAuthScreen(
+            EmailAuthScreen(
                 navController = navController,
                 onAuthSuccess = {
-                    // После успешного входа переходим к списку чатов
                     navController.navigate("chats") {
-                        popUpTo("auth") { inclusive = true }  // Удаляем auth из стека
+                        popUpTo("auth") { inclusive = true }
                     }
                 }
             )
         }
 
-        // 2. Главный экран — список чатов (как в WhatsApp)
+        // Список чатов
         composable("chats") {
             ChatsListScreen(navController = navController)
         }
 
-        // 3. Конкретный чат (личный или глобальный)
+        // Конкретный чат
         composable("chat/{chatId}") { backStackEntry ->
             val chatId = backStackEntry.arguments?.getString("chatId") ?: "global"
-            val userId = Firebase.auth.currentUser?.uid ?: ""
-
-            ChatScreen(
-                chatId = chatId,
-                currentUserId = userId
-            )
+            val currentUserId = Firebase.auth.currentUser?.uid ?: ""
+            ChatScreen(chatId = chatId, currentUserId = currentUserId)
         }
-
-        // Опционально: экран создания нового чата (по номеру)
-        // composable("new_chat") { NewChatScreen(navController) }
     }
 }
