@@ -1,35 +1,28 @@
 package com.kakdela.p2p.ui.auth
 
-import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.KeyboardOptions  // ← Главное исправление
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
-import com.google.firebase.FirebaseException
-import com.google.firebase.auth.*
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
-import java.util.concurrent.TimeUnit
 
 @Composable
-fun PhoneAuthScreen(
+fun EmailAuthScreen(
     navController: NavHostController,
     onAuthSuccess: () -> Unit
 ) {
-    var phoneNumber by remember { mutableStateOf("") }
-    var code by remember { mutableStateOf("") }
-    var verificationId by remember { mutableStateOf<String?>(null) }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var isLogin by remember { mutableStateOf(true) }  // true = вход, false = регистрация
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
     val auth = Firebase.auth
-    val context = LocalContext.current  // ← Правильный способ получить Activity
 
     Column(
         modifier = Modifier
@@ -39,95 +32,74 @@ fun PhoneAuthScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Вход по номеру телефона",
+            text = if (isLogin) "Вход в аккаунт" else "Регистрация",
             style = MaterialTheme.typography.headlineMedium
         )
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(32.dp))
 
         OutlinedTextField(
-            value = phoneNumber,
-            onValueChange = { phoneNumber = it },
-            label = { Text("Номер телефона (+7...)") },
-            enabled = verificationId == null && !loading,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            value = email,
+            onValueChange = { email = it },
+            label = { Text("Email") },
+            enabled = !loading,
             modifier = Modifier.fillMaxWidth()
         )
 
         Spacer(Modifier.height(16.dp))
 
-        if (verificationId == null) {
-            Button(
-                onClick = {
-                    if (phoneNumber.isBlank()) {
-                        error = "Введите номер"
-                        return@Button
-                    }
-                    loading = true
-                    error = null
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = { Text("Пароль") },
+            visualTransformation = PasswordVisualTransformation(),
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth()
+        )
 
-                    val callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
-                        override fun onVerificationCompleted(credential: PhoneAuthCredential) {
-                            signIn(auth, credential, onAuthSuccess)
-                        }
+        Spacer(Modifier.height(24.dp))
 
-                        override fun onVerificationFailed(e: FirebaseException) {
-                            loading = false
-                            error = e.message ?: "Ошибка верификации"
-                        }
-
-                        override fun onCodeSent(
-                            id: String,
-                            token: PhoneAuthProvider.ForceResendingToken
-                        ) {
-                            verificationId = id
-                            loading = false
-                        }
-                    }
-
-                    PhoneAuthProvider.getInstance(auth).verifyPhoneNumber(
-                        phoneNumber,
-                        60,
-                        TimeUnit.SECONDS,
-                        context as ComponentActivity,  // ← Теперь безопасно
-                        callbacks
-                    )
-                },
-                enabled = !loading,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                if (loading) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                } else {
-                    Text("Отправить код")
+        Button(
+            onClick = {
+                if (email.isBlank() || password.isBlank()) {
+                    error = "Заполните все поля"
+                    return@Button
                 }
+                loading = true
+                error = null
+
+                if (isLogin) {
+                    // Вход
+                    auth.signInWithEmailAndPassword(email, password)
+                        .addOnSuccessListener { onAuthSuccess() }
+                        .addOnFailureListener { e ->
+                            loading = false
+                            error = e.message ?: "Ошибка входа"
+                        }
+                } else {
+                    // Регистрация
+                    auth.createUserWithEmailAndPassword(email, password)
+                        .addOnSuccessListener { onAuthSuccess() }
+                        .addOnFailureListener { e ->
+                            loading = false
+                            error = e.message ?: "Ошибка регистрации"
+                        }
+                }
+            },
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (loading) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp))
+            } else {
+                Text(if (isLogin) "Войти" else "Зарегистрироваться")
             }
-        } else {
-            OutlinedTextField(
-                value = code,
-                onValueChange = { code = it },
-                label = { Text("Код из SMS") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth()
-            )
+        }
 
-            Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(16.dp))
 
-            Button(
-                onClick = {
-                    if (code.isBlank()) {
-                        error = "Введите код"
-                        return@Button
-                    }
-                    loading = true
-
-                    val credential = PhoneAuthProvider.getCredential(verificationId!!, code)
-                    signIn(auth, credential, onAuthSuccess)
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Подтвердить")
-            }
+        TextButton(onClick = { isLogin = !isLogin }) {
+            Text(if (isLogin) "Нет аккаунта? Зарегистрироваться" else "Уже есть аккаунт? Войти")
         }
 
         error?.let {
@@ -135,16 +107,4 @@ fun PhoneAuthScreen(
             Text(it, color = MaterialTheme.colorScheme.error)
         }
     }
-}
-
-private fun signIn(
-    auth: FirebaseAuth,
-    credential: PhoneAuthCredential,
-    onSuccess: () -> Unit
-) {
-    auth.signInWithCredential(credential)
-        .addOnSuccessListener { onSuccess() }
-        .addOnFailureListener {
-            // Можно добавить обработку ошибки
-        }
 }
