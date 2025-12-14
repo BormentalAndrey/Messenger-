@@ -15,63 +15,96 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import com.google.firebase.auth.ktx.auth
+import com.google.firebase.ktx.Firebase
+import java.text.SimpleDateFormat
+import java.util.*
 
 @Composable
 fun ChatsListScreen(navController: NavHostController) {
-    // Заглушка с одним глобальным чатом — легко расширить на реальные чаты
-    val chats = listOf(
-        ChatItem("Глобальный чат", "Последнее сообщение...", "12:34"),
-        // Добавьте другие чаты по мере необходимости
-    )
+    val viewModel: ChatsListViewModel = viewModel()
+    val chats by viewModel.chats.collectAsState()
+    val currentUserId = Firebase.auth.currentUser?.uid ?: ""
+
+    LaunchedEffect(currentUserId) {
+        if (currentUserId.isNotEmpty()) {
+            viewModel.loadChats(currentUserId)
+        }
+    }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Как дела?", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        text = "Как дела?",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = Color.Black,
-                    titleContentColor = MaterialTheme.colorScheme.primary
+                    containerColor = Color.Black
                 )
             )
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { /* Новый чат — можно добавить экран */ },
-                containerColor = MaterialTheme.colorScheme.primary
+                onClick = {
+                    // Здесь можно открыть экран нового чата
+                },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = Color.Black
             ) {
-                Text("+", fontSize = 24.sp)
+                Text("+", fontSize = 28.sp, fontWeight = FontWeight.Bold)
             }
         }
-    ) { padding ->
+    ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .background(Color.Black)
+                .padding(innerPadding)
         ) {
-            items(chats) { chat ->
-                ChatListItem(chat = chat) {
-                    navController.navigate("chat/global")
+            if (chats.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Нет чатов. Начните новый!",
+                            color = Color.Gray,
+                            fontSize = 18.sp
+                        )
+                    }
+                }
+            } else {
+                items(chats) { chat ->
+                    ChatListItem(chat = chat) {
+                        navController.navigate("chat/${chat.id}")
+                    }
                 }
             }
         }
     }
 }
 
-data class ChatItem(
+data class ChatDisplay(
+    val id: String,
     val title: String,
     val lastMessage: String,
     val time: String
 )
 
 @Composable
-fun ChatListItem(chat: ChatItem, onClick: () -> Unit) {
+fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(16.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
@@ -99,7 +132,7 @@ fun ChatListItem(chat: ChatItem, onClick: () -> Unit) {
                 fontWeight = FontWeight.Medium
             )
             Text(
-                text = chat.lastMessage,
+                text = chat.lastMessage.ifEmpty { "Нет сообщений" },
                 color = Color.Gray,
                 fontSize = 14.sp,
                 maxLines = 1
