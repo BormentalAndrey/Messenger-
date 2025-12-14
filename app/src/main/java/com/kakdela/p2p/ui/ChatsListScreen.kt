@@ -19,7 +19,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
+import com.kakdela.p2p.data.Chat
+import java.text.SimpleDateFormat
+import java.util.*
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatsListScreen(navController: NavHostController) {
     val viewModel: ChatsListViewModel = viewModel()
@@ -64,13 +68,17 @@ fun ChatsListScreen(navController: NavHostController) {
         ) {
             if (chats.isEmpty()) {
                 item {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(
+                        modifier = Modifier
+                            .fillParentMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Text("Нет чатов", color = Color.Gray, fontSize = 18.sp)
                     }
                 }
             } else {
-                items(chats) { chat ->
-                    ChatListItem(chat = chat) {
+                items(chats, key = { it.id }) { chat ->
+                    ChatListItem(chat) {
                         navController.navigate("chat/${chat.id}")
                     }
                 }
@@ -80,7 +88,11 @@ fun ChatsListScreen(navController: NavHostController) {
 }
 
 @Composable
-fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
+private fun ChatListItem(chat: Chat, onClick: () -> Unit) {
+    val time = chat.timestamp?.let {
+        SimpleDateFormat("HH:mm", Locale.getDefault()).format(it)
+    } ?: ""
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -106,16 +118,21 @@ fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
         Spacer(Modifier.width(16.dp))
 
         Column(Modifier.weight(1f)) {
-            Text(chat.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Medium)
             Text(
-                text = chat.lastMessage.ifEmpty { "Нет сообщений" },
+                chat.title,
+                color = Color.White,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                chat.lastMessage.ifEmpty { "Нет сообщений" },
                 color = Color.Gray,
                 fontSize = 14.sp,
                 maxLines = 1
             )
         }
 
-        Text(chat.time, color = Color.Gray, fontSize = 12.sp)
+        Text(time, color = Color.Gray, fontSize = 12.sp)
     }
 
     Divider(color = Color.DarkGray.copy(alpha = 0.3f))
