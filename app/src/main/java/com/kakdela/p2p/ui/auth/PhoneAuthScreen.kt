@@ -6,6 +6,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
@@ -23,7 +24,7 @@ fun PhoneAuthScreen(
     var phoneNumber by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     var verificationId by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
     val auth = Firebase.auth
@@ -35,7 +36,10 @@ fun PhoneAuthScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("Вход по номеру телефона", style = MaterialTheme.typography.headlineMedium)
+        Text(
+            text = "Вход по номеру телефона",
+            style = MaterialTheme.typography.headlineMedium
+        )
 
         Spacer(Modifier.height(24.dp))
 
@@ -43,8 +47,10 @@ fun PhoneAuthScreen(
             value = phoneNumber,
             onValueChange = { phoneNumber = it },
             label = { Text("Номер телефона") },
-            enabled = verificationId == null && !isLoading,
-            keyboardType = KeyboardType.Phone, // 🔥 ВАЖНО
+            enabled = verificationId == null && !loading,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Phone
+            ),
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -54,17 +60,20 @@ fun PhoneAuthScreen(
             Button(
                 onClick = {
                     if (phoneNumber.isBlank()) return@Button
-                    isLoading = true
+                    loading = true
                     error = null
 
                     val callbacks =
                         object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
-                            override fun onVerificationCompleted(credential: PhoneAuthCredential) {
+
+                            override fun onVerificationCompleted(
+                                credential: PhoneAuthCredential
+                            ) {
                                 signIn(auth, credential, onAuthSuccess)
                             }
 
                             override fun onVerificationFailed(e: FirebaseException) {
-                                isLoading = false
+                                loading = false
                                 error = e.message
                             }
 
@@ -73,7 +82,7 @@ fun PhoneAuthScreen(
                                 token: PhoneAuthProvider.ForceResendingToken
                             ) {
                                 verificationId = id
-                                isLoading = false
+                                loading = false
                             }
                         }
 
@@ -87,15 +96,20 @@ fun PhoneAuthScreen(
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                if (isLoading) CircularProgressIndicator(Modifier.size(20.dp))
-                else Text("Отправить код")
+                if (loading) {
+                    CircularProgressIndicator(Modifier.size(20.dp))
+                } else {
+                    Text("Отправить код")
+                }
             }
         } else {
             OutlinedTextField(
                 value = code,
                 onValueChange = { code = it },
                 label = { Text("Код из SMS") },
-                keyboardType = KeyboardType.Number, // 🔥
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number
+                ),
                 modifier = Modifier.fillMaxWidth()
             )
 
