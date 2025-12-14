@@ -6,7 +6,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
-import com.kakdela.p2p.ui.ChatScreen          // ← Добавьте этот импорт!
+import com.kakdela.p2p.ui.ChatScreen
 import com.kakdela.p2p.ui.ChatsListScreen
 import com.kakdela.p2p.ui.auth.EmailAuthScreen
 
@@ -36,7 +36,7 @@ fun NavGraph(navController: NavHostController) {
             ChatsListScreen(navController = navController)
         }
 
-        // Конкретный чат
+        // Конкретный чат (личный или глобальный)
         composable("chat/{chatId}") { backStackEntry ->
             val chatId = backStackEntry.arguments?.getString("chatId") ?: "global"
             val currentUserId = Firebase.auth.currentUser?.uid ?: ""
