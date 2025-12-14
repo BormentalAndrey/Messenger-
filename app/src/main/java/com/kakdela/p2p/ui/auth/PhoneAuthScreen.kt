@@ -6,6 +6,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -28,6 +29,7 @@ fun PhoneAuthScreen(
     var error by remember { mutableStateOf<String?>(null) }
 
     val auth = Firebase.auth
+    val context = LocalContext.current  // ← Правильный способ получить Activity
 
     Column(
         modifier = Modifier
@@ -46,11 +48,9 @@ fun PhoneAuthScreen(
         OutlinedTextField(
             value = phoneNumber,
             onValueChange = { phoneNumber = it },
-            label = { Text("Номер телефона") },
+            label = { Text("Номер телефона (+7...)") },
             enabled = verificationId == null && !loading,
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Phone
-            ),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -59,45 +59,45 @@ fun PhoneAuthScreen(
         if (verificationId == null) {
             Button(
                 onClick = {
-                    if (phoneNumber.isBlank()) return@Button
+                    if (phoneNumber.isBlank()) {
+                        error = "Введите номер"
+                        return@Button
+                    }
                     loading = true
                     error = null
 
-                    val callbacks =
-                        object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
-
-                            override fun onVerificationCompleted(
-                                credential: PhoneAuthCredential
-                            ) {
-                                signIn(auth, credential, onAuthSuccess)
-                            }
-
-                            override fun onVerificationFailed(e: FirebaseException) {
-                                loading = false
-                                error = e.message
-                            }
-
-                            override fun onCodeSent(
-                                id: String,
-                                token: PhoneAuthProvider.ForceResendingToken
-                            ) {
-                                verificationId = id
-                                loading = false
-                            }
+                    val callbacks = object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
+                        override fun onVerificationCompleted(credential: PhoneAuthCredential) {
+                            signIn(auth, credential, onAuthSuccess)
                         }
+
+                        override fun onVerificationFailed(e: FirebaseException) {
+                            loading = false
+                            error = e.message ?: "Ошибка верификации"
+                        }
+
+                        override fun onCodeSent(
+                            id: String,
+                            token: PhoneAuthProvider.ForceResendingToken
+                        ) {
+                            verificationId = id
+                            loading = false
+                        }
+                    }
 
                     PhoneAuthProvider.getInstance(auth).verifyPhoneNumber(
                         phoneNumber,
                         60,
                         TimeUnit.SECONDS,
-                        navController.context as ComponentActivity,
+                        context as ComponentActivity,  // ← Теперь безопасно
                         callbacks
                     )
                 },
+                enabled = !loading,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 if (loading) {
-                    CircularProgressIndicator(Modifier.size(20.dp))
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
                 } else {
                     Text("Отправить код")
                 }
@@ -107,9 +107,7 @@ fun PhoneAuthScreen(
                 value = code,
                 onValueChange = { code = it },
                 label = { Text("Код из SMS") },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Number
-                ),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -117,9 +115,13 @@ fun PhoneAuthScreen(
 
             Button(
                 onClick = {
-                    if (code.isBlank()) return@Button
-                    val credential =
-                        PhoneAuthProvider.getCredential(verificationId!!, code)
+                    if (code.isBlank()) {
+                        error = "Введите код"
+                        return@Button
+                    }
+                    loading = true
+
+                    val credential = PhoneAuthProvider.getCredential(verificationId!!, code)
                     signIn(auth, credential, onAuthSuccess)
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -142,4 +144,7 @@ private fun signIn(
 ) {
     auth.signInWithCredential(credential)
         .addOnSuccessListener { onSuccess() }
+        .addOnFailureListener {
+            // Можно добавить обработку ошибки
+        }
 }
