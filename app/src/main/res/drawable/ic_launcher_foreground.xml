@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Здесь ваш логотип. Пример простого неонового текста "КД" -->
+    <path
+        android:fillColor="#00FFF0"
+        android:pathData="M30,20 L78,20 L78,88 L30,88 Z M40,40 L68,40 L68,68 L40,68 Z"/>
+</vector>
