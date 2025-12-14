@@ -12,10 +12,8 @@ import com.kakdela.p2p.auth.AuthManager
 import com.kakdela.p2p.data.Message
 
 @Composable
-fun ChatScreen(
-    chatId: String,
-    viewModel: ChatViewModel = viewModel()
-) {
+fun ChatScreen(chatId: String) {
+    val viewModel: ChatViewModel = viewModel()
     val messages by viewModel.messages.collectAsState()
     var text by remember { mutableStateOf("") }
 
@@ -28,10 +26,13 @@ fun ChatScreen(
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
-                .padding(8.dp)
+                .fillMaxWidth()
         ) {
             items(messages) { message ->
-                MessageItem(message)
+                Text(
+                    text = message.text,
+                    modifier = Modifier.padding(8.dp)
+                )
             }
         }
 
@@ -41,23 +42,16 @@ fun ChatScreen(
             TextField(
                 value = text,
                 onValueChange = { text = it },
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Сообщение") }
+                modifier = Modifier.weight(1f)
             )
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(Modifier.width(8.dp))
 
             Button(
                 onClick = {
                     if (text.isNotBlank()) {
                         AuthManager.ensureUser { uid ->
-                            viewModel.send(
-                                chatId,
-                                Message(
-                                    text = text,
-                                    senderId = uid
-                                )
-                            )
+                            viewModel.send(chatId, Message(text, uid))
                             text = ""
                         }
                     }
