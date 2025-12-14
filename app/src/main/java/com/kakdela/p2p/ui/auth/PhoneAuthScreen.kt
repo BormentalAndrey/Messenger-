@@ -6,14 +6,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.google.firebase.FirebaseException
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.PhoneAuthCredential
-import com.google.firebase.auth.PhoneAuthProvider
+import com.google.firebase.auth.*
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
 import java.util.concurrent.TimeUnit
@@ -24,10 +21,10 @@ fun PhoneAuthScreen(
     onAuthSuccess: () -> Unit
 ) {
     var phoneNumber by remember { mutableStateOf("") }
-    var verificationCode by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
     var verificationId by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
 
     val auth = Firebase.auth
 
@@ -38,43 +35,37 @@ fun PhoneAuthScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(
-            text = "Вход по номеру телефона",
-            style = MaterialTheme.typography.headlineMedium
-        )
+        Text("Вход по номеру телефона", style = MaterialTheme.typography.headlineMedium)
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(Modifier.height(24.dp))
 
         OutlinedTextField(
             value = phoneNumber,
             onValueChange = { phoneNumber = it },
-            label = { Text("Номер телефона (+7...)") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            label = { Text("Номер телефона") },
             enabled = verificationId == null && !isLoading,
+            keyboardType = KeyboardType.Phone, // 🔥 ВАЖНО
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(Modifier.height(16.dp))
 
         if (verificationId == null) {
             Button(
                 onClick = {
                     if (phoneNumber.isBlank()) return@Button
                     isLoading = true
-                    errorMessage = null
+                    error = null
 
                     val callbacks =
                         object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
-
-                            override fun onVerificationCompleted(
-                                credential: PhoneAuthCredential
-                            ) {
-                                signInWithCredential(auth, credential, onAuthSuccess)
+                            override fun onVerificationCompleted(credential: PhoneAuthCredential) {
+                                signIn(auth, credential, onAuthSuccess)
                             }
 
                             override fun onVerificationFailed(e: FirebaseException) {
                                 isLoading = false
-                                errorMessage = e.localizedMessage
+                                error = e.message
                             }
 
                             override fun onCodeSent(
@@ -94,39 +85,28 @@ fun PhoneAuthScreen(
                         callbacks
                     )
                 },
-                enabled = !isLoading,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Text("Отправить код")
-                }
+                if (isLoading) CircularProgressIndicator(Modifier.size(20.dp))
+                else Text("Отправить код")
             }
         } else {
             OutlinedTextField(
-                value = verificationCode,
-                onValueChange = { verificationCode = it },
+                value = code,
+                onValueChange = { code = it },
                 label = { Text("Код из SMS") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardType = KeyboardType.Number, // 🔥
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
 
             Button(
                 onClick = {
-                    if (verificationCode.isBlank()) return@Button
-                    isLoading = true
-
-                    val credential = PhoneAuthProvider.getCredential(
-                        verificationId!!,
-                        verificationCode
-                    )
-                    signInWithCredential(auth, credential, onAuthSuccess)
+                    if (code.isBlank()) return@Button
+                    val credential =
+                        PhoneAuthProvider.getCredential(verificationId!!, code)
+                    signIn(auth, credential, onAuthSuccess)
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -134,25 +114,18 @@ fun PhoneAuthScreen(
             }
         }
 
-        errorMessage?.let {
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = it,
-                color = MaterialTheme.colorScheme.error
-            )
+        error?.let {
+            Spacer(Modifier.height(12.dp))
+            Text(it, color = MaterialTheme.colorScheme.error)
         }
     }
 }
 
-private fun signInWithCredential(
+private fun signIn(
     auth: FirebaseAuth,
     credential: PhoneAuthCredential,
     onSuccess: () -> Unit
 ) {
     auth.signInWithCredential(credential)
-        .addOnCompleteListener { task ->
-            if (task.isSuccessful) {
-                onSuccess()
-            }
-        }
+        .addOnSuccessListener { onSuccess() }
 }
