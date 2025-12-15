@@ -19,13 +19,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
-import com.kakdela.p2p.data.Chat
-import java.text.SimpleDateFormat
-import java.util.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatsListScreen(navController: NavHostController) {
+
     val viewModel: ChatsListViewModel = viewModel()
     val chats by viewModel.chats.collectAsState()
     val currentUserId = Firebase.auth.currentUser?.uid ?: ""
@@ -50,30 +48,23 @@ fun ChatsListScreen(navController: NavHostController) {
                     containerColor = Color.Black
                 )
             )
-        },
-        floatingActionButton = {
-            FloatingActionButton(
-                onClick = { /* Новый чат */ },
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Text("+", fontSize = 28.sp)
-            }
         }
     ) { padding ->
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
                 .padding(padding)
         ) {
+
             if (chats.isEmpty()) {
                 item {
                     Box(
-                        modifier = Modifier
-                            .fillParentMaxSize(),
+                        modifier = Modifier.fillParentMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("Нет чатов", color = Color.Gray, fontSize = 18.sp)
+                        Text("Нет чатов", color = Color.Gray)
                     }
                 }
             } else {
@@ -85,13 +76,8 @@ fun ChatsListScreen(navController: NavHostController) {
             }
         }
     }
-}
-
 @Composable
-private fun ChatListItem(chat: Chat, onClick: () -> Unit) {
-    val time = chat.timestamp?.let {
-        SimpleDateFormat("HH:mm", Locale.getDefault()).format(it)
-    } ?: ""
+fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
 
     Row(
         modifier = Modifier
@@ -100,9 +86,10 @@ private fun ChatListItem(chat: Chat, onClick: () -> Unit) {
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+
         Box(
             modifier = Modifier
-                .size(56.dp)
+                .size(48.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
             contentAlignment = Alignment.Center
@@ -110,7 +97,6 @@ private fun ChatListItem(chat: Chat, onClick: () -> Unit) {
             Text(
                 text = chat.title.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
                 color = MaterialTheme.colorScheme.primary,
-                fontSize = 24.sp,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -118,12 +104,7 @@ private fun ChatListItem(chat: Chat, onClick: () -> Unit) {
         Spacer(Modifier.width(16.dp))
 
         Column(Modifier.weight(1f)) {
-            Text(
-                chat.title,
-                color = Color.White,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Medium
-            )
+            Text(chat.title, color = Color.White, fontSize = 16.sp)
             Text(
                 chat.lastMessage.ifEmpty { "Нет сообщений" },
                 color = Color.Gray,
@@ -132,8 +113,9 @@ private fun ChatListItem(chat: Chat, onClick: () -> Unit) {
             )
         }
 
-        Text(time, color = Color.Gray, fontSize = 12.sp)
+        Text(chat.time, color = Color.Gray, fontSize = 12.sp)
     }
 
-    Divider(color = Color.DarkGray.copy(alpha = 0.3f))
+    Divider(color = Color.DarkGray)
+}
 }
