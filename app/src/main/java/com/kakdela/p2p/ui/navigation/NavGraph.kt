@@ -49,115 +49,56 @@ fun NavGraph(navController: NavHostController) {
 
                     NavigationBarItem(
                         selected = currentRoute == "chats",
-                        onClick = {
-                            navController.navigate("chats") {
-                                launchSingleTop = true
-                            }
-                        },
-                        icon = {
-                            Icon(
-                                Icons.Outlined.ChatBubbleOutline,
-                                contentDescription = "Чаты"
-                            )
-                        },
+                        onClick = { navController.navigate("chats") { launchSingleTop = true } },
+                        icon = { Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = "Чаты") },
                         label = { Text("Чаты") }
                     )
 
                     NavigationBarItem(
                         selected = currentRoute == "contacts",
-                        onClick = {
-                            navController.navigate("contacts") {
-                                launchSingleTop = true
-                            }
-                        },
-                        icon = {
-                            Icon(
-                                Icons.Filled.Person,
-                                contentDescription = "Контакты"
-                            )
-                        },
+                        onClick = { navController.navigate("contacts") { launchSingleTop = true } },
+                        icon = { Icon(Icons.Filled.Person, contentDescription = "Контакты") },
                         label = { Text("Контакты") }
                     )
 
                     NavigationBarItem(
                         selected = currentRoute == "entertainment",
-                        onClick = {
-                            navController.navigate("entertainment") {
-                                launchSingleTop = true
-                            }
-                        },
-                        icon = {
-                            Icon(
-                                Icons.Filled.PlayArrow,
-                                contentDescription = "Развлечения"
-                            )
-                        },
+                        onClick = { navController.navigate("entertainment") { launchSingleTop = true } },
+                        icon = { Icon(Icons.Filled.PlayArrow, contentDescription = "Развлечения") },
                         label = { Text("Развлечения") }
                     )
 
                     NavigationBarItem(
                         selected = currentRoute == "settings",
-                        onClick = {
-                            navController.navigate("settings") {
-                                launchSingleTop = true
-                            }
-                        },
-                        icon = {
-                            Text(
-                                "=",
-                                fontSize = 24.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        },
+                        onClick = { navController.navigate("settings") { launchSingleTop = true } },
+                        icon = { Text("=", fontSize = 24.sp, fontWeight = FontWeight.Bold) },
                         label = { Text("Настройки") }
                     )
                 }
             }
         }
     ) { innerPadding ->
-
         NavHost(
             navController = navController,
             startDestination = startDestination,
             modifier = Modifier.padding(innerPadding)
         ) {
 
-            composable("choice") {
-                RegistrationChoiceScreen(navController)
-            }
+            composable("choice") { RegistrationChoiceScreen(navController) }
 
             composable("auth_email") {
-                EmailAuthScreen(navController) {
-                    navController.navigate("chats") {
-                        popUpTo("choice") { inclusive = true }
-                    }
-                }
+                EmailAuthScreen(navController) { navController.navigate("chats") { popUpTo("choice") { inclusive = true } } }
             }
 
-            composable("chats") {
-                ChatsListScreen(navController)
-            }
-
-            composable("contacts") {
-                ContactsScreen(navController)
-            }
-
-            composable("entertainment") {
-                EntertainmentScreen(navController)
-            }
-
-            // 🔴 ИСПРАВЛЕНИЕ ЗДЕСЬ
-            composable("settings") {
-                SettingsScreen(navController)
-            }
+            composable("chats") { ChatsListScreen(navController) }
+            composable("contacts") { ContactsScreen(navController) }
+            composable("entertainment") { EntertainmentScreen(navController) }
+            composable("settings") { SettingsScreen(navController) }
 
             composable("chat/{chatId}") { backStackEntry ->
                 val chatId = backStackEntry.arguments?.getString("chatId") ?: "global"
                 val currentUserId = Firebase.auth.currentUser?.uid ?: ""
-                ChatScreen(
-                    chatId = chatId,
-                    currentUserId = currentUserId
-                )
+                ChatScreen(chatId = chatId, currentUserId = currentUserId)
             }
         }
     }
