@@ -5,6 +5,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -17,7 +20,6 @@ import com.kakdela.p2p.ui.ContactsScreen
 import com.kakdela.p2p.ui.EntertainmentScreen
 import com.kakdela.p2p.ui.SettingsScreen
 import com.kakdela.p2p.ui.auth.EmailAuthScreen
-import com.kakdela.p2p.ui.auth.PhoneAuthScreen
 import com.kakdela.p2p.ui.auth.RegistrationChoiceScreen
 
 @Composable
@@ -25,36 +27,34 @@ fun NavGraph(navController: NavHostController) {
     val currentUser = Firebase.auth.currentUser
     val startDestination = if (currentUser == null) "choice" else "chats"
 
-    val currentRoute by navController.currentBackStackEntryAsState()
-    val currentRouteName = currentRoute?.destination?.route
+    val currentBackStack by navController.currentBackStackEntryAsState()
+    val currentRoute = currentBackStack?.destination?.route
+
+    val showBottomBar = currentRoute in listOf("chats", "contacts", "entertainment", "settings")
 
     Scaffold(
         bottomBar = {
-            if (currentRouteName in listOf("chats", "contacts", "entertainment", "settings")) {
+            if (showBottomBar) {
                 NavigationBar(containerColor = Color.Black) {
                     NavigationBarItem(
-                        selected = currentRouteName == "chats",
+                        selected = currentRoute == "chats",
                         onClick = { navController.navigate("chats") { launchSingleTop = true } },
-                        icon = { Icon(Icons.Default.ChatBubble, contentDescription = "Чаты") },
                         label = { Text("Чаты") }
                     )
                     NavigationBarItem(
-                        selected = currentRouteName == "contacts",
+                        selected = currentRoute == "contacts",
                         onClick = { navController.navigate("contacts") { launchSingleTop = true } },
-                        icon = { Icon(Icons.Default.Contacts, contentDescription = "Контакты") },
                         label = { Text("Контакты") }
                     )
                     NavigationBarItem(
-                        selected = currentRouteName == "entertainment",
+                        selected = currentRoute == "entertainment",
                         onClick = { navController.navigate("entertainment") { launchSingleTop = true } },
-                        icon = { Icon(Icons.Default.PlayArrow, contentDescription = "Развлечения") },
                         label = { Text("Развлечения") }
                     )
                     NavigationBarItem(
-                        selected = currentRouteName == "settings",
+                        selected = currentRoute == "settings",
                         onClick = { navController.navigate("settings") { launchSingleTop = true } },
-                        icon = { Text("=", fontSize = 24.sp, fontWeight = FontWeight.Bold) },
-                        label = { Text("Настройки") }
+                        label = { Text("=", fontSize = 24.sp, fontWeight = FontWeight.Bold) }
                     )
                 }
             }
@@ -65,12 +65,10 @@ fun NavGraph(navController: NavHostController) {
             startDestination = startDestination,
             modifier = Modifier.padding(innerPadding)
         ) {
-            // Выбор способа регистрации
             composable("choice") {
                 RegistrationChoiceScreen(navController = navController)
             }
 
-            // Регистрация по email (доступ к развлечениям)
             composable("auth_email") {
                 EmailAuthScreen(navController = navController) {
                     navController.navigate("chats") {
@@ -79,36 +77,22 @@ fun NavGraph(navController: NavHostController) {
                 }
             }
 
-            // Регистрация по номеру телефона (доступ к личным чатам и контактам)
-            composable("auth_phone") {
-                PhoneAuthScreen(navController = navController) {
-                    navController.navigate("chats") {
-                        popUpTo(0) { inclusive = true }
-                    }
-                }
-            }
-
-            // Список чатов
             composable("chats") {
                 ChatsListScreen(navController = navController)
             }
 
-            // Контакты (только после входа по номеру)
             composable("contacts") {
                 ContactsScreen(navController = navController)
             }
 
-            // Развлечения (ЧёКаВо? + Pikabu)
             composable("entertainment") {
                 EntertainmentScreen(navController = navController)
             }
 
-            // Настройки
             composable("settings") {
                 SettingsScreen()
             }
 
-            // Конкретный чат
             composable("chat/{chatId}") { backStackEntry ->
                 val chatId = backStackEntry.arguments?.getString("chatId") ?: "global"
                 val currentUserId = Firebase.auth.currentUser?.uid ?: ""
