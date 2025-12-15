@@ -41,7 +41,7 @@ android {
 }
 
 dependencies {
-    // Compose
+    // ---------- Compose ----------
     implementation(platform("androidx.compose:compose-bom:2025.12.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
@@ -51,14 +51,18 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
+    implementation("androidx.compose.material:material-icons-extended:1.5.0")
 
-    // Coil 3
-    implementation("io.coil-kt:coil-compose:3.3.0")
+    // ---------- Coil 3.x ----------
+    implementation("io.coil-kt.coil3:coil-compose:3.3.0")
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")  // для загрузки изображений через OkHttp
 
-    // Firebase BoM
+    // ---------- Firebase ----------
     implementation(platform("com.google.firebase:firebase-bom:34.6.0"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.firebase:firebase-storage")
+
+    // ---------- Kotlin Coroutines ----------
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
 }
