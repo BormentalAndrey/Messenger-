@@ -25,6 +25,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kakdela.p2p.R
 import com.kakdela.p2p.data.Message
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.*
 
 @Composable
 fun ChatScreen(
@@ -36,6 +38,8 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
     var text by remember { mutableStateOf("") }
+
+    val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
 
     LaunchedEffect(chatId) {
         viewModel.start(chatId)
@@ -77,7 +81,9 @@ fun ChatScreen(
                         horizontalArrangement = if (isOwn) Arrangement.End else Arrangement.Start
                     ) {
                         if (!isOwn) {
-                            AvatarPlaceholder("А")
+                            AvatarPlaceholder(
+                                name = if (chatId == "global") "Ч" else "С"  // "Ч" для ЧёКаВо?, "С" для собеседника
+                            )
                             Spacer(modifier = Modifier.width(8.dp))
                         }
 
@@ -97,12 +103,44 @@ fun ChatScreen(
                                 )
                             }
 
-                            Text(
-                                text = "12:34", // Можно заменить на реальное время из timestamp
-                                fontSize = 12.sp,
-                                color = Color.Gray,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
+                            Row(
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(top = 4.dp, start = 12.dp, end = 12.dp)
+                            ) {
+                                if (isOwn) {
+                                    // Галочки
+                                    if (message.isRead) {
+                                        Icon(
+                                            painter = painterResource(android.R.drawable.stat_notify_chat),
+                                            contentDescription = "Прочитано",
+                                            tint = Color(0xFF00FFF0),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    } else if (message.isDelivered) {
+                                        Icon(
+                                            painter = painterResource(android.R.drawable.stat_notify_chat),
+                                            contentDescription = "Доставлено",
+                                            tint = Color.Gray,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    } else {
+                                        Icon(
+                                            painter = painterResource(android.R.drawable.presence_away),
+                                            contentDescription = "Отправлено",
+                                            tint = Color.Gray,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    Spacer(Modifier.width(4.dp))
+                                }
+
+                                Text(
+                                    text = timeFormat.format(Date(message.timestamp)),
+                                    fontSize = 12.sp,
+                                    color = Color.Gray
+                                )
+                            }
                         }
 
                         if (isOwn) {
@@ -141,7 +179,15 @@ fun ChatScreen(
                 IconButton(
                     onClick = {
                         if (text.isNotBlank()) {
-                            viewModel.send(chatId, Message(text, currentUserId))
+                            viewModel.send(
+                                chatId,
+                                Message(
+                                    text = text,
+                                    senderId = currentUserId,
+                                    isDelivered = false,
+                                    isRead = false
+                                )
+                            )
                             text = ""
                         }
                     }
