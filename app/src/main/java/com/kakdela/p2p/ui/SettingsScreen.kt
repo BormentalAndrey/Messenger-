@@ -1,12 +1,17 @@
 package com.kakdela.p2p.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 fun SettingsScreen() {
@@ -16,8 +21,8 @@ fun SettingsScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(Color.Black)
             .padding(16.dp)
-            .background(Color.Black)  // Чтобы соответствовать неоновой теме
     ) {
         Text(
             text = "Настройки",
@@ -27,7 +32,7 @@ fun SettingsScreen() {
 
         Spacer(Modifier.height(32.dp))
 
-        // Аватарка (заглушка — позже можно добавить загрузку фото)
+        // Заглушка аватарки
         Box(
             modifier = Modifier
                 .size(100.dp)
@@ -45,7 +50,7 @@ fun SettingsScreen() {
 
         Spacer(Modifier.height(16.dp))
 
-        Text("Аватарка (нажмите, чтобы изменить — скоро)", color = Color.Gray)
+        Text("Аватарка (скоро)", color = Color.Gray)
 
         Spacer(Modifier.height(24.dp))
 
@@ -63,15 +68,11 @@ fun SettingsScreen() {
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Оповещения о новых сообщениях", color = Color.White)
+            Text("Оповещения о сообщениях", color = Color.White)
             Spacer(Modifier.weight(1f))
             Switch(
                 checked = notificationsEnabled,
-                onCheckedChange = { notificationsEnabled = it },
-                colors = SwitchDefaults.colors(
-                    checkedThumbColor = MaterialTheme.colorScheme.primary,
-                    uncheckedThumbColor = Color.Gray
-                )
+                onCheckedChange = { notificationsEnabled = it }
             )
         }
 
@@ -84,9 +85,9 @@ fun SettingsScreen() {
             Text("Беззвучные уведомления для ЧёКаВо?", color = Color.White)
             Spacer(Modifier.weight(1f))
             Switch(
-                checked = true,  // По умолчанию отключены для глобального чата
-                onCheckedChange = { /* можно сохранить в настройках */ },
-                enabled = false  // Пока фиксировано
+                checked = true,
+                onCheckedChange = null,
+                enabled = false
             )
         }
     }
