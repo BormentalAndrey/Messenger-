@@ -34,7 +34,6 @@ fun EmailAuthScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-
         Text(
             text = if (isLogin) "Вход" else "Регистрация",
             style = MaterialTheme.typography.headlineMedium
