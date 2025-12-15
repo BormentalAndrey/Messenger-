@@ -5,6 +5,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
@@ -18,7 +19,7 @@ fun EmailAuthScreen(
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var isLogin by remember { mutableStateOf(true) }  // true = вход, false = регистрация
+    var isLogin by remember { mutableStateOf(true) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -85,12 +86,10 @@ fun EmailAuthScreen(
                     error = "Заполните все поля"
                     return@Button
                 }
-
                 if (password.length < 6) {
                     error = "Пароль должен быть не менее 6 символов"
                     return@Button
                 }
-
                 if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
                     error = "Неверный формат email"
                     return@Button
@@ -100,7 +99,6 @@ fun EmailAuthScreen(
                 error = null
 
                 if (isLogin) {
-                    // Вход
                     auth.signInWithEmailAndPassword(email, password)
                         .addOnSuccessListener { onAuthSuccess() }
                         .addOnFailureListener { e ->
@@ -108,7 +106,6 @@ fun EmailAuthScreen(
                             error = e.message ?: "Ошибка входа"
                         }
                 } else {
-                    // Регистрация
                     auth.createUserWithEmailAndPassword(email, password)
                         .addOnSuccessListener { onAuthSuccess() }
                         .addOnFailureListener { e ->
@@ -121,10 +118,7 @@ fun EmailAuthScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             if (loading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    color = Color.Black
-                )
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.Black)
             } else {
                 Text(if (isLogin) "Войти" else "Зарегистрироваться")
             }
@@ -140,8 +134,7 @@ fun EmailAuthScreen(
             Spacer(Modifier.height(12.dp))
             Text(
                 text = it,
-                color = if (it.contains("отправлена")) Color.Green else MaterialTheme.colorScheme.error,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                color = if (it.contains("отправлена")) Color.Green else MaterialTheme.colorScheme.error
             )
         }
     }
