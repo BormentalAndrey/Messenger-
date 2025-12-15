@@ -1,8 +1,8 @@
 plugins {
-    alias(libs.plugins.kotlin.android)       // org.jetbrains.kotlin.android
-    alias(libs.plugins.kotlin.compose)       // org.jetbrains.kotlin.plugin.compose
-    id("com.android.application")
-    id("com.google.gms.google-services")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.google.services)
+    // НЕ применяем kotlin-compose плагин!
 }
 
 android {
@@ -21,12 +21,13 @@ android {
         compose = true
     }
 
+    // Старый способ: явно указываем версию Compose Compiler
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.15"
+        kotlinCompilerExtensionVersion = libs.versions.compose.compiler.get()
     }
 
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "17"  // или "21", если хотите
     }
 
     packaging {
@@ -38,24 +39,23 @@ android {
 
 dependencies {
     // ---------- Compose ----------
-    implementation(platform(libs.versions.compose.bom.get()))
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    debugImplementation("androidx.compose.ui:ui-tooling")
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    debugImplementation(libs.androidx.compose.ui.tooling)
 
     // ---------- Navigation ----------
-    implementation(libs.versions.navigation.compose.get())
+    implementation(libs.androidx.navigation.compose)
 
     // ---------- Coil ----------
-    implementation(libs.versions.coil.get())
+    implementation(libs.coil.compose)
 
     // ---------- Firebase ----------
-    implementation(platform(libs.versions.firebase.bom.get()))
-    implementation("com.google.firebase:firebase-auth-ktx")
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-storage-ktx")
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth.ktx)
+    implementation(libs.firebase.firestore.ktx)
+    implementation(libs.firebase.storage.ktx)
 
-    // ---------- KeyboardOptions ----------
-    implementation("androidx.compose.ui:ui-text")
+    // Удалена лишняя ui-text зависимость
 }
