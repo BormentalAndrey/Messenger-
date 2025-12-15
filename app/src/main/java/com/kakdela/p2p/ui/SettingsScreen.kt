@@ -14,6 +14,30 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
+fun SettingsScreen(navController: NavHostController) {
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp)
+    ) {
+
+        Button(
+            onClick = { navController.navigate("auth_phone") },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Вход по телефону")
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Button(
+            onClick = { navController.navigate("auth_email") },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Вход по email")
+        }
+    }
+}
+@Composable
 fun SettingsScreen() {
     var status by remember { mutableStateOf("") }
     var notificationsEnabled by remember { mutableStateOf(true) }
