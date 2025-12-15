@@ -146,8 +146,9 @@ fun NavGraph(navController: NavHostController) {
                 EntertainmentScreen(navController)
             }
 
+            // 🔴 ИСПРАВЛЕНИЕ ЗДЕСЬ
             composable("settings") {
-                SettingsScreen()
+                SettingsScreen(navController)
             }
 
             composable("chat/{chatId}") { backStackEntry ->
