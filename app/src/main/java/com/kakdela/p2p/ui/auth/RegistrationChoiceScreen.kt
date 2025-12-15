@@ -23,7 +23,7 @@ fun RegistrationChoiceScreen(navController: NavHostController) {
             onClick = { navController.navigate("auth_email") },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("По email (Развлечения: ЧёКаВо? + Pikabu)")
+            Text("По email (Развлечения)")
         }
 
         Spacer(Modifier.height(24.dp))
@@ -32,7 +32,7 @@ fun RegistrationChoiceScreen(navController: NavHostController) {
             onClick = { navController.navigate("auth_phone") },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("По номеру телефона (Личные чаты + Контакты)")
+            Text("По номеру телефона")
         }
     }
 }
