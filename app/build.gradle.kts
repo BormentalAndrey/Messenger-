@@ -21,7 +21,7 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.6" // совместимо с AGP 8.4.2
+        kotlinCompilerExtensionVersion = "1.5.17"  // совместимо с Compose 1.10.x
     }
 
     compileOptions {
@@ -41,28 +41,28 @@ android {
 }
 
 dependencies {
-    // ---------- Compose ----------
-    implementation(platform("androidx.compose:compose-bom:2024.5.0")) // откат BOM
+    // Compose 1.10.x
+    implementation(platform("androidx.compose:compose-bom:2025.12.00"))
     implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.material3:material3:1.3.1") // совместимо
+    implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
     implementation("androidx.activity:activity-compose:1.9.3")
-    implementation("androidx.compose.material:material-icons-extended:1.5.0")
-    implementation("androidx.navigation:navigation-compose:2.7.7")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
+    implementation("androidx.compose.material:material-icons-extended:1.10.0")
+    implementation("androidx.navigation:navigation-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
 
-    // ---------- Coil ----------
-    implementation("io.coil-kt:coil-compose:2.7.0") // последняя версия 2.x
-    implementation("io.coil-kt:coil-network-okhttp:2.7.0")
+    // Coil 3.x
+    implementation("io.coil-kt.coil3:coil-compose:3.3.0")
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0") // для загрузки из сети
 
-    // ---------- Firebase ----------
-    implementation(platform("com.google.firebase:firebase-bom:33.4.0"))
+    // Firebase BoM
+    implementation(platform("com.google.firebase:firebase-bom:34.6.0"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.firebase:firebase-storage")
 
-    // ---------- Coroutines ----------
+    // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
 }
