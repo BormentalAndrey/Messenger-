@@ -1,6 +1,10 @@
 package com.kakdela.p2p.ui.navigation
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,19 +43,19 @@ fun NavGraph(navController: NavHostController) {
                     NavigationBarItem(
                         selected = currentRoute == "chats",
                         onClick = { navController.navigate("chats") { launchSingleTop = true } },
-                        icon = { Icon(Icons.Default.Chat, contentDescription = "Чаты") },
+                        icon = { Icon(Icons.Filled.Chat, contentDescription = "Чаты") },
                         label = { Text("Чаты") }
                     )
                     NavigationBarItem(
                         selected = currentRoute == "contacts",
                         onClick = { navController.navigate("contacts") { launchSingleTop = true } },
-                        icon = { Icon(Icons.Default.Person, contentDescription = "Контакты") },
+                        icon = { Icon(Icons.Filled.Person, contentDescription = "Контакты") },
                         label = { Text("Контакты") }
                     )
                     NavigationBarItem(
                         selected = currentRoute == "entertainment",
                         onClick = { navController.navigate("entertainment") { launchSingleTop = true } },
-                        icon = { Icon(Icons.Default.PlayArrow, contentDescription = "Развлечения") },
+                        icon = { Icon(Icons.Filled.PlayArrow, contentDescription = "Развлечения") },
                         label = { Text("Развлечения") }
                     )
                     NavigationBarItem(
