@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavHostController
 
@@ -35,9 +36,7 @@ fun EntertainmentScreen(navController: NavHostController) {
                     loadUrl("https://pikabu.ru")
                 }
             },
-            modifier = Modifier
-                .fillMaxSize()
-                .weight(1f)
+            modifier = Modifier.fillMaxSize()
         )
     }
 }
