@@ -1,7 +1,7 @@
 plugins {
+    alias(libs.plugins.kotlin.android)       // org.jetbrains.kotlin.android
+    alias(libs.plugins.kotlin.compose)       // org.jetbrains.kotlin.plugin.compose
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")      // версия берётся из classpath CI
-    id("org.jetbrains.kotlin.plugin.compose") // версия берётся из classpath CI
     id("com.google.gms.google-services")
 }
 
@@ -37,22 +37,21 @@ android {
 }
 
 dependencies {
-
     // ---------- Compose ----------
-    implementation(platform("androidx.compose:compose-bom:2024.10.00"))
+    implementation(platform(libs.versions.compose.bom.get()))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     // ---------- Navigation ----------
-    implementation("androidx.navigation:navigation-compose:2.8.4")
+    implementation(libs.versions.navigation.compose.get())
 
-    // ---------- Coil (AsyncImage) ----------
-    implementation("io.coil-kt:coil-compose:2.6.0")
+    // ---------- Coil ----------
+    implementation(libs.versions.coil.get())
 
     // ---------- Firebase ----------
-    implementation(platform("com.google.firebase:firebase-bom:33.6.0"))
+    implementation(platform(libs.versions.firebase.bom.get()))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
