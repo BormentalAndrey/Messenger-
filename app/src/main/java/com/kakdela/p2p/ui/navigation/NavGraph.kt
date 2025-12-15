@@ -39,22 +39,26 @@ fun NavGraph(navController: NavHostController) {
                     NavigationBarItem(
                         selected = currentRoute == "chats",
                         onClick = { navController.navigate("chats") { launchSingleTop = true } },
+                        icon = { Icon(Icons.Default.Chat, contentDescription = "Чаты") },
                         label = { Text("Чаты") }
                     )
                     NavigationBarItem(
                         selected = currentRoute == "contacts",
                         onClick = { navController.navigate("contacts") { launchSingleTop = true } },
+                        icon = { Icon(Icons.Default.Person, contentDescription = "Контакты") },
                         label = { Text("Контакты") }
                     )
                     NavigationBarItem(
                         selected = currentRoute == "entertainment",
                         onClick = { navController.navigate("entertainment") { launchSingleTop = true } },
+                        icon = { Icon(Icons.Default.PlayArrow, contentDescription = "Развлечения") },
                         label = { Text("Развлечения") }
                     )
                     NavigationBarItem(
                         selected = currentRoute == "settings",
                         onClick = { navController.navigate("settings") { launchSingleTop = true } },
-                        label = { Text("=", fontSize = 24.sp, fontWeight = FontWeight.Bold) }
+                        icon = { Text("=", fontSize = 24.sp, fontWeight = FontWeight.Bold) },
+                        label = { Text("Настройки") }
                     )
                 }
             }
@@ -65,34 +69,12 @@ fun NavGraph(navController: NavHostController) {
             startDestination = startDestination,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable("choice") {
-                RegistrationChoiceScreen(navController = navController)
-            }
-
-            composable("auth_email") {
-                EmailAuthScreen(navController = navController) {
-                    navController.navigate("chats") {
-                        popUpTo(0) { inclusive = true }
-                    }
-                }
-            }
-
-            composable("chats") {
-                ChatsListScreen(navController = navController)
-            }
-
-            composable("contacts") {
-                ContactsScreen(navController = navController)
-            }
-
-            composable("entertainment") {
-                EntertainmentScreen(navController = navController)
-            }
-
-            composable("settings") {
-                SettingsScreen()
-            }
-
+            composable("choice") { RegistrationChoiceScreen(navController) }
+            composable("auth_email") { EmailAuthScreen(navController) { navController.navigate("chats") { popUpTo(0) } } }
+            composable("chats") { ChatsListScreen(navController) }
+            composable("contacts") { ContactsScreen(navController) }
+            composable("entertainment") { EntertainmentScreen(navController) }
+            composable("settings") { SettingsScreen() }
             composable("chat/{chatId}") { backStackEntry ->
                 val chatId = backStackEntry.arguments?.getString("chatId") ?: "global"
                 val currentUserId = Firebase.auth.currentUser?.uid ?: ""
