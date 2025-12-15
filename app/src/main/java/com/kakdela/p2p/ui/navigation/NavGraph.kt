@@ -74,11 +74,7 @@ fun NavGraph(navController: NavHostController) {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable("choice") { RegistrationChoiceScreen(navController) }
-            composable("auth_email") {
-                EmailAuthScreen(navController) {
-                    navController.navigate("chats") { popUpTo(0) { inclusive = true } }
-                }
-            }
+            composable("auth_email") { EmailAuthScreen(navController) { navController.navigate("chats") { popUpTo(0) } } }
             composable("chats") { ChatsListScreen(navController) }
             composable("contacts") { ContactsScreen(navController) }
             composable("entertainment") { EntertainmentScreen(navController) }
