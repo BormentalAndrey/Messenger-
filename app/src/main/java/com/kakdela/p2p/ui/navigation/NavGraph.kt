@@ -2,7 +2,7 @@ package com.kakdela.p2p.ui.navigation
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
@@ -43,7 +43,7 @@ fun NavGraph(navController: NavHostController) {
                     NavigationBarItem(
                         selected = currentRoute == "chats",
                         onClick = { navController.navigate("chats") { launchSingleTop = true } },
-                        icon = { Icon(Icons.Filled.Chat, contentDescription = "Чаты") },
+                        icon = { Icon(Icons.Filled.ChatBubbleOutline, contentDescription = "Чаты") },
                         label = { Text("Чаты") }
                     )
                     NavigationBarItem(
@@ -74,7 +74,11 @@ fun NavGraph(navController: NavHostController) {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable("choice") { RegistrationChoiceScreen(navController) }
-            composable("auth_email") { EmailAuthScreen(navController) { navController.navigate("chats") { popUpTo(0) } } }
+            composable("auth_email") {
+                EmailAuthScreen(navController) {
+                    navController.navigate("chats") { popUpTo(0) { inclusive = true } }
+                }
+            }
             composable("chats") { ChatsListScreen(navController) }
             composable("contacts") { ContactsScreen(navController) }
             composable("entertainment") { EntertainmentScreen(navController) }
