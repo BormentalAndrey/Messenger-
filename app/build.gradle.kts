@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android") version "1.9.25"
-    id("org.jetbrains.kotlin.plugin.compose") version "1.9.25"
+    id("org.jetbrains.kotlin.android")      // версия берётся из classpath CI
+    id("org.jetbrains.kotlin.plugin.compose") // версия берётся из classpath CI
     id("com.google.gms.google-services")
 }
 
