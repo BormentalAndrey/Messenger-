@@ -1,3 +1,4 @@
+
 package com.kakdela.p2p.ui
 
 import androidx.compose.foundation.background
@@ -69,55 +70,22 @@ fun ChatsListScreen(navController: NavHostController) {
                 }
             } else {
                 items(chats, key = { it.id }) { chat ->
-                    ChatListItem(chat) {
-                        navController.navigate("chat/${chat.id}")
-                    }
+                    ChatListItem(
+                        chat = chat,
+                        onClick = {
+                            navController.navigate("chat/${chat.id}")
+                        }
+                    )
                 }
             }
         }
     }
-@Composable
-fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = chat.title.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        Spacer(Modifier.width(16.dp))
-
-        Column(Modifier.weight(1f)) {
-            Text(chat.title, color = Color.White, fontSize = 16.sp)
-            Text(
-                chat.lastMessage.ifEmpty { "Нет сообщений" },
-                color = Color.Gray,
-                fontSize = 14.sp,
-                maxLines = 1
-            )
-        }
-
-        Text(chat.time, color = Color.Gray, fontSize = 12.sp)
-    }
-
-    Divider(color = Color.DarkGray)
 }
+
+/* =========================
+   ЭЛЕМЕНТ СПИСКА ЧАТОВ
+   ========================= */
+
 @Composable
 fun ChatListItem(
     chat: ChatDisplay,
@@ -171,5 +139,4 @@ fun ChatListItem(
     }
 
     Divider(color = Color.DarkGray.copy(alpha = 0.3f))
-}
 }
