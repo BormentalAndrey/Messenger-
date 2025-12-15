@@ -21,7 +21,7 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.12" // для Kotlin 1.9.0
+        kotlinCompilerExtensionVersion = "1.5.11" // для Kotlin 1.9.0
     }
 
     compileOptions {
