@@ -1,0 +1,11 @@
+[versions]
+kotlin = "2.2.20"  # или актуальная на ваш CI
+compose-bom = "2025.12.00"
+firebase-bom = "33.7.0"
+navigation-compose = "2.8.6"
+coil = "2.8.0"
+
+[plugins]
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+# другие плагины если нужно
