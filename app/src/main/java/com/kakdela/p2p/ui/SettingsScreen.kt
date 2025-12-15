@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import coil.compose.AsyncImage
@@ -22,15 +23,11 @@ import com.google.firebase.auth.ktx.auth
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.storage.ktx.storage
-import kotlinx.coroutines.launch
 
 @Composable
 fun SettingsScreen(navController: NavHostController) {
-    val scope = rememberCoroutineScope()
-    val context = LocalContext.current
 
-    var status by remember { mutableStateOf("") }
-    var notificationsEnabled by remember { mutableStateOf(true) }
+    val context = LocalContext.current
     var avatarUrl by remember { mutableStateOf<String?>(null) }
     var isUploading by remember { mutableStateOf(false) }
 
@@ -39,41 +36,42 @@ fun SettingsScreen(navController: NavHostController) {
     val db = Firebase.firestore
     val storage = Firebase.storage
 
-    // Загружаем текущий avatarUrl из Firestore при открытии экрана
     LaunchedEffect(currentUser?.uid) {
         if (currentUser != null) {
             db.collection("users").document(currentUser.uid)
                 .get()
-                .addOnSuccessListener { document ->
-                    avatarUrl = document.getString("avatarUrl")
+                .addOnSuccessListener {
+                    avatarUrl = it.getString("avatarUrl")
                 }
         }
     }
 
-    // Лаунчер для выбора фото из галереи
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null && currentUser != null) {
             isUploading = true
-            scope.launch {
-                try {
-                    val storageRef = storage.reference.child("avatars/${currentUser.uid}.jpg")
-                    storageRef.putFile(uri)
-                        .addOnSuccessListener {
-                            storageRef.downloadUrl.addOnSuccessListener { downloadUri ->
-                                val newUrl = downloadUri.toString()
-                                avatarUrl = newUrl
+            val storageRef = storage.reference.child("avatars/${currentUser.uid}.jpg")
 
-                                // Сохраняем URL в Firestore
-                                db.collection("users").document(currentUser.uid)
-                                    .set(mapOf("avatarUrl" to newUrl), com.google.firebase.firestore.SetOptions.merge())
-                            }
-                        }
-                } finally {
+            storageRef.putFile(uri)
+                .addOnSuccessListener {
+                    storageRef.downloadUrl.addOnSuccessListener { downloadUri ->
+                        val newUrl = downloadUri.toString()
+                        avatarUrl = newUrl
+
+                        db.collection("users")
+                            .document(currentUser.uid)
+                            .set(
+                                mapOf("avatarUrl" to newUrl),
+                                com.google.firebase.firestore.SetOptions.merge()
+                            )
+
+                        isUploading = false
+                    }
+                }
+                .addOnFailureListener {
                     isUploading = false
                 }
-            }
         }
     }
 
@@ -84,15 +82,15 @@ fun SettingsScreen(navController: NavHostController) {
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+
         Text(
-            text = "Настройки",
+            "Настройки",
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.primary
         )
 
         Spacer(Modifier.height(32.dp))
 
-        // === АВАТАРКА ===
         Box(
             modifier = Modifier
                 .size(120.dp)
@@ -109,99 +107,29 @@ fun SettingsScreen(navController: NavHostController) {
                 AsyncImage(
                     model = avatarUrl,
                     contentDescription = "Аватар",
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(CircleShape),
+                    modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
             } else {
                 Text(
-                    text = "Нажмите,\nчтобы выбрать\nаватар",
-                    color = MaterialTheme.colorScheme.primary,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    "Нажмите,\nчтобы выбрать\nаватар",
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
 
             if (isUploading) {
-                CircularProgressIndicator(
-                    color = Color.White,
-                    modifier = Modifier.align(Alignment.Center)
-                )
+                CircularProgressIndicator(color = Color.White)
             }
-        }
-
-        Spacer(Modifier.height(16.dp))
-        Text("Изменить аватар", color = Color.Gray)
-
-        Spacer(Modifier.height(32.dp))
-
-        // Кнопки дополнительных способов авторизации
-        Button(
-            onClick = { navController.navigate("auth_phone") },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Добавить/сменить вход по номеру телефона")
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        Button(
-            onClick = { navController.navigate("auth_email") },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Добавить/сменить вход по email")
-        }
-
-        Spacer(Modifier.height(32.dp))
-
-        // Поле статуса
-        OutlinedTextField(
-            value = status,
-            onValueChange = { status = it },
-            label = { Text("Статус") },
-            placeholder = { Text("В сети") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(Modifier.height(24.dp))
-
-        // Переключатели уведомлений
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Оповещения о сообщениях", color = Color.White)
-            Spacer(Modifier.weight(1f))
-            Switch(
-                checked = notificationsEnabled,
-                onCheckedChange = { notificationsEnabled = it }
-            )
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Беззвучные уведомления для ЧёКаВо?", color = Color.White)
-            Spacer(Modifier.weight(1f))
-            Switch(
-                checked = true,
-                onCheckedChange = null,
-                enabled = false
-            )
         }
 
         Spacer(Modifier.height(48.dp))
 
-        // Кнопка выхода из аккаунта
         OutlinedButton(
             onClick = {
                 Firebase.auth.signOut()
                 navController.navigate("auth_phone") {
                     popUpTo(navController.graph.startDestinationId) { inclusive = true }
-                    launchSingleTop = true
                 }
             },
             modifier = Modifier.fillMaxWidth(),
