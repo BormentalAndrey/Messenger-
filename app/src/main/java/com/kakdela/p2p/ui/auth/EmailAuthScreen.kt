@@ -33,14 +33,15 @@ fun EmailAuthScreen(
     ) {
         Text(
             text = if (isLogin) "Вход в аккаунт" else "Регистрация",
-            style = MaterialTheme.typography.headlineMedium
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.primary
         )
 
         Spacer(Modifier.height(32.dp))
 
         OutlinedTextField(
             value = email,
-            onValueChange = { email = it },
+            onValueChange = { email = it.trim() },
             label = { Text("Email") },
             enabled = !loading,
             modifier = Modifier.fillMaxWidth()
@@ -57,6 +58,25 @@ fun EmailAuthScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
+        if (isLogin) {
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = {
+                if (email.isBlank()) {
+                    error = "Введите email для восстановления"
+                    return@TextButton
+                }
+                auth.sendPasswordResetEmail(email)
+                    .addOnSuccessListener {
+                        error = "Ссылка для восстановления отправлена на $email"
+                    }
+                    .addOnFailureListener { e ->
+                        error = "Ошибка: ${e.message}"
+                    }
+            }) {
+                Text("Забыли пароль?")
+            }
+        }
+
         Spacer(Modifier.height(24.dp))
 
         Button(
@@ -65,6 +85,17 @@ fun EmailAuthScreen(
                     error = "Заполните все поля"
                     return@Button
                 }
+
+                if (password.length < 6) {
+                    error = "Пароль должен быть не менее 6 символов"
+                    return@Button
+                }
+
+                if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+                    error = "Неверный формат email"
+                    return@Button
+                }
+
                 loading = true
                 error = null
 
@@ -90,7 +121,10 @@ fun EmailAuthScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             if (loading) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = Color.Black
+                )
             } else {
                 Text(if (isLogin) "Войти" else "Зарегистрироваться")
             }
@@ -104,7 +138,11 @@ fun EmailAuthScreen(
 
         error?.let {
             Spacer(Modifier.height(12.dp))
-            Text(it, color = MaterialTheme.colorScheme.error)
+            Text(
+                text = it,
+                color = if (it.contains("отправлена")) Color.Green else MaterialTheme.colorScheme.error,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
         }
     }
 }
