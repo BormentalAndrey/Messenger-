@@ -1,45 +1,30 @@
 [versions]
-# Встроенная в ваше CI версия Kotlin — оставляем как есть
 kotlin = "1.9.25"
-
-# Совместимая с вашим classpath версия AGP
 agp = "8.4.2"
-
-# Актуальные версии на декабрь 2025
-compose-bom = "2025.12.00"     # Последний стабильный Compose BOM
-compose-compiler = "1.5.17"    # Совместимая версия Compose Compiler для Kotlin 1.9.x
-navigation-compose = "2.8.7"   # Стабильная
-coil = "2.8.0"                 # Актуальная стабильная Coil 2.x (Coil 3 пока не полностью стабильна для всех)
-firebase-bom = "34.6.0"        # Последний Firebase BOM
-google-services = "4.4.2"      # Актуальная версия google-services plugin
+compose-bom = "2025.12.00"
+compose-compiler = "1.5.17"
+navigation-compose = "2.8.7"
+coil = "3.3.0"
+firebase-bom = "34.6.0"
+google-services = "4.4.2"
+coroutines-play-services = "1.9.0"
 
 [libraries]
-# Compose BOM
 androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
-
 androidx-compose-ui = { module = "androidx.compose.ui:ui" }
 androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
-androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }  # debug только
-
-# Navigation Compose
+androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation-compose" }
-
-# Coil
-coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
-
-# Firebase BOM
+coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
+coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebase-bom" }
-firebase-auth-ktx = { module = "com.google.firebase:firebase-auth-ktx" }
-firebase-firestore-ktx = { module = "com.google.firebase:firebase-firestore-ktx" }
-firebase-storage-ktx = { module = "com.google.firebase:firebase-storage-ktx" }
+firebase-auth = { module = "com.google.firebase:firebase-auth" }
+firebase-firestore = { module = "com.google.firebase:firebase-firestore" }
+firebase-storage = { module = "com.google.firebase:firebase-storage" }
+coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "coroutines-play-services" }
 
 [plugins]
-# Android Application — теперь версия совпадает с classpath
 android-application = { id = "com.android.application", version.ref = "agp" }
-
-# Kotlin Android
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
-
-# Google Services
 google-services = { id = "com.google.gms.google-services", version.ref = "google-services" }
