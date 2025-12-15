@@ -118,4 +118,58 @@ fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
 
     Divider(color = Color.DarkGray)
 }
+@Composable
+fun ChatListItem(
+    chat: ChatDisplay,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = chat.title.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = chat.title,
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+
+            Text(
+                text = chat.lastMessage.ifEmpty { "Нет сообщений" },
+                color = Color.Gray,
+                fontSize = 14.sp,
+                maxLines = 1
+            )
+        }
+
+        Text(
+            text = chat.time,
+            color = Color.Gray,
+            fontSize = 12.sp
+        )
+    }
+
+    Divider(color = Color.DarkGray.copy(alpha = 0.3f))
+}
 }
