@@ -1,14 +1,16 @@
 [versions]
-# Встроенная в Gradle 8.9 версия Kotlin — обязательно именно эта, чтобы избежать конфликтов
+# Встроенная в ваше CI версия Kotlin — оставляем как есть
 kotlin = "1.9.25"
 
+# Совместимая с вашим classpath версия AGP
+agp = "8.4.2"
+
 # Актуальные версии на декабрь 2025
-agp = "8.9.0"                  # Последняя AGP, совместимая с Gradle 8.9
-compose-bom = "2025.12.00"     # Декабрьский релиз Compose (стабильный)
-compose-compiler = "1.5.17"    # Последняя версия Compose Compiler для Kotlin 1.9.x
-navigation-compose = "2.8.7"   # Стабильная версия Navigation Compose
-coil = "3.3.0"                 # Актуальная Coil 3 (июль 2025, но стабильная)
-firebase-bom = "34.6.0"        # Последний Firebase BOM (декабрь 2025)
+compose-bom = "2025.12.00"     # Последний стабильный Compose BOM
+compose-compiler = "1.5.17"    # Совместимая версия Compose Compiler для Kotlin 1.9.x
+navigation-compose = "2.8.7"   # Стабильная
+coil = "2.8.0"                 # Актуальная стабильная Coil 2.x (Coil 3 пока не полностью стабильна для всех)
+firebase-bom = "34.6.0"        # Последний Firebase BOM
 google-services = "4.4.2"      # Актуальная версия google-services plugin
 
 [libraries]
@@ -18,13 +20,13 @@ androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = 
 androidx-compose-ui = { module = "androidx.compose.ui:ui" }
 androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
 androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
-androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }  # только debug
+androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }  # debug только
 
 # Navigation Compose
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation-compose" }
 
 # Coil
-coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
+coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 
 # Firebase BOM
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebase-bom" }
@@ -33,11 +35,11 @@ firebase-firestore-ktx = { module = "com.google.firebase:firebase-firestore-ktx"
 firebase-storage-ktx = { module = "com.google.firebase:firebase-storage-ktx" }
 
 [plugins]
-# Android Application
+# Android Application — теперь версия совпадает с classpath
 android-application = { id = "com.android.application", version.ref = "agp" }
 
 # Kotlin Android
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 
-# Google Services (Firebase)
+# Google Services
 google-services = { id = "com.google.gms.google-services", version.ref = "google-services" }
