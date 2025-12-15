@@ -1,4 +1,3 @@
-
 package com.kakdela.p2p.ui
 
 import androidx.compose.foundation.background
@@ -24,7 +23,6 @@ import com.google.firebase.ktx.Firebase
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatsListScreen(navController: NavHostController) {
-
     val viewModel: ChatsListViewModel = viewModel()
     val chats by viewModel.chats.collectAsState()
     val currentUserId = Firebase.auth.currentUser?.uid ?: ""
@@ -40,7 +38,7 @@ fun ChatsListScreen(navController: NavHostController) {
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        "Как дела?",
+                        text = "Как дела?",
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -49,33 +47,43 @@ fun ChatsListScreen(navController: NavHostController) {
                     containerColor = Color.Black
                 )
             )
+        },
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = {
+                    // Здесь можно открыть экран создания нового чата
+                },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = Color.Black
+            ) {
+                Text("+", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            }
         }
     ) { padding ->
-
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
                 .padding(padding)
         ) {
-
             if (chats.isEmpty()) {
                 item {
                     Box(
-                        modifier = Modifier.fillParentMaxSize(),
+                        modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("Нет чатов", color = Color.Gray)
+                        Text(
+                            text = "Нет чатов",
+                            color = Color.Gray,
+                            fontSize = 18.sp
+                        )
                     }
                 }
             } else {
                 items(chats, key = { it.id }) { chat ->
-                    ChatListItem(
-                        chat = chat,
-                        onClick = {
-                            navController.navigate("chat/${chat.id}")
-                        }
-                    )
+                    ChatListItem(chat = chat) {
+                        navController.navigate("chat/${chat.id}")
+                    }
                 }
             }
         }
@@ -98,10 +106,10 @@ fun ChatListItem(
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-
+        // Аватарка
         Box(
             modifier = Modifier
-                .size(48.dp)
+                .size(56.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
             contentAlignment = Alignment.Center
@@ -109,6 +117,7 @@ fun ChatListItem(
             Text(
                 text = chat.title.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
                 color = MaterialTheme.colorScheme.primary,
+                fontSize = 24.sp,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -119,7 +128,7 @@ fun ChatListItem(
             Text(
                 text = chat.title,
                 color = Color.White,
-                fontSize = 16.sp,
+                fontSize = 17.sp,
                 fontWeight = FontWeight.Medium
             )
 
@@ -131,12 +140,14 @@ fun ChatListItem(
             )
         }
 
-        Text(
-            text = chat.time,
-            color = Color.Gray,
-            fontSize = 12.sp
-        )
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = chat.time,
+                color = Color.Gray,
+                fontSize = 12.sp
+            )
+        }
     }
 
-    Divider(color = Color.DarkGray.copy(alpha = 0.3f))
+    HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
 }
