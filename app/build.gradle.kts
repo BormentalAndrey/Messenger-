@@ -21,7 +21,7 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.17" // явная версия Compose Compiler
+        kotlinCompilerExtensionVersion = "1.5.17"  // Актуальная для Kotlin < 2.0
     }
 
     kotlinOptions {
@@ -47,11 +47,11 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.7")
 
     // ---------- Coil ----------
-    implementation("io.coil-kt:coil-compose:2.8.0")
+    implementation("io.coil-kt.coil3:coil-compose:3.3.0")  // Актуальная Coil 3
 
     // ---------- Firebase ----------
     implementation(platform("com.google.firebase:firebase-bom:34.6.0"))
-    implementation("com.google.firebase:firebase-auth-ktx")
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-storage-ktx")
+    implementation("com.google.firebase:firebase-auth")             // Без -ktx
+    implementation("com.google.firebase:firebase-firestore")
+    implementation("com.google.firebase:firebase-storage")
 }
