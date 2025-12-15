@@ -10,6 +10,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.google.firebase.auth.ktx.auth
+import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 
 @Composable
@@ -24,6 +25,7 @@ fun EmailAuthScreen(
     var error by remember { mutableStateOf<String?>(null) }
 
     val auth = Firebase.auth
+    val db = Firebase.firestore
 
     Column(
         modifier = Modifier
@@ -32,6 +34,7 @@ fun EmailAuthScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+
         Text(
             text = if (isLogin) "Вход в аккаунт" else "Регистрация",
             style = MaterialTheme.typography.headlineMedium,
@@ -61,19 +64,21 @@ fun EmailAuthScreen(
 
         if (isLogin) {
             Spacer(Modifier.height(8.dp))
-            TextButton(onClick = {
-                if (email.isBlank()) {
-                    error = "Введите email для восстановления"
-                    return@TextButton
+            TextButton(
+                onClick = {
+                    if (email.isBlank()) {
+                        error = "Введите email для восстановления"
+                        return@TextButton
+                    }
+                    auth.sendPasswordResetEmail(email)
+                        .addOnSuccessListener {
+                            error = "Ссылка для восстановления отправлена на $email"
+                        }
+                        .addOnFailureListener { e ->
+                            error = "Ошибка: ${e.message}"
+                        }
                 }
-                auth.sendPasswordResetEmail(email)
-                    .addOnSuccessListener {
-                        error = "Ссылка для восстановления отправлена на $email"
-                    }
-                    .addOnFailureListener { e ->
-                        error = "Ошибка: ${e.message}"
-                    }
-            }) {
+            ) {
                 Text("Забыли пароль?")
             }
         }
@@ -81,6 +86,8 @@ fun EmailAuthScreen(
         Spacer(Modifier.height(24.dp))
 
         Button(
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth(),
             onClick = {
                 if (email.isBlank() || password.isBlank()) {
                     error = "Заполните все поля"
@@ -98,27 +105,36 @@ fun EmailAuthScreen(
                 loading = true
                 error = null
 
+                val onSuccess = {
+                    val uid = auth.currentUser?.uid ?: return@let
+                    db.collection("users")
+                        .document(uid)
+                        .set(mapOf("hasEmailAuth" to true), com.google.firebase.firestore.SetOptions.merge())
+                        .addOnSuccessListener { onAuthSuccess() }
+                }
+
                 if (isLogin) {
                     auth.signInWithEmailAndPassword(email, password)
-                        .addOnSuccessListener { onAuthSuccess() }
+                        .addOnSuccessListener { onSuccess() }
                         .addOnFailureListener { e ->
                             loading = false
                             error = e.message ?: "Ошибка входа"
                         }
                 } else {
                     auth.createUserWithEmailAndPassword(email, password)
-                        .addOnSuccessListener { onAuthSuccess() }
+                        .addOnSuccessListener { onSuccess() }
                         .addOnFailureListener { e ->
                             loading = false
                             error = e.message ?: "Ошибка регистрации"
                         }
                 }
-            },
-            enabled = !loading,
-            modifier = Modifier.fillMaxWidth()
+            }
         ) {
             if (loading) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.Black)
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = Color.Black
+                )
             } else {
                 Text(if (isLogin) "Войти" else "Зарегистрироваться")
             }
@@ -127,14 +143,20 @@ fun EmailAuthScreen(
         Spacer(Modifier.height(16.dp))
 
         TextButton(onClick = { isLogin = !isLogin }) {
-            Text(if (isLogin) "Нет аккаунта? Зарегистрироваться" else "Уже есть аккаунт? Войти")
+            Text(
+                if (isLogin)
+                    "Нет аккаунта? Зарегистрироваться"
+                else
+                    "Уже есть аккаунт? Войти"
+            )
         }
 
         error?.let {
             Spacer(Modifier.height(12.dp))
             Text(
                 text = it,
-                color = if (it.contains("отправлена")) Color.Green else MaterialTheme.colorScheme.error
+                color = if (it.contains("отправлена")) Color.Green
+                else MaterialTheme.colorScheme.error
             )
         }
     }
