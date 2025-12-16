@@ -18,28 +18,36 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
-import com.kakdela.p2p.ui.ChatScreen
-import com.kakdela.p2p.ui.ChatsListScreen
-import com.kakdela.p2p.ui.ContactsScreen
-import com.kakdela.p2p.ui.EntertainmentScreen
-import com.kakdela.p2p.ui.SettingsScreen
+import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.EmailAuthScreen
+import com.kakdela.p2p.ui.auth.PhoneAuthScreen
 import com.kakdela.p2p.ui.auth.RegistrationChoiceScreen
+
+object Routes {
+    const val CHOICE = "choice"
+    const val AUTH_EMAIL = "auth_email"
+    const val AUTH_PHONE = "auth_phone"
+    const val CHATS = "chats"
+    const val CONTACTS = "contacts"
+    const val ENTERTAINMENT = "entertainment"
+    const val SETTINGS = "settings"
+    const val CHAT = "chat/{chatId}"
+}
 
 @Composable
 fun NavGraph(navController: NavHostController) {
 
     val currentUser = Firebase.auth.currentUser
-    val startDestination = if (currentUser == null) "choice" else "chats"
+    val startDestination = if (currentUser == null) Routes.CHOICE else Routes.CHATS
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
     val showBottomBar = currentRoute in listOf(
-        "chats",
-        "contacts",
-        "entertainment",
-        "settings"
+        Routes.CHATS,
+        Routes.CONTACTS,
+        Routes.ENTERTAINMENT,
+        Routes.SETTINGS
     )
 
     Scaffold(
@@ -48,57 +56,135 @@ fun NavGraph(navController: NavHostController) {
                 NavigationBar(containerColor = Color.Black) {
 
                     NavigationBarItem(
-                        selected = currentRoute == "chats",
-                        onClick = { navController.navigate("chats") { launchSingleTop = true } },
-                        icon = { Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = "Чаты") },
+                        selected = currentRoute == Routes.CHATS,
+                        onClick = {
+                            navController.navigate(Routes.CHATS) {
+                                launchSingleTop = true
+                            }
+                        },
+                        icon = {
+                            Icon(
+                                Icons.Outlined.ChatBubbleOutline,
+                                contentDescription = "Чаты"
+                            )
+                        },
                         label = { Text("Чаты") }
                     )
 
                     NavigationBarItem(
-                        selected = currentRoute == "contacts",
-                        onClick = { navController.navigate("contacts") { launchSingleTop = true } },
-                        icon = { Icon(Icons.Filled.Person, contentDescription = "Контакты") },
+                        selected = currentRoute == Routes.CONTACTS,
+                        onClick = {
+                            navController.navigate(Routes.CONTACTS) {
+                                launchSingleTop = true
+                            }
+                        },
+                        icon = {
+                            Icon(
+                                Icons.Filled.Person,
+                                contentDescription = "Контакты"
+                            )
+                        },
                         label = { Text("Контакты") }
                     )
 
                     NavigationBarItem(
-                        selected = currentRoute == "entertainment",
-                        onClick = { navController.navigate("entertainment") { launchSingleTop = true } },
-                        icon = { Icon(Icons.Filled.PlayArrow, contentDescription = "Развлечения") },
+                        selected = currentRoute == Routes.ENTERTAINMENT,
+                        onClick = {
+                            navController.navigate(Routes.ENTERTAINMENT) {
+                                launchSingleTop = true
+                            }
+                        },
+                        icon = {
+                            Icon(
+                                Icons.Filled.PlayArrow,
+                                contentDescription = "Развлечения"
+                            )
+                        },
                         label = { Text("Развлечения") }
                     )
 
                     NavigationBarItem(
-                        selected = currentRoute == "settings",
-                        onClick = { navController.navigate("settings") { launchSingleTop = true } },
-                        icon = { Text("=", fontSize = 24.sp, fontWeight = FontWeight.Bold) },
+                        selected = currentRoute == Routes.SETTINGS,
+                        onClick = {
+                            navController.navigate(Routes.SETTINGS) {
+                                launchSingleTop = true
+                            }
+                        },
+                        icon = {
+                            Text("=", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        },
                         label = { Text("Настройки") }
                     )
                 }
             }
         }
     ) { innerPadding ->
+
         NavHost(
             navController = navController,
             startDestination = startDestination,
             modifier = Modifier.padding(innerPadding)
         ) {
 
-            composable("choice") { RegistrationChoiceScreen(navController) }
-
-            composable("auth_email") {
-                EmailAuthScreen(navController) { navController.navigate("chats") { popUpTo("choice") { inclusive = true } } }
+            composable(Routes.CHOICE) {
+                RegistrationChoiceScreen(
+                    onEmail = {
+                        navController.navigate(Routes.AUTH_EMAIL)
+                    },
+                    onPhone = {
+                        navController.navigate(Routes.AUTH_PHONE)
+                    }
+                )
             }
 
-            composable("chats") { ChatsListScreen(navController) }
-            composable("contacts") { ContactsScreen(navController) }
-            composable("entertainment") { EntertainmentScreen(navController) }
-            composable("settings") { SettingsScreen(navController) }
+            composable(Routes.AUTH_EMAIL) {
+                EmailAuthScreen(
+                    navController = navController,
+                    onAuthSuccess = {
+                        navController.navigate(Routes.CHATS) {
+                            popUpTo(Routes.CHOICE) { inclusive = true }
+                        }
+                    }
+                )
+            }
 
-            composable("chat/{chatId}") { backStackEntry ->
-                val chatId = backStackEntry.arguments?.getString("chatId") ?: "global"
-                val currentUserId = Firebase.auth.currentUser?.uid ?: ""
-                ChatScreen(chatId = chatId, currentUserId = currentUserId)
+            composable(Routes.AUTH_PHONE) {
+                PhoneAuthScreen(
+                    navController = navController,
+                    onSuccess = {
+                        navController.navigate(Routes.CHATS) {
+                            popUpTo(Routes.CHOICE) { inclusive = true }
+                        }
+                    }
+                )
+            }
+
+            composable(Routes.CHATS) {
+                ChatsListScreen(navController)
+            }
+
+            composable(Routes.CONTACTS) {
+                ContactsScreen(navController)
+            }
+
+            composable(Routes.ENTERTAINMENT) {
+                EntertainmentScreen(navController)
+            }
+
+            composable(Routes.SETTINGS) {
+                SettingsScreen(navController)
+            }
+
+            composable(Routes.CHAT) { backStackEntry ->
+                val chatId =
+                    backStackEntry.arguments?.getString("chatId") ?: "global"
+                val currentUserId =
+                    Firebase.auth.currentUser?.uid ?: ""
+
+                ChatScreen(
+                    chatId = chatId,
+                    currentUserId = currentUserId
+                )
             }
         }
     }
