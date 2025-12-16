@@ -27,28 +27,20 @@ fun PhoneAuthScreen(
     var inputCode by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
-    // 🔐 Launcher для разрешения SMS
+    // Разрешение SEND_SMS
     val smsPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
+        ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (!granted) {
             error = "Разрешите отправку SMS для подтверждения номера"
         }
     }
 
-    // Проверка разрешения
-    fun ensureSmsPermission(): Boolean {
-        val granted = ContextCompat.checkSelfPermission(
+    fun hasSmsPermission(): Boolean =
+        ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.SEND_SMS
         ) == PackageManager.PERMISSION_GRANTED
-
-        if (!granted) {
-            smsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
-        }
-
-        return granted
-    }
 
     Column(
         modifier = Modifier
@@ -78,7 +70,8 @@ fun PhoneAuthScreen(
                     return@Button
                 }
 
-                if (!ensureSmsPermission()) {
+                if (!hasSmsPermission()) {
+                    smsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
                     return@Button
                 }
 
@@ -91,7 +84,6 @@ fun PhoneAuthScreen(
         }
 
         if (generatedCode != null) {
-
             Spacer(Modifier.height(16.dp))
 
             OutlinedTextField(
