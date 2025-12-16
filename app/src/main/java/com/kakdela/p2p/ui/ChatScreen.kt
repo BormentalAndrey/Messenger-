@@ -37,6 +37,7 @@ import com.google.firebase.ktx.Firebase
 import com.google.firebase.storage.ktx.storage
 import com.kakdela.p2p.R
 import com.kakdela.p2p.data.Message
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
@@ -291,7 +292,7 @@ fun ChatScreen(
     }
 }
 
-// Функция загрузки файла и отправки сообщения со ссылкой
+// Исправленная функция загрузки файла
 private fun uploadAndSendFile(
     uri: Uri,
     chatId: String,
@@ -310,7 +311,7 @@ private fun uploadAndSendFile(
             viewModel.send(
                 chatId,
                 Message(
-                    text = "", // можно добавить "Фото" или оставить пустым
+                    text = "",
                     senderId = currentUserId,
                     fileUrl = downloadUrl,
                     isDelivered = false,
@@ -319,7 +320,6 @@ private fun uploadAndSendFile(
             )
         } catch (e: Exception) {
             e.printStackTrace()
-            // Можно добавить Snackbar с ошибкой
         }
     }
 }
