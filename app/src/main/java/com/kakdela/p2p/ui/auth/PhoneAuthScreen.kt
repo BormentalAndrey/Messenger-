@@ -1,10 +1,6 @@
 package com.kakdela.p2p.ui.auth
 
-import android.Manifest
-import android.content.Context
 import android.content.IntentFilter
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,27 +26,6 @@ fun PhoneAuthScreen(
     var inputCode by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
-    // ===== Runtime permission =====
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        val granted = permissions[Manifest.permission.SEND_SMS] == true
-        if (!granted) {
-            error = "Разрешение на SMS обязательно"
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        permissionLauncher.launch(
-            arrayOf(
-                Manifest.permission.SEND_SMS,
-                Manifest.permission.RECEIVE_SMS,
-                Manifest.permission.READ_SMS
-            )
-        )
-    }
-
-    // ===== SMS Receiver =====
     val receiver = remember {
         SmsReceiver { code ->
             inputCode = code
@@ -60,15 +35,13 @@ fun PhoneAuthScreen(
     DisposableEffect(Unit) {
         context.registerReceiver(
             receiver,
-            IntentFilter("android.provider.Telephony.SMS_RECEIVED"),
-            Context.RECEIVER_EXPORTED
+            IntentFilter("android.provider.Telephony.SMS_RECEIVED")
         )
         onDispose {
             context.unregisterReceiver(receiver)
         }
     }
 
-    // ===== UI =====
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -88,23 +61,22 @@ fun PhoneAuthScreen(
         Spacer(Modifier.height(16.dp))
 
         Button(
+            modifier = Modifier.fillMaxWidth(),
             onClick = {
-                if (phone.length < 10) {
-                    error = "Введите корректный номер"
+                if (phone.isBlank()) {
+                    error = "Введите номер телефона"
                     return@Button
                 }
 
                 val code = SmsCodeManager.generateCode()
                 generatedCode = code
                 SmsCodeManager.sendCode(phone, code)
-            },
-            modifier = Modifier.fillMaxWidth()
+            }
         ) {
-            Text("Отправить код")
+            Text("Отправить SMS с кодом")
         }
 
         generatedCode?.let {
-
             Spacer(Modifier.height(16.dp))
 
             OutlinedTextField(
@@ -118,22 +90,22 @@ fun PhoneAuthScreen(
             Spacer(Modifier.height(16.dp))
 
             Button(
+                modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     if (inputCode == generatedCode) {
                         onSuccess()
                     } else {
                         error = "Неверный код"
                     }
-                },
-                modifier = Modifier.fillMaxWidth()
+                }
             ) {
                 Text("Подтвердить")
             }
         }
 
         error?.let {
-            Spacer(Modifier.height(8.dp))
-            Text(it, color = MaterialTheme.colorScheme.error)
+            Spacer(Modifier.height(12.dp))
+            Text(text = it, color = MaterialTheme.colorScheme.error)
         }
     }
 }
