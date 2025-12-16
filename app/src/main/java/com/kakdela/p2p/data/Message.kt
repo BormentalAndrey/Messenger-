@@ -5,6 +5,6 @@ data class Message(
     val senderId: String = "",
     val timestamp: Long = System.currentTimeMillis(),
     val isDelivered: Boolean = false,
-    val isRead: Boolean = false
-    val fileUrl: String? = null
+    val isRead: Boolean = false,
+    val fileUrl: String? = null  // <-- запятая перед этим полем обязательна
 )
