@@ -77,7 +77,7 @@ fun PhoneAuthScreen(
 
                 val code = SmsCodeManager.generateCode()
                 generatedCode = code
-                SmsCodeManager.sendCode(phone, code)
+                SmsCodeManager.sendCode(context, phone, code)
             }
         ) {
             Text("Отправить код")
