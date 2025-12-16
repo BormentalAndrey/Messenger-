@@ -20,6 +20,7 @@ import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
 
 object Routes {
+    const val SPLASH = "splash"
     const val CHOICE = "choice"
     const val AUTH_EMAIL = "auth_email"
     const val AUTH_PHONE = "auth_phone"
@@ -33,21 +34,6 @@ object Routes {
 
 @Composable
 fun NavGraph(navController: NavHostController) {
-
-    val currentUser = Firebase.auth.currentUser
-    val isLoggedIn = currentUser != null
-
-    /** ✅ ЕДИНСТВЕННОЕ место, где происходит переход после логина */
-    LaunchedEffect(isLoggedIn) {
-        if (isLoggedIn) {
-            navController.navigate(Routes.CHATS) {
-                popUpTo(Routes.CHOICE) { inclusive = true }
-                launchSingleTop = true
-            }
-        }
-    }
-
-    val startDestination = if (isLoggedIn) Routes.CHATS else Routes.CHOICE
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -67,36 +53,28 @@ fun NavGraph(navController: NavHostController) {
 
                     NavigationBarItem(
                         selected = currentRoute == Routes.CHATS,
-                        onClick = {
-                            navController.navigate(Routes.CHATS) { launchSingleTop = true }
-                        },
+                        onClick = { navController.navigate(Routes.CHATS) },
                         icon = { Icon(Icons.Outlined.ChatBubbleOutline, null) },
                         label = { Text("Чаты") }
                     )
 
                     NavigationBarItem(
                         selected = currentRoute == Routes.DEALS,
-                        onClick = {
-                            navController.navigate(Routes.DEALS) { launchSingleTop = true }
-                        },
+                        onClick = { navController.navigate(Routes.DEALS) },
                         icon = { Icon(Icons.Filled.Checklist, null) },
                         label = { Text("Дела") }
                     )
 
                     NavigationBarItem(
                         selected = currentRoute == Routes.ENTERTAINMENT,
-                        onClick = {
-                            navController.navigate(Routes.ENTERTAINMENT) { launchSingleTop = true }
-                        },
+                        onClick = { navController.navigate(Routes.ENTERTAINMENT) },
                         icon = { Icon(Icons.Outlined.PlayCircleOutline, null) },
                         label = { Text("Развлечения") }
                     )
 
                     NavigationBarItem(
                         selected = currentRoute == Routes.SETTINGS,
-                        onClick = {
-                            navController.navigate(Routes.SETTINGS) { launchSingleTop = true }
-                        },
+                        onClick = { navController.navigate(Routes.SETTINGS) },
                         icon = { Icon(Icons.Filled.Settings, null) },
                         label = { Text("Настройки") }
                     )
@@ -107,9 +85,13 @@ fun NavGraph(navController: NavHostController) {
 
         NavHost(
             navController = navController,
-            startDestination = startDestination,
+            startDestination = Routes.SPLASH,
             modifier = Modifier.padding(padding)
         ) {
+
+            composable(Routes.SPLASH) {
+                SplashScreen(navController)
+            }
 
             composable(Routes.CHOICE) {
                 RegistrationChoiceScreen(
@@ -118,37 +100,35 @@ fun NavGraph(navController: NavHostController) {
                 )
             }
 
-            /** ❌ БЕЗ navigate() внутри */
             composable(Routes.AUTH_EMAIL) {
-                EmailAuthScreen()
+                EmailAuthScreen(
+                    navController = navController,
+                    onAuthSuccess = {
+                        navController.navigate(Routes.CHATS) {
+                            popUpTo(Routes.SPLASH) { inclusive = true }
+                        }
+                    }
+                )
             }
 
-            /** ❌ БЕЗ navigate() внутри */
             composable(Routes.AUTH_PHONE) {
-                PhoneAuthScreen()
+                PhoneAuthScreen(
+                    onSuccess = {
+                        navController.navigate(Routes.CHATS) {
+                            popUpTo(Routes.SPLASH) { inclusive = true }
+                        }
+                    }
+                )
             }
 
-            composable(Routes.CHATS) {
-                ChatsListScreen(navController)
-            }
-
-            composable(Routes.CONTACTS) {
-                ContactsScreen(navController)
-            }
-
-            composable(Routes.ENTERTAINMENT) {
-                EntertainmentScreen(navController)
-            }
-
-            composable(Routes.SETTINGS) {
-                SettingsScreen(navController)
-            }
+            composable(Routes.CHATS) { ChatsListScreen(navController) }
+            composable(Routes.CONTACTS) { ContactsScreen(navController) }
+            composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
+            composable(Routes.SETTINGS) { SettingsScreen(navController) }
 
             composable(Routes.DEALS) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black),
+                    Modifier.fillMaxSize().background(Color.Black),
                     contentAlignment = Alignment.Center
                 ) {
                     Text("Экран «Дела» в разработке", color = Color.White)
