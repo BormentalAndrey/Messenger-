@@ -1,7 +1,10 @@
 package com.kakdela.p2p.ui.auth
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
@@ -24,17 +27,20 @@ fun PhoneAuthScreen(
     var generatedCode by remember { mutableStateOf<String?>(null) }
     var inputCode by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    var permissionDenied by remember { mutableStateOf(false) }
 
-    // Запрос разрешения SEND_SMS
+    // 🔐 Лаунчер разрешения SEND_SMS
     val smsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
+        permissionDenied = !granted
         if (!granted) {
-            error = "Разрешите отправку SMS"
+            error = "Без разрешения SMS регистрация невозможна"
         }
     }
 
-    fun ensureSmsPermission(): Boolean {
+    // 🔁 Запрашиваем разрешение СРАЗУ при входе на экран
+    LaunchedEffect(Unit) {
         val granted = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.SEND_SMS
@@ -43,8 +49,6 @@ fun PhoneAuthScreen(
         if (!granted) {
             smsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
         }
-
-        return granted
     }
 
     Column(
@@ -54,6 +58,10 @@ fun PhoneAuthScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+
+        Text("Подтверждение номера", style = MaterialTheme.typography.headlineMedium)
+
+        Spacer(Modifier.height(24.dp))
 
         OutlinedTextField(
             value = phone,
@@ -74,12 +82,19 @@ fun PhoneAuthScreen(
                     return@Button
                 }
 
-                if (!ensureSmsPermission()) return@Button
+                val granted = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.SEND_SMS
+                ) == PackageManager.PERMISSION_GRANTED
+
+                if (!granted) {
+                    permissionDenied = true
+                    return@Button
+                }
 
                 val code = SmsCodeManager.generateCode()
                 generatedCode = code
 
-                // ✅ ВАЖНО: правильный вызов
                 SmsCodeManager.sendCode(
                     context = context,
                     phone = phone,
@@ -114,6 +129,24 @@ fun PhoneAuthScreen(
                 }
             ) {
                 Text("Подтвердить")
+            }
+        }
+
+        // ❗ Если пользователь запретил SMS — кнопка перехода в настройки
+        if (permissionDenied) {
+            Spacer(Modifier.height(16.dp))
+
+            Button(
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                onClick = {
+                    val intent = Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.fromParts("package", context.packageName, null)
+                    )
+                    context.startActivity(intent)
+                }
+            ) {
+                Text("Открыть настройки и разрешить SMS")
             }
         }
 
