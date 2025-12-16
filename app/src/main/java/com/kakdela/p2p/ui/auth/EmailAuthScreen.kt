@@ -63,27 +63,6 @@ fun EmailAuthScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        if (isLogin) {
-            Spacer(Modifier.height(8.dp))
-            TextButton(
-                onClick = {
-                    if (email.isBlank()) {
-                        error = "Введите email для восстановления"
-                        return@TextButton
-                    }
-                    auth.sendPasswordResetEmail(email)
-                        .addOnSuccessListener {
-                            error = "Ссылка для восстановления отправлена на $email"
-                        }
-                        .addOnFailureListener { e ->
-                            error = "Ошибка: ${e.message}"
-                        }
-                }
-            ) {
-                Text("Забыли пароль?")
-            }
-        }
-
         Spacer(Modifier.height(24.dp))
 
         Button(
@@ -94,24 +73,21 @@ fun EmailAuthScreen(
                     error = "Заполните все поля"
                     return@Button
                 }
+
                 if (password.length < 6) {
                     error = "Пароль должен быть не менее 6 символов"
-                    return@Button
-                }
-                if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
-                    error = "Неверный формат email"
                     return@Button
                 }
 
                 loading = true
                 error = null
 
-                val saveEmailAuthAndFinish = {
+                val finishAuth = {
                     val uid = auth.currentUser?.uid
                     if (uid == null) {
                         loading = false
                         error = "Ошибка авторизации"
-                        return@Button
+                        return@finishAuth
                     }
 
                     db.collection("users")
@@ -123,21 +99,25 @@ fun EmailAuthScreen(
                         .addOnSuccessListener {
                             onAuthSuccess()
                         }
+                        .addOnFailureListener {
+                            loading = false
+                            error = "Ошибка сохранения профиля"
+                        }
                 }
 
                 if (isLogin) {
                     auth.signInWithEmailAndPassword(email, password)
-                        .addOnSuccessListener { saveEmailAuthAndFinish() }
-                        .addOnFailureListener { e ->
+                        .addOnSuccessListener { finishAuth() }
+                        .addOnFailureListener {
                             loading = false
-                            error = e.message ?: "Ошибка входа"
+                            error = it.message
                         }
                 } else {
                     auth.createUserWithEmailAndPassword(email, password)
-                        .addOnSuccessListener { saveEmailAuthAndFinish() }
-                        .addOnFailureListener { e ->
+                        .addOnSuccessListener { finishAuth() }
+                        .addOnFailureListener {
                             loading = false
-                            error = e.message ?: "Ошибка регистрации"
+                            error = it.message
                         }
                 }
             }
@@ -150,28 +130,6 @@ fun EmailAuthScreen(
             } else {
                 Text(if (isLogin) "Войти" else "Зарегистрироваться")
             }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        TextButton(onClick = { isLogin = !isLogin }) {
-            Text(
-                if (isLogin)
-                    "Нет аккаунта? Зарегистрироваться"
-                else
-                    "Уже есть аккаунт? Войти"
-            )
-        }
-
-        error?.let {
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = it,
-                color = if (it.contains("отправлена"))
-                    Color.Green
-                else
-                    MaterialTheme.colorScheme.error
-            )
         }
     }
 }
