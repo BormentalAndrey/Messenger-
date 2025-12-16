@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +21,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
+import com.kakdela.p2p.ui.navigation.Routes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,14 +54,18 @@ fun ChatsListScreen(navController: NavHostController) {
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
-                    // Здесь можно открыть экран создания нового чата
+                    navController.navigate(Routes.CONTACTS) // Открываем экран поиска/добавления контактов
                 },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = Color.Black
             ) {
-                Text("+", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Добавить контакт / Новый чат"
+                )
             }
-        }
+        },
+        floatingActionButtonPosition = FabPosition.End // Кнопка справа внизу — стандартно
     ) { padding ->
         LazyColumn(
             modifier = Modifier
