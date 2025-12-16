@@ -21,45 +21,61 @@ import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.navigation.NavHostController
 
-// Модель элемента "Дела"
+// Тип элемента: веб-ссылка или калькулятор
+enum class DealType {
+    WEB, CALCULATOR
+}
+
 data class DealItem(
     val id: String,
     val title: String,
     val description: String,
-    val url: String,
+    val type: DealType,
+    val url: String? = null,
     val iconLetter: String = title.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
 )
 
-// Список полезных сервисов для вкладки "Дела"
+// Список для "Дела" — теперь с калькулятором
 private val dealItems = listOf(
+    DealItem(
+        id = "calculator",
+        title = "Калькулятор",
+        description = "Быстрые расчёты: скидки, бюджет, конвертер",
+        type = DealType.CALCULATOR
+    ),
     DealItem(
         id = "gosuslugi",
         title = "Госуслуги",
         description = "Официальный портал государственных услуг РФ",
+        type = DealType.WEB,
         url = "https://www.gosuslugi.ru"
     ),
     DealItem(
         id = "ozon",
         title = "Ozon",
         description = "Интернет-магазин: товары, доставка, акции",
+        type = DealType.WEB,
         url = "https://www.ozon.ru"
     ),
     DealItem(
         id = "wildberries",
         title = "Wildberries",
         description = "Маркетплейс одежды, электроники и товаров для дома",
+        type = DealType.WEB,
         url = "https://www.wildberries.ru"
     ),
     DealItem(
         id = "drom",
         title = "Drom.ru",
         description = "Автомобили новые и с пробегом, запчасти, отзывы",
+        type = DealType.WEB,
         url = "https://www.drom.ru"
     ),
     DealItem(
         id = "rbc",
         title = "РБК",
         description = "Новости экономики, бизнеса, финансов и политики",
+        type = DealType.WEB,
         url = "https://www.rbc.ru"
     )
 )
@@ -95,11 +111,18 @@ fun DealsScreen(navController: NavHostController) {
                 DealListItem(
                     item = item,
                     onClick = {
-                        val customTabsIntent = CustomTabsIntent.Builder()
-                            .setToolbarColor(MaterialTheme.colorScheme.primary.toArgb())
-                            .setShowTitle(true)
-                            .build()
-                        customTabsIntent.launchUrl(context, item.url.toUri())
+                        when (item.type) {
+                            DealType.CALCULATOR -> {
+                                navController.navigate("calculator")
+                            }
+                            DealType.WEB -> {
+                                val customTabsIntent = CustomTabsIntent.Builder()
+                                    .setToolbarColor(MaterialTheme.colorScheme.primary.toArgb())
+                                    .setShowTitle(true)
+                                    .build()
+                                customTabsIntent.launchUrl(context, item.url!!.toUri())
+                            }
+                        }
                     }
                 )
             }
