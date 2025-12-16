@@ -7,8 +7,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.kakdela.p2p.auth.SmsCodeManager
@@ -50,11 +48,17 @@ fun PhoneAuthScreen(
         verticalArrangement = Arrangement.Center
     ) {
 
+        Text(
+            text = "Вход по номеру телефона",
+            style = MaterialTheme.typography.headlineMedium
+        )
+
+        Spacer(Modifier.height(24.dp))
+
         OutlinedTextField(
             value = phone,
             onValueChange = { phone = it },
             label = { Text("Номер телефона") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -83,7 +87,6 @@ fun PhoneAuthScreen(
                 value = inputCode,
                 onValueChange = { inputCode = it },
                 label = { Text("Код из SMS") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth()
             )
 
