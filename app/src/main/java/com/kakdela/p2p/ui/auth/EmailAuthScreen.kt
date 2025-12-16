@@ -10,6 +10,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import com.google.firebase.auth.ktx.auth
+import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 
@@ -105,24 +106,35 @@ fun EmailAuthScreen(
                 loading = true
                 error = null
 
-                val onSuccess = {
-                    val uid = auth.currentUser?.uid ?: return@let
+                val saveEmailAuthAndFinish = {
+                    val uid = auth.currentUser?.uid
+                    if (uid == null) {
+                        loading = false
+                        error = "Ошибка авторизации"
+                        return@Button
+                    }
+
                     db.collection("users")
                         .document(uid)
-                        .set(mapOf("hasEmailAuth" to true), com.google.firebase.firestore.SetOptions.merge())
-                        .addOnSuccessListener { onAuthSuccess() }
+                        .set(
+                            mapOf("hasEmailAuth" to true),
+                            SetOptions.merge()
+                        )
+                        .addOnSuccessListener {
+                            onAuthSuccess()
+                        }
                 }
 
                 if (isLogin) {
                     auth.signInWithEmailAndPassword(email, password)
-                        .addOnSuccessListener { onSuccess() }
+                        .addOnSuccessListener { saveEmailAuthAndFinish() }
                         .addOnFailureListener { e ->
                             loading = false
                             error = e.message ?: "Ошибка входа"
                         }
                 } else {
                     auth.createUserWithEmailAndPassword(email, password)
-                        .addOnSuccessListener { onSuccess() }
+                        .addOnSuccessListener { saveEmailAuthAndFinish() }
                         .addOnFailureListener { e ->
                             loading = false
                             error = e.message ?: "Ошибка регистрации"
@@ -155,8 +167,10 @@ fun EmailAuthScreen(
             Spacer(Modifier.height(12.dp))
             Text(
                 text = it,
-                color = if (it.contains("отправлена")) Color.Green
-                else MaterialTheme.colorScheme.error
+                color = if (it.contains("отправлена"))
+                    Color.Green
+                else
+                    MaterialTheme.colorScheme.error
             )
         }
     }
