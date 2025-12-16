@@ -20,30 +20,34 @@ fun PhoneAuthScreen(
 ) {
     val context = LocalContext.current
 
+    var permissionGranted by remember { mutableStateOf(false) }
     var phone by remember { mutableStateOf("") }
     var generatedCode by remember { mutableStateOf<String?>(null) }
     var inputCode by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
+    // 🔐 Запрос разрешения
     val smsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
+        permissionGranted = granted
         if (!granted) {
-            error = "Разрешите отправку SMS для подтверждения номера"
+            error = "Без разрешения на SMS вход по номеру невозможен"
         }
     }
 
-    fun ensureSmsPermission(): Boolean {
+    // 🔁 Запрашиваем разрешение СРАЗУ при входе на экран
+    LaunchedEffect(Unit) {
         val granted = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.SEND_SMS
         ) == PackageManager.PERMISSION_GRANTED
 
-        if (!granted) {
+        if (granted) {
+            permissionGranted = true
+        } else {
             smsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
         }
-
-        return granted
     }
 
     Column(
@@ -53,6 +57,21 @@ fun PhoneAuthScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+
+        Text(
+            text = "Вход по номеру телефона",
+            style = MaterialTheme.typography.headlineSmall
+        )
+
+        Spacer(Modifier.height(24.dp))
+
+        if (!permissionGranted) {
+            Text(
+                text = error ?: "Требуется разрешение на отправку SMS",
+                color = MaterialTheme.colorScheme.error
+            )
+            return@Column
+        }
 
         OutlinedTextField(
             value = phone,
@@ -73,11 +92,9 @@ fun PhoneAuthScreen(
                     return@Button
                 }
 
-                if (!ensureSmsPermission()) return@Button
-
                 val code = SmsCodeManager.generateCode()
                 generatedCode = code
-                SmsCodeManager.sendCode(context, phone, code)
+                SmsCodeManager.sendCode(phone, code)
             }
         ) {
             Text("Отправить код")
@@ -85,7 +102,7 @@ fun PhoneAuthScreen(
 
         if (generatedCode != null) {
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(24.dp))
 
             OutlinedTextField(
                 value = inputCode,
@@ -111,7 +128,7 @@ fun PhoneAuthScreen(
         }
 
         error?.let {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
             Text(it, color = MaterialTheme.colorScheme.error)
         }
     }
