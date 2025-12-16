@@ -34,78 +34,130 @@ fun EmailAuthScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+
         Text(
-            text = if (isLogin) "Вход" else "Регистрация",
-            style = MaterialTheme.typography.headlineMedium
+            text = if (isLogin) "Вход в аккаунт" else "Регистрация",
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.primary
         )
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(32.dp))
 
         OutlinedTextField(
             value = email,
-            onValueChange = { email = it },
+            onValueChange = { email = it.trim() },
             label = { Text("Email") },
+            enabled = !loading,
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
 
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
             label = { Text("Пароль") },
             visualTransformation = PasswordVisualTransformation(),
+            enabled = !loading,
             modifier = Modifier.fillMaxWidth()
         )
+
+        if (isLogin) {
+            Spacer(Modifier.height(8.dp))
+            TextButton(
+                onClick = {
+                    if (email.isBlank()) {
+                        error = "Введите email для восстановления"
+                        return@TextButton
+                    }
+                    auth.sendPasswordResetEmail(email)
+                        .addOnSuccessListener {
+                            error = "Ссылка для восстановления отправлена на $email"
+                        }
+                        .addOnFailureListener { e ->
+                            error = "Ошибка: ${e.message}"
+                        }
+                }
+            ) {
+                Text("Забыли пароль?")
+            }
+        }
 
         Spacer(Modifier.height(24.dp))
 
         Button(
-            modifier = Modifier.fillMaxWidth(),
             enabled = !loading,
+            modifier = Modifier.fillMaxWidth(),
             onClick = {
+                if (email.isBlank() || password.isBlank()) {
+                    error = "Заполните все поля"
+                    return@Button
+                }
+                if (password.length < 6) {
+                    error = "Пароль должен быть не менее 6 символов"
+                    return@Button
+                }
+                if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+                    error = "Неверный формат email"
+                    return@Button
+                }
+
                 loading = true
                 error = null
 
                 val onSuccess = {
-                    val uid = auth.currentUser?.uid ?: return@Button
+                    val uid = auth.currentUser?.uid ?: return@let
                     db.collection("users")
                         .document(uid)
-                        .set(mapOf("hasEmailAuth" to true))
+                        .set(mapOf("hasEmailAuth" to true), com.google.firebase.firestore.SetOptions.merge())
                         .addOnSuccessListener { onAuthSuccess() }
-                        .addOnFailureListener {
-                            loading = false
-                            error = "Ошибка сохранения профиля"
-                        }
                 }
 
                 if (isLogin) {
                     auth.signInWithEmailAndPassword(email, password)
                         .addOnSuccessListener { onSuccess() }
-                        .addOnFailureListener {
+                        .addOnFailureListener { e ->
                             loading = false
-                            error = it.message
+                            error = e.message ?: "Ошибка входа"
                         }
                 } else {
                     auth.createUserWithEmailAndPassword(email, password)
                         .addOnSuccessListener { onSuccess() }
-                        .addOnFailureListener {
+                        .addOnFailureListener { e ->
                             loading = false
-                            error = it.message
+                            error = e.message ?: "Ошибка регистрации"
                         }
                 }
             }
         ) {
             if (loading) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    color = Color.Black
+                )
             } else {
                 Text(if (isLogin) "Войти" else "Зарегистрироваться")
             }
         }
 
+        Spacer(Modifier.height(16.dp))
+
+        TextButton(onClick = { isLogin = !isLogin }) {
+            Text(
+                if (isLogin)
+                    "Нет аккаунта? Зарегистрироваться"
+                else
+                    "Уже есть аккаунт? Войти"
+            )
+        }
+
         error?.let {
             Spacer(Modifier.height(12.dp))
-            Text(it, color = MaterialTheme.colorScheme.error)
+            Text(
+                text = it,
+                color = if (it.contains("отправлена")) Color.Green
+                else MaterialTheme.colorScheme.error
+            )
         }
     }
 }
