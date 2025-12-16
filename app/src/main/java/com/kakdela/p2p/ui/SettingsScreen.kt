@@ -141,3 +141,27 @@ fun SettingsScreen(navController: NavHostController) {
         }
     }
 }
+@Composable
+fun SettingsScreen(navController: NavHostController) {
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp)
+    ) {
+
+        Button(
+            onClick = { navController.navigate("auth_phone") },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Вход по телефону")
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        Button(
+            onClick = { navController.navigate("auth_email") },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Вход по email")
+        }
+    }
+}
