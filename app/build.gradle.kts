@@ -69,7 +69,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
     implementation("androidx.navigation:navigation-compose:2.7.0")
     implementation("androidx.compose.material:material-icons-extended:1.5.2")
-
+    implementation ("com.github.bumptech.glide:compose:1.0.0-beta01")
     // Firebase
     implementation(platform("com.google.firebase:firebase-bom:32.2.2"))
     implementation("com.google.firebase:firebase-auth-ktx")
