@@ -9,9 +9,10 @@ import kotlinx.coroutines.tasks.await
 class ContactSyncManager(private val context: Context) {
 
     suspend fun syncContacts(): List<AppContact> {
-        val contacts = mutableListOf<AppContact>()
 
-        // Читаем контакты из телефонной книги
+        val contacts = mutableListOf<AppContact>()
+        val phoneSet = mutableSetOf<String>()
+
         val cursor = context.contentResolver.query(
             ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
             arrayOf(
@@ -23,46 +24,62 @@ class ContactSyncManager(private val context: Context) {
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " ASC"
         )
 
-        val phoneSet = mutableSetOf<String>()
-
         cursor?.use {
             while (it.moveToNext()) {
-                val name = it.getString(it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)) ?: "Без имени"
-                var phone = it.getString(it.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)) ?: continue
 
-                // Нормализуем номер
-                phone = phone.replace(Regex("[^\\d]"), "")
-                if (phone.startsWith("8") && phone.length == 11) phone = "7" + phone.drop(1)
-                if (phone.length > 11) phone = phone.takeLast(11)
-                if (phone.length != 11 || !phone.startsWith("7")) continue
+                val name = it.getString(
+                    it.getColumnIndexOrThrow(
+                        ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
+                    )
+                ) ?: "Без имени"
 
-                if (phoneSet.add(phone)) {  // Избегаем дубликатов
-                    contacts.add(AppContact(name = name, phoneNumber = phone))
+                val rawPhone = it.getString(
+                    it.getColumnIndexOrThrow(
+                        ContactsContract.CommonDataKinds.Phone.NUMBER
+                    )
+                ) ?: continue
+
+                val phone = normalizePhone(rawPhone) ?: continue
+
+                // ❗ исключаем дубликаты +7 / 8 / 7
+                if (phoneSet.add(phone)) {
+                    contacts.add(
+                        AppContact(
+                            name = name,
+                            phoneNumber = phone
+                        )
+                    )
                 }
             }
         }
 
-        // Находим зарегистрированных пользователей
-        if (contacts.isNotEmpty()) {
-            val phoneNumbers = contacts.map { it.phoneNumber }
+        if (contacts.isEmpty()) return emptyList()
 
-            val snapshots = Firebase.firestore.collection("users")
-                .whereIn("phoneNumber", phoneNumbers)
-                .get()
-                .await()
+        // 🔎 поиск зарегистрированных
+        val snapshots = Firebase.firestore
+            .collection("users")
+            .whereIn("phoneNumber", contacts.map { it.phoneNumber })
+            .get()
+            .await()
 
-            val registeredMap = snapshots.documents.associate { doc ->
-                val phone = doc.getString("phoneNumber") ?: ""
-                phone to doc.id
-            }
-
-            contacts.forEach { contact ->
-                registeredMap[contact.phoneNumber]?.let { uid ->
-                    contact.copy(uid = uid, isRegistered = true)
-                }
-            }
+        val registeredMap = snapshots.documents.associate { doc ->
+            doc.getString("phoneNumber") to doc.id
         }
 
-        return contacts.sortedBy { it.name.lowercase() }
+        return contacts.map { contact ->
+            val uid = registeredMap[contact.phoneNumber]
+            if (uid != null) {
+                contact.copy(uid = uid, isRegistered = true)
+            } else {
+                contact
+            }
+        }
+    }
+
+    // ⭐ КЛЮЧЕВАЯ ФУНКЦИЯ
+    private fun normalizePhone(raw: String): String? {
+        var phone = raw.replace(Regex("[^\\d]"), "")
+        if (phone.length < 10) return null
+        return phone.takeLast(10)
     }
 }
