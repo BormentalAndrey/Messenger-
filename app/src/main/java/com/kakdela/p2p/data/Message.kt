@@ -6,4 +6,5 @@ data class Message(
     val timestamp: Long = System.currentTimeMillis(),
     val isDelivered: Boolean = false,
     val isRead: Boolean = false
+    val fileUrl: String? = null
 )
