@@ -6,7 +6,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 @Composable
 fun RegistrationChoiceScreen(
@@ -23,25 +22,25 @@ fun RegistrationChoiceScreen(
 
         Text(
             text = "Выберите способ входа",
-            fontSize = 26.sp
+            style = MaterialTheme.typography.headlineMedium
         )
 
-        Spacer(modifier = Modifier.height(48.dp))
+        Spacer(Modifier.height(48.dp))
 
         Button(
             onClick = onEmail,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("По email (Развлечения)")
+            Text("Войти по email")
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(Modifier.height(24.dp))
 
         Button(
             onClick = onPhone,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("По номеру телефона")
+            Text("Войти по номеру телефона")
         }
     }
 }
