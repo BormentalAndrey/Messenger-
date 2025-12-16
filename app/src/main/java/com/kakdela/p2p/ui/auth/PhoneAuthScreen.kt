@@ -10,8 +10,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.kakdela.p2p.auth.SmsCodeManager
@@ -27,7 +25,6 @@ fun PhoneAuthScreen(
     var inputCode by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
-    // Разрешение SEND_SMS
     val smsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -36,11 +33,18 @@ fun PhoneAuthScreen(
         }
     }
 
-    fun hasSmsPermission(): Boolean =
-        ContextCompat.checkSelfPermission(
+    fun ensureSmsPermission(): Boolean {
+        val granted = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.SEND_SMS
         ) == PackageManager.PERMISSION_GRANTED
+
+        if (!granted) {
+            smsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
+        }
+
+        return granted
+    }
 
     Column(
         modifier = Modifier
@@ -54,7 +58,6 @@ fun PhoneAuthScreen(
             value = phone,
             onValueChange = { phone = it },
             label = { Text("Номер телефона") },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -70,10 +73,7 @@ fun PhoneAuthScreen(
                     return@Button
                 }
 
-                if (!hasSmsPermission()) {
-                    smsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
-                    return@Button
-                }
+                if (!ensureSmsPermission()) return@Button
 
                 val code = SmsCodeManager.generateCode()
                 generatedCode = code
@@ -84,13 +84,13 @@ fun PhoneAuthScreen(
         }
 
         if (generatedCode != null) {
+
             Spacer(Modifier.height(16.dp))
 
             OutlinedTextField(
                 value = inputCode,
                 onValueChange = { inputCode = it },
                 label = { Text("Код из SMS") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth()
             )
 
