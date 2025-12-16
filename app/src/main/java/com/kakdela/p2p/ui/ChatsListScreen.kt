@@ -38,7 +38,8 @@ fun ChatsListScreen(navController: NavHostController) {
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
+            // Обычный TopAppBar — заголовок автоматически слева
+            TopAppBar(
                 title = {
                     Text(
                         text = "Как дела?",
@@ -46,7 +47,7 @@ fun ChatsListScreen(navController: NavHostController) {
                         color = MaterialTheme.colorScheme.primary
                     )
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Black
                 )
             )
@@ -54,7 +55,8 @@ fun ChatsListScreen(navController: NavHostController) {
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
-                    navController.navigate(Routes.CONTACTS) // Открываем экран поиска/добавления контактов
+                    // Открываем экран поиска и добавления контактов
+                    navController.navigate(Routes.CONTACTS)
                 },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = Color.Black
@@ -65,7 +67,7 @@ fun ChatsListScreen(navController: NavHostController) {
                 )
             }
         },
-        floatingActionButtonPosition = FabPosition.End // Кнопка справа внизу — стандартно
+        floatingActionButtonPosition = FabPosition.End // Кнопка справа внизу
     ) { padding ->
         LazyColumn(
             modifier = Modifier
