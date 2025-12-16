@@ -8,12 +8,10 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.*
 import com.google.firebase.auth.ktx.auth
@@ -37,7 +35,19 @@ object Routes {
 fun NavGraph(navController: NavHostController) {
 
     val currentUser = Firebase.auth.currentUser
-    val startDestination = if (currentUser == null) Routes.CHOICE else Routes.CHATS
+    val isLoggedIn = currentUser != null
+
+    /** ✅ ЕДИНСТВЕННОЕ место, где происходит переход после логина */
+    LaunchedEffect(isLoggedIn) {
+        if (isLoggedIn) {
+            navController.navigate(Routes.CHATS) {
+                popUpTo(Routes.CHOICE) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
+
+    val startDestination = if (isLoggedIn) Routes.CHATS else Routes.CHOICE
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -53,64 +63,42 @@ fun NavGraph(navController: NavHostController) {
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar(
-                    containerColor = Color.Black,
-                    contentColor = Color.White // цвет иконок и текста по умолчанию
-                ) {
-                    // 1. Чаты
+                NavigationBar(containerColor = Color.Black) {
+
                     NavigationBarItem(
                         selected = currentRoute == Routes.CHATS,
-                        onClick = { navController.navigate(Routes.CHATS) { launchSingleTop = true } },
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Outlined.ChatBubbleOutline,
-                                contentDescription = "Чаты"
-                            )
+                        onClick = {
+                            navController.navigate(Routes.CHATS) { launchSingleTop = true }
                         },
-                        label = { Text("Чаты") },
-                        modifier = Modifier.weight(1f)
+                        icon = { Icon(Icons.Outlined.ChatBubbleOutline, null) },
+                        label = { Text("Чаты") }
                     )
 
-                    // 2. Дела
                     NavigationBarItem(
                         selected = currentRoute == Routes.DEALS,
-                        onClick = { navController.navigate(Routes.DEALS) { launchSingleTop = true } },
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Filled.Checklist,
-                                contentDescription = "Дела"
-                            )
+                        onClick = {
+                            navController.navigate(Routes.DEALS) { launchSingleTop = true }
                         },
-                        label = { Text("Дела") },
-                        modifier = Modifier.weight(1f)
+                        icon = { Icon(Icons.Filled.Checklist, null) },
+                        label = { Text("Дела") }
                     )
 
-                    // 3. Развлечения
                     NavigationBarItem(
                         selected = currentRoute == Routes.ENTERTAINMENT,
-                        onClick = { navController.navigate(Routes.ENTERTAINMENT) { launchSingleTop = true } },
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Outlined.PlayCircleOutline,
-                                contentDescription = "Развлечения"
-                            )
+                        onClick = {
+                            navController.navigate(Routes.ENTERTAINMENT) { launchSingleTop = true }
                         },
-                        label = { Text("Развлечения") },
-                        modifier = Modifier.weight(1f)
+                        icon = { Icon(Icons.Outlined.PlayCircleOutline, null) },
+                        label = { Text("Развлечения") }
                     )
 
-                    // 4. Настройки
                     NavigationBarItem(
                         selected = currentRoute == Routes.SETTINGS,
-                        onClick = { navController.navigate(Routes.SETTINGS) { launchSingleTop = true } },
-                        icon = {
-                            Icon(
-                                imageVector = Icons.Filled.Settings,
-                                contentDescription = "Настройки"
-                            )
+                        onClick = {
+                            navController.navigate(Routes.SETTINGS) { launchSingleTop = true }
                         },
-                        label = { Text("Настройки") },
-                        modifier = Modifier.weight(1f)
+                        icon = { Icon(Icons.Filled.Settings, null) },
+                        label = { Text("Настройки") }
                     )
                 }
             }
@@ -130,31 +118,31 @@ fun NavGraph(navController: NavHostController) {
                 )
             }
 
+            /** ❌ БЕЗ navigate() внутри */
             composable(Routes.AUTH_EMAIL) {
-                EmailAuthScreen(
-                    navController = navController,
-                    onAuthSuccess = {
-                        navController.navigate(Routes.CHATS) {
-                            popUpTo(Routes.CHOICE) { inclusive = true }
-                        }
-                    }
-                )
+                EmailAuthScreen()
             }
 
+            /** ❌ БЕЗ navigate() внутри */
             composable(Routes.AUTH_PHONE) {
-                PhoneAuthScreen(
-                    onSuccess = {
-                        navController.navigate(Routes.CHATS) {
-                            popUpTo(Routes.CHOICE) { inclusive = true }
-                        }
-                    }
-                )
+                PhoneAuthScreen()
             }
 
-            composable(Routes.CHATS) { ChatsListScreen(navController) }
-            composable(Routes.CONTACTS) { ContactsScreen(navController) }
-            composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
-            composable(Routes.SETTINGS) { SettingsScreen(navController) }
+            composable(Routes.CHATS) {
+                ChatsListScreen(navController)
+            }
+
+            composable(Routes.CONTACTS) {
+                ContactsScreen(navController)
+            }
+
+            composable(Routes.ENTERTAINMENT) {
+                EntertainmentScreen(navController)
+            }
+
+            composable(Routes.SETTINGS) {
+                SettingsScreen(navController)
+            }
 
             composable(Routes.DEALS) {
                 Box(
