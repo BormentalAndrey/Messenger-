@@ -21,39 +21,79 @@ import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.navigation.NavHostController
 
-// Модель элемента
+// Тип элемента: веб или внутренняя игра/чат
+enum class EntertainmentType {
+    WEB,
+    INTERNAL_CHAT,
+    GAME
+}
+
 data class EntertainmentItem(
     val id: String,
     val title: String,
     val description: String,
-    val url: String? = null, // null — внутренний чат
+    val type: EntertainmentType,
+    val route: String? = null, // для внутренних экранов (игры, чат)
+    val url: String? = null,   // для веб
     val iconLetter: String = title.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
 )
 
-// Список без RuStore
+// Обновлённый список с играми
 private val entertainmentItems = listOf(
     EntertainmentItem(
         id = "global_chat",
         title = "ЧёКаВо? (глобальный чат)",
         description = "Общий чат всех пользователей приложения",
-        url = null
+        type = EntertainmentType.INTERNAL_CHAT,
+        route = "chat/global"
+    ),
+    EntertainmentItem(
+        id = "tictactoe",
+        title = "Крестики-нолики",
+        description = "Классическая игра против ИИ",
+        type = EntertainmentType.GAME,
+        route = "tictactoe"
+    ),
+    EntertainmentItem(
+        id = "chess",
+        title = "Шахматы",
+        description = "Стратегическая игра (в разработке)",
+        type = EntertainmentType.GAME,
+        route = "chess"
+    ),
+    EntertainmentItem(
+        id = "pacman",
+        title = "Пакман",
+        description = "Собери точки, убегай от привидений",
+        type = EntertainmentType.GAME,
+        route = "pacman"
+    ),
+    EntertainmentItem(
+        id = "jewels",
+        title = "Jewels Blast",
+        description = "Собирай камни три в ряд",
+        type = EntertainmentType.GAME,
+        route = "jewels"
     ),
     EntertainmentItem(
         id = "pikabu",
         title = "Пикабу",
         description = "Юмор, истории, мемы и новости",
+        type = EntertainmentType.WEB,
         url = "https://pikabu.ru"
     ),
     EntertainmentItem(
         id = "tiktok",
         title = "TikTok",
         description = "Короткие видео, тренды, танцы и креатив",
+        type = EntertainmentType.WEB,
         url = "https://www.tiktok.com"
     ),
     EntertainmentItem(
         id = "crazygames",
         title = "CrazyGames",
         description = "Тысячи бесплатных браузерных игр",
+        type = EntertainmentType.WEB,
         url = "https://www.crazygames.ru"
     )
 )
@@ -89,14 +129,20 @@ fun EntertainmentScreen(navController: NavHostController) {
                 EntertainmentListItem(
                     item = item,
                     onClick = {
-                        if (item.url == null) {
-                            navController.navigate("chat/global")
-                        } else {
-                            val customTabsIntent = CustomTabsIntent.Builder()
-                                .setToolbarColor(MaterialTheme.colorScheme.primary.toArgb())
-                                .setShowTitle(true)
-                                .build()
-                            customTabsIntent.launchUrl(context, item.url.toUri())
+                        when (item.type) {
+                            EntertainmentType.INTERNAL_CHAT -> {
+                                navController.navigate(item.route!!)
+                            }
+                            EntertainmentType.GAME -> {
+                                navController.navigate(item.route!!)
+                            }
+                            EntertainmentType.WEB -> {
+                                val customTabsIntent = CustomTabsIntent.Builder()
+                                    .setToolbarColor(MaterialTheme.colorScheme.primary.toArgb())
+                                    .setShowTitle(true)
+                                    .build()
+                                customTabsIntent.launchUrl(context, item.url!!.toUri())
+                            }
                         }
                     }
                 )
@@ -151,7 +197,7 @@ fun EntertainmentListItem(
 
         Icon(
             imageVector = androidx.compose.material.icons.Icons.Default.PlayArrow,
-            contentDescription = null,
+            contentDescription = "Открыть",
             tint = Color.Gray,
             modifier = Modifier.size(20.dp)
         )
