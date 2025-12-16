@@ -3,7 +3,6 @@ package com.kakdela.p2p.ui.navigation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -14,11 +13,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.*
-
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
 import com.kakdela.p2p.ui.*
@@ -57,7 +54,6 @@ fun NavGraph(navController: NavHostController) {
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar(containerColor = Color.Black) {
-
                     NavigationBarItem(
                         selected = currentRoute == Routes.CHATS,
                         onClick = { navController.navigate(Routes.CHATS) { launchSingleTop = true } },
@@ -89,18 +85,8 @@ fun NavGraph(navController: NavHostController) {
                     )
                 }
             }
-        },
-        floatingActionButton = {
-            if (showBottomBar) {
-                FloatingActionButton(
-                    onClick = { navController.navigate(Routes.CONTACTS) },
-                    containerColor = Color(0xFF00C853)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                }
-            }
-        },
-        floatingActionButtonPosition = FabPosition.Center
+        }
+        // УДАЛЕНА зелёная FAB и позиция Center — теперь кнопки управляются внутри каждого экрана
     ) { padding ->
 
         NavHost(
