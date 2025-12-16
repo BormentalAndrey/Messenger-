@@ -53,28 +53,28 @@ fun NavGraph(navController: NavHostController) {
 
                     NavigationBarItem(
                         selected = currentRoute == Routes.CHATS,
-                        onClick = { navController.navigate(Routes.CHATS) },
+                        onClick = { navController.navigate(Routes.CHATS) { launchSingleTop = true } },
                         icon = { Icon(Icons.Outlined.ChatBubbleOutline, null) },
                         label = { Text("Чаты") }
                     )
 
                     NavigationBarItem(
                         selected = currentRoute == Routes.DEALS,
-                        onClick = { navController.navigate(Routes.DEALS) },
+                        onClick = { navController.navigate(Routes.DEALS) { launchSingleTop = true } },
                         icon = { Icon(Icons.Filled.Checklist, null) },
                         label = { Text("Дела") }
                     )
 
                     NavigationBarItem(
                         selected = currentRoute == Routes.ENTERTAINMENT,
-                        onClick = { navController.navigate(Routes.ENTERTAINMENT) },
+                        onClick = { navController.navigate(Routes.ENTERTAINMENT) { launchSingleTop = true } },
                         icon = { Icon(Icons.Outlined.PlayCircleOutline, null) },
                         label = { Text("Развлечения") }
                     )
 
                     NavigationBarItem(
                         selected = currentRoute == Routes.SETTINGS,
-                        onClick = { navController.navigate(Routes.SETTINGS) },
+                        onClick = { navController.navigate(Routes.SETTINGS) { launchSingleTop = true } },
                         icon = { Icon(Icons.Filled.Settings, null) },
                         label = { Text("Настройки") }
                     )
@@ -126,13 +126,9 @@ fun NavGraph(navController: NavHostController) {
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
 
+            // Новый экран "Дела" — теперь полноценный список ссылок
             composable(Routes.DEALS) {
-                Box(
-                    Modifier.fillMaxSize().background(Color.Black),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("Экран «Дела» в разработке", color = Color.White)
-                }
+                DealsScreen(navController)
             }
 
             composable(Routes.CHAT) { backStackEntry ->
