@@ -28,17 +28,22 @@ import com.google.firebase.storage.ktx.storage
 fun SettingsScreen(navController: NavHostController) {
 
     val context = LocalContext.current
+    val auth = Firebase.auth
+    val user = auth.currentUser
+
+    val hasPhone = user?.phoneNumber != null
+    val hasEmail = user?.email != null
+
     var avatarUrl by remember { mutableStateOf<String?>(null) }
     var isUploading by remember { mutableStateOf(false) }
 
-    val auth = Firebase.auth
-    val currentUser = auth.currentUser
     val db = Firebase.firestore
     val storage = Firebase.storage
 
-    LaunchedEffect(currentUser?.uid) {
-        if (currentUser != null) {
-            db.collection("users").document(currentUser.uid)
+    // Загружаем аватар
+    LaunchedEffect(user?.uid) {
+        user?.uid?.let { uid ->
+            db.collection("users").document(uid)
                 .get()
                 .addOnSuccessListener {
                     avatarUrl = it.getString("avatarUrl")
@@ -47,25 +52,19 @@ fun SettingsScreen(navController: NavHostController) {
     }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
+        ActivityResultContracts.PickVisualMedia()
     ) { uri ->
-        if (uri != null && currentUser != null) {
+        if (uri != null && user != null) {
             isUploading = true
-            val storageRef = storage.reference.child("avatars/${currentUser.uid}.jpg")
+            val ref = storage.reference.child("avatars/${user.uid}.jpg")
 
-            storageRef.putFile(uri)
+            ref.putFile(uri)
                 .addOnSuccessListener {
-                    storageRef.downloadUrl.addOnSuccessListener { downloadUri ->
-                        val newUrl = downloadUri.toString()
-                        avatarUrl = newUrl
-
+                    ref.downloadUrl.addOnSuccessListener { download ->
+                        avatarUrl = download.toString()
                         db.collection("users")
-                            .document(currentUser.uid)
-                            .set(
-                                mapOf("avatarUrl" to newUrl),
-                                com.google.firebase.firestore.SetOptions.merge()
-                            )
-
+                            .document(user.uid)
+                            .set(mapOf("avatarUrl" to avatarUrl), com.google.firebase.firestore.SetOptions.merge())
                         isUploading = false
                     }
                 }
@@ -91,6 +90,7 @@ fun SettingsScreen(navController: NavHostController) {
 
         Spacer(Modifier.height(32.dp))
 
+        // Аватар
         Box(
             modifier = Modifier
                 .size(120.dp)
@@ -123,13 +123,57 @@ fun SettingsScreen(navController: NavHostController) {
             }
         }
 
-        Spacer(Modifier.height(48.dp))
+        Spacer(Modifier.height(32.dp))
 
+        // Привязка телефона
+        if (!hasPhone) {
+            Button(
+                onClick = { navController.navigate("auth_phone") },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Добавить номер телефона")
+            }
+        } else {
+            Text("📱 Телефон подтверждён", color = Color.Green)
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        // Привязка email
+        if (!hasEmail) {
+            Button(
+                onClick = { navController.navigate("auth_email") },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Добавить Email")
+            }
+        } else {
+            Text("✉️ Email подтверждён", color = Color.Green)
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        // Итоговый доступ
+        if (hasPhone && hasEmail) {
+            Text(
+                "✅ Доступны ВСЕ функции приложения",
+                color = Color.Green
+            )
+        } else {
+            Text(
+                "⚠ Некоторые функции ограничены",
+                color = Color.Yellow
+            )
+        }
+
+        Spacer(Modifier.height(32.dp))
+
+        // Выход
         OutlinedButton(
             onClick = {
-                Firebase.auth.signOut()
-                navController.navigate("auth_phone") {
-                    popUpTo(navController.graph.startDestinationId) { inclusive = true }
+                auth.signOut()
+                navController.navigate("choice") {
+                    popUpTo(0) { inclusive = true }
                 }
             },
             modifier = Modifier.fillMaxWidth(),
@@ -138,30 +182,6 @@ fun SettingsScreen(navController: NavHostController) {
             )
         ) {
             Text("Выйти из аккаунта")
-        }
-    }
-}
-@Composable
-fun SettingsScreen(navController: NavHostController) {
-
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp)
-    ) {
-
-        Button(
-            onClick = { navController.navigate("auth_phone") },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Вход по телефону")
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        Button(
-            onClick = { navController.navigate("auth_email") },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Вход по email")
         }
     }
 }
