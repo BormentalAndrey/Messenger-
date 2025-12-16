@@ -6,30 +6,39 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavHostController
+import androidx.compose.ui.unit.sp
 
 @Composable
-fun RegistrationChoiceScreen(navController: NavHostController) {
+fun RegistrationChoiceScreen(
+    onEmail: () -> Unit,
+    onPhone: () -> Unit
+) {
     Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("Выберите способ входа", style = MaterialTheme.typography.headlineMedium)
 
-        Spacer(Modifier.height(48.dp))
+        Text(
+            text = "Выберите способ входа",
+            fontSize = 26.sp
+        )
+
+        Spacer(modifier = Modifier.height(48.dp))
 
         Button(
-            onClick = { navController.navigate("auth_email") },
+            onClick = onEmail,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("По email (Развлечения)")
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         Button(
-            onClick = { navController.navigate("auth_phone") },
+            onClick = onPhone,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("По номеру телефона")
