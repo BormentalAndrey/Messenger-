@@ -37,9 +37,8 @@ fun EmailAuthScreen(
     ) {
 
         Text(
-            text = if (isLogin) "Вход в аккаунт" else "Регистрация",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.primary
+            text = if (isLogin) "Вход по Email" else "Регистрация Email",
+            style = MaterialTheme.typography.headlineMedium
         )
 
         Spacer(Modifier.height(32.dp))
@@ -48,8 +47,8 @@ fun EmailAuthScreen(
             value = email,
             onValueChange = { email = it.trim() },
             label = { Text("Email") },
-            enabled = !loading,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !loading
         )
 
         Spacer(Modifier.height(16.dp))
@@ -59,15 +58,15 @@ fun EmailAuthScreen(
             onValueChange = { password = it },
             label = { Text("Пароль") },
             visualTransformation = PasswordVisualTransformation(),
-            enabled = !loading,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !loading
         )
 
         Spacer(Modifier.height(24.dp))
 
         Button(
-            enabled = !loading,
             modifier = Modifier.fillMaxWidth(),
+            enabled = !loading,
             onClick = {
                 if (email.isBlank() || password.isBlank()) {
                     error = "Заполните все поля"
@@ -75,19 +74,19 @@ fun EmailAuthScreen(
                 }
 
                 if (password.length < 6) {
-                    error = "Пароль должен быть не менее 6 символов"
+                    error = "Пароль минимум 6 символов"
                     return@Button
                 }
 
                 loading = true
                 error = null
 
-                val finishAuth = {
+                fun finishAuth() {
                     val uid = auth.currentUser?.uid
                     if (uid == null) {
                         loading = false
                         error = "Ошибка авторизации"
-                        return@finishAuth
+                        return
                     }
 
                     db.collection("users")
@@ -125,11 +124,27 @@ fun EmailAuthScreen(
             if (loading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
-                    color = Color.Black
+                    color = Color.White
                 )
             } else {
                 Text(if (isLogin) "Войти" else "Зарегистрироваться")
             }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        TextButton(onClick = { isLogin = !isLogin }) {
+            Text(
+                if (isLogin)
+                    "Нет аккаунта? Регистрация"
+                else
+                    "Уже есть аккаунт? Войти"
+            )
+        }
+
+        error?.let {
+            Spacer(Modifier.height(12.dp))
+            Text(text = it, color = MaterialTheme.colorScheme.error)
         }
     }
 }
