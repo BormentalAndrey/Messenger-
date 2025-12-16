@@ -29,6 +29,11 @@ object Routes {
     const val DEALS = "deals"
     const val ENTERTAINMENT = "entertainment"
     const val SETTINGS = "settings"
+    const val CALCULATOR = "calculator"        // Калькулятор в "Делах"
+    const val TIC_TAC_TOE = "tictactoe"        // Крестики-нолики
+    const val CHESS = "chess"                  // Шахматы
+    const val PACMAN = "pacman"                // Пакман
+    const val JEWELS = "jewels"                // Jewels Blast
     const val CHAT = "chat/{chatId}"
 }
 
@@ -43,7 +48,12 @@ fun NavGraph(navController: NavHostController) {
         Routes.DEALS,
         Routes.ENTERTAINMENT,
         Routes.SETTINGS,
-        Routes.CONTACTS
+        Routes.CONTACTS,
+        Routes.CALCULATOR,
+        Routes.TIC_TAC_TOE,
+        Routes.CHESS,
+        Routes.PACMAN,
+        Routes.JEWELS
     )
 
     Scaffold(
@@ -89,9 +99,7 @@ fun NavGraph(navController: NavHostController) {
             modifier = Modifier.padding(padding)
         ) {
 
-            composable(Routes.SPLASH) {
-                SplashScreen(navController)
-            }
+            composable(Routes.SPLASH) { SplashScreen(navController) }
 
             composable(Routes.CHOICE) {
                 RegistrationChoiceScreen(
@@ -125,11 +133,16 @@ fun NavGraph(navController: NavHostController) {
             composable(Routes.CONTACTS) { ContactsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
+            composable(Routes.DEALS) { DealsScreen(navController) }
 
-            // Новый экран "Дела" — теперь полноценный список ссылок
-            composable(Routes.DEALS) {
-                DealsScreen(navController)
-            }
+            // Калькулятор (из "Дел")
+            composable(Routes.CALCULATOR) { CalculatorScreen() }
+
+            // Мини-игры (из "Развлечений")
+            composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
+            composable(Routes.CHESS) { ChessScreen() }
+            composable(Routes.PACMAN) { PacmanScreen() }
+            composable(Routes.JEWELS) { JewelsBlastScreen() }
 
             composable(Routes.CHAT) { backStackEntry ->
                 val chatId = backStackEntry.arguments?.getString("chatId") ?: "global"
