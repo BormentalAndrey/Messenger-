@@ -10,7 +10,7 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
-        mavenCentral() // Здесь лежит WebRTC
+        mavenCentral() // Здесь лежит альтернативная версия WebRTC
     }
 }
 
