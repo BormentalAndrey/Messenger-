@@ -11,11 +11,15 @@ class ChatViewModel : ViewModel() {
     private val repository = ChatRepository()
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
+    // Фильтруем список: показываем только те, у которых время уже наступило или не задано
     val messages = _messages.asStateFlow()
 
     fun start(chatId: String) {
-        repository.listen(chatId) {
-            _messages.value = it
+        repository.listen(chatId) { allMsgs ->
+            val currentTime = System.currentTimeMillis()
+            _messages.value = allMsgs.filter { msg ->
+                msg.scheduledTime == 0L || msg.scheduledTime <= currentTime
+            }
         }
     }
 
@@ -23,3 +27,4 @@ class ChatViewModel : ViewModel() {
         repository.send(chatId, message)
     }
 }
+
