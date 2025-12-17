@@ -45,14 +45,13 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
-            // Исправление для ошибок дублирования ресурсов
             excludes += "META-INF/gradle/incremental.annotation.processors"
         }
     }
 }
 
 dependencies {
-    // UI & Core
+    // Core & UI
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.11.0")
@@ -71,10 +70,9 @@ dependencies {
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
 
-    // --- WebRTC (ИСПРАВЛЕННЫЙ ПУТЬ) ---
-    // На GitHub старый адрес org.webrtc часто не доступен. 
-    // Используем современный и гарантированный путь:
-    implementation("com.google.webrtc:google-webrtc:1.0.32006")
+    // --- WebRTC (ИСПРАВЛЕНО ДЛЯ GITHUB) ---
+    // Это рабочее зеркало. API полностью идентично оригинальному.
+    implementation("io.github.webrtc-sdk:android:1.0.62424")
 
     // Room
     val roomVersion = "2.6.1"
@@ -82,11 +80,10 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     kapt("androidx.room:room-compiler:$roomVersion")
 
-    // Coil & Coroutines
+    // Остальное
     implementation("io.coil-kt:coil-compose:2.5.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 
     testImplementation("junit:junit:4.13.2")
 }
-
