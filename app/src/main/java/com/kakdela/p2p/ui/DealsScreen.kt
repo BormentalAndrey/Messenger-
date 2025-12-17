@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.navigation.NavHostController
+import com.kakdela.p2p.ui.navigation.Routes
 
 enum class DealType {
     WEB,
@@ -100,7 +101,7 @@ fun DealsScreen(navController: NavHostController) {
                 DealListItem(item) {
                     when (item.type) {
                         DealType.CALCULATOR -> {
-                            navController.navigate("calculator")
+                            navController.navigate(Routes.CALCULATOR)
                         }
                         DealType.WEB -> {
                             val intent = CustomTabsIntent.Builder()
@@ -147,9 +148,9 @@ fun DealListItem(
                 )
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(Modifier.width(16.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
+            Column(Modifier.weight(1f)) {
                 Text(
                     item.title,
                     color = Color.White,
