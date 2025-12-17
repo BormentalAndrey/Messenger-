@@ -16,8 +16,6 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
-// ❌ снять вот это:
-// import androidx.navigation.compose.navigate
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.auth.ktx.auth
 import com.kakdela.p2p.ui.*
@@ -48,11 +46,9 @@ object Routes {
 @Composable
 fun NavGraph(navController: NavHostController) {
 
-    // --- узнаём текущий маршрут ---
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    // --- показываем ли нижнее меню ---
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS,
         Routes.DEALS,
@@ -73,39 +69,38 @@ fun NavGraph(navController: NavHostController) {
                     containerColor = Color.Black,
                     contentColor = Color.White
                 ) {
-
                     NavigationBarItem(
                         selected = currentRoute == Routes.CHATS,
                         onClick = { navController.navigate(Routes.CHATS) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Outlined.ChatBubbleOutline, null) },
+                        icon = { Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null) },
                         label = { Text("Чаты") }
                     )
 
                     NavigationBarItem(
                         selected = currentRoute == Routes.CONTACTS,
                         onClick = { navController.navigate(Routes.CONTACTS) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Filled.Contacts, null) },
+                        icon = { Icon(Icons.Filled.Contacts, contentDescription = null) },
                         label = { Text("Контакты") }
                     )
 
                     NavigationBarItem(
                         selected = currentRoute == Routes.DEALS,
                         onClick = { navController.navigate(Routes.DEALS) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Filled.Checklist, null) },
+                        icon = { Icon(Icons.Filled.Checklist, contentDescription = null) },
                         label = { Text("Дела") }
                     )
 
                     NavigationBarItem(
                         selected = currentRoute == Routes.ENTERTAINMENT,
                         onClick = { navController.navigate(Routes.ENTERTAINMENT) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Outlined.PlayCircleOutline, null) },
+                        icon = { Icon(Icons.Outlined.PlayCircleOutline, contentDescription = null) },
                         label = { Text("Развлечения") }
                     )
 
                     NavigationBarItem(
                         selected = currentRoute == Routes.SETTINGS,
                         onClick = { navController.navigate(Routes.SETTINGS) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Filled.Settings, null) },
+                        icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
                         label = { Text("Настройки") }
                     )
                 }
@@ -121,12 +116,8 @@ fun NavGraph(navController: NavHostController) {
                 .background(Color.Black)
         ) {
 
-            // ---------- SPLASH ----------
-            composable(Routes.SPLASH) {
-                SplashScreen(navController)
-            }
+            composable(Routes.SPLASH) { SplashScreen(navController) }
 
-            // ---------- CHOICE ----------
             composable(Routes.CHOICE) {
                 RegistrationChoiceScreen(
                     onEmail = { navController.navigate(Routes.AUTH_EMAIL) },
@@ -134,19 +125,17 @@ fun NavGraph(navController: NavHostController) {
                 )
             }
 
-            // ---------- AUTH EMAIL ----------
             composable(Routes.AUTH_EMAIL) {
                 EmailAuthScreen(
                     navController = navController,
                     onAuthSuccess = {
                         navController.navigate(Routes.CHATS) {
-                            popUpTo(0) { inclusive = true }   // очищаем стек
+                            popUpTo(0) { inclusive = true }
                         }
                     }
                 )
             }
 
-            // ---------- AUTH PHONE ----------
             composable(Routes.AUTH_PHONE) {
                 PhoneAuthScreen(
                     onSuccess = {
@@ -157,21 +146,19 @@ fun NavGraph(navController: NavHostController) {
                 )
             }
 
-            // ---------- MAIN SCREENS ----------
             composable(Routes.CHATS) { ChatsListScreen(navController) }
             composable(Routes.CONTACTS) { ContactsScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
 
-            // ---------- ДОП. ЭКРАНЫ ----------
+            // Дополнительные экраны
             composable(Routes.CALCULATOR) { CalculatorScreen() }
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
             composable(Routes.JEWELS) { JewelsBlastScreen() }
 
-            // ---------- CHAT ----------
             composable(Routes.CHAT) { backStackEntry ->
                 val chatId = backStackEntry.arguments?.getString("chatId") ?: "global"
                 ChatScreen(chatId, Firebase.auth.currentUser?.uid ?: "")
