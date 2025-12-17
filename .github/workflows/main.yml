@@ -18,17 +18,10 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      # ГАРАНТИРОВАННОЕ СОЗДАНИЕ КЛЮЧА
-      - name: Decode Keystore
-        run: |
-          mkdir -p app
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ./app/my-release-key.jks
-          # Проверяем, что файл лежит именно там, где его ждет Gradle
-          find . -name "my-release-key.jks"
-
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      # Собираем приложение, используя загруженный .jks файл
       - name: Build with Gradle
         run: ./gradlew assembleRelease
         env:
