@@ -1,5 +1,6 @@
 package com.kakdela.p2p.ui
 
+import android.content.Context
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,8 +26,7 @@ import androidx.navigation.NavHostController
 import com.kakdela.p2p.ui.navigation.Routes
 
 enum class DealType {
-    WEB,
-    CALCULATOR
+    WEB, CALCULATOR
 }
 
 data class DealItem(
@@ -41,33 +41,10 @@ data class DealItem(
 }
 
 private val dealItems = listOf(
-    DealItem(
-        id = "calculator",
-        title = "Калькулятор",
-        description = "Быстрые расчёты: скидки, бюджет, конвертер",
-        type = DealType.CALCULATOR
-    ),
-    DealItem(
-        id = "gosuslugi",
-        title = "Госуслуги",
-        description = "Государственные услуги РФ",
-        type = DealType.WEB,
-        url = "https://www.gosuslugi.ru"
-    ),
-    DealItem(
-        id = "ozon",
-        title = "Ozon",
-        description = "Интернет-магазин и доставка",
-        type = DealType.WEB,
-        url = "https://www.ozon.ru"
-    ),
-    DealItem(
-        id = "wb",
-        title = "Wildberries",
-        description = "Маркетплейс товаров",
-        type = DealType.WEB,
-        url = "https://www.wildberries.ru"
-    )
+    DealItem("calculator", "Калькулятор", "Быстрые расчёты: скидки, бюджет, конвертер", DealType.CALCULATOR),
+    DealItem("gosuslugi", "Госуслуги", "Государственные услуги РФ", DealType.WEB, "https://www.gosuslugi.ru"),
+    DealItem("ozon", "Ozon", "Интернет-магазин и доставка", DealType.WEB, "https://www.ozon.ru"),
+    DealItem("wb", "Wildberries", "Маркетплейс товаров", DealType.WEB, "https://www.wildberries.ru")
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,30 +55,19 @@ fun DealsScreen(navController: NavHostController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        text = "Дела",
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                },
+                title = { Text("Дела", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
             )
         }
-    ) { paddingValues ->
+    ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
-                .padding(paddingValues)
+                .padding(padding)
         ) {
             items(dealItems) { item ->
-                // Передаём всё необходимое внутрь ListItem
-                DealListItem(
-                    item = item,
-                    navController = navController,
-                    context = context
-                )
+                DealListItem(item, navController, context)
             }
         }
     }
@@ -111,69 +77,47 @@ fun DealsScreen(navController: NavHostController) {
 fun DealListItem(
     item: DealItem,
     navController: NavHostController,
-    context: android.content.Context
+    context: Context
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-                when (item.type) {
-                    DealType.CALCULATOR -> {
-                        navController.navigate(Routes.CALCULATOR)
-                    }
-                    DealType.WEB -> {
-                        item.url?.let { url ->
-                            val intent = CustomTabsIntent.Builder()
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    when (item.type) {
+                        DealType.CALCULATOR -> navController.navigate(Routes.CALCULATOR)
+                        DealType.WEB -> item.url?.let { url ->
+                            CustomTabsIntent.Builder()
                                 .setToolbarColor(MaterialTheme.colorScheme.primary.toArgb())
                                 .setShowTitle(true)
                                 .build()
-                            intent.launchUrl(context, url.toUri())
+                                .launchUrl(context, url.toUri())
                         }
                     }
                 }
-            }
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier
-                .size(56.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-            contentAlignment = Alignment.Center
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = item.iconLetter,
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(item.iconLetter, color = MaterialTheme.colorScheme.primary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(Modifier.weight(1f)) {
+                Text(item.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+                Text(item.description, color = Color.Gray, fontSize = 14.sp, maxLines = 1)
+            }
+
+            Icon(Icons.Filled.PlayArrow, contentDescription = "Открыть", tint = Color.Gray, modifier = Modifier.size(20.dp))
         }
 
-        Spacer(modifier = Modifier.width(16.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.title,
-                color = Color.White,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                text = item.description,
-                color = Color.Gray,
-                fontSize = 14.sp,
-                maxLines = 1
-            )
-        }
-
-        Icon(
-            imageVector = Icons.Filled.PlayArrow,
-            contentDescription = "Открыть",
-            tint = Color.Gray,
-            modifier = Modifier.size(20.dp)
-        )
+        HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
     }
-
-    HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
 }
