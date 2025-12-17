@@ -18,12 +18,10 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    // Настройка подписи приложения
     signingConfigs {
         create("release") {
-            // Файл ключа будет создан в папке app через GitHub Actions
+            // Указываем на файл, который вы загрузили вручную в папку app
             storeFile = file("my-release-key.jks")
-            // Данные берутся из секретов GitHub, которые вы уже добавили
             storePassword = System.getenv("KEYSTORE_PASSWORD")
             keyAlias = System.getenv("KEY_ALIAS")
             keyPassword = System.getenv("KEY_PASSWORD")
@@ -34,11 +32,10 @@ android {
         getByName("release") {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Подключаем созданную конфигурацию подписи
             signingConfig = signingConfigs.getByName("release")
         }
         getByName("debug") {
-            // Используем ту же подпись для отладки, чтобы Firebase работал корректно
+            // Оставляем ту же подпись, чтобы Firebase работал в любом режиме
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -79,8 +76,6 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("androidx.navigation:navigation-compose:2.7.7")
-    
-    // Иконки
     implementation("androidx.compose.material:material-icons-extended:1.6.0")
 
     // Firebase
@@ -89,10 +84,8 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
 
-    // WebRTC
+    // WebRTC & Room
     implementation("io.getstream:stream-webrtc-android:1.1.1")
-
-    // Room
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
