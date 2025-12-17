@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -21,21 +23,28 @@ import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.navigation.NavHostController
 
-// Тип элемента: веб-ссылка или калькулятор
+/* ---------- Типы ---------- */
+
 enum class DealType {
-    WEB, CALCULATOR
+    WEB,
+    CALCULATOR
 }
+
+/* ---------- Модель ---------- */
 
 data class DealItem(
     val id: String,
     val title: String,
     val description: String,
     val type: DealType,
-    val url: String? = null,
-    val iconLetter: String = title.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-)
+    val url: String? = null
+) {
+    val iconLetter: String
+        get() = title.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+}
 
-// Список для "Дела" — теперь с калькулятором
+/* ---------- Данные ---------- */
+
 private val dealItems = listOf(
     DealItem(
         id = "calculator",
@@ -60,25 +69,27 @@ private val dealItems = listOf(
     DealItem(
         id = "wildberries",
         title = "Wildberries",
-        description = "Маркетплейс одежды, электроники и товаров для дома",
+        description = "Маркетплейс одежды и электроники",
         type = DealType.WEB,
         url = "https://www.wildberries.ru"
     ),
     DealItem(
         id = "drom",
         title = "Drom.ru",
-        description = "Автомобили новые и с пробегом, запчасти, отзывы",
+        description = "Автомобили, запчасти, отзывы",
         type = DealType.WEB,
         url = "https://www.drom.ru"
     ),
     DealItem(
         id = "rbc",
         title = "РБК",
-        description = "Новости экономики, бизнеса, финансов и политики",
+        description = "Новости экономики и бизнеса",
         type = DealType.WEB,
         url = "https://www.rbc.ru"
     )
 )
+
+/* ---------- Экран ---------- */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,79 +119,84 @@ fun DealsScreen(navController: NavHostController) {
                 .padding(paddingValues)
         ) {
             items(dealItems) { item ->
-                DealListItem(
-                    item = item,
-                    onClick = {
-                        when (item.type) {
-                            DealType.CALCULATOR -> {
-                                navController.navigate("calculator")
-                            }
-                            DealType.WEB -> {
-                                val customTabsIntent = CustomTabsIntent.Builder()
-                                    .setToolbarColor(MaterialTheme.colorScheme.primary.toArgb())
-                                    .setShowTitle(true)
-                                    .build()
-                                customTabsIntent.launchUrl(context, item.url!!.toUri())
+                DealListItem(item) {
+                    when (item.type) {
+                        DealType.CALCULATOR -> {
+                            // 🔧 Временно заглушка
+                            navController.navigate("deals") 
+                        }
+                        DealType.WEB -> {
+                            val intent = CustomTabsIntent.Builder()
+                                .setToolbarColor(MaterialTheme.colorScheme.primary.toArgb())
+                                .setShowTitle(true)
+                                .build()
+
+                            item.url?.let {
+                                intent.launchUrl(context, it.toUri())
                             }
                         }
                     }
-                )
+                }
             }
         }
     }
 }
+
+/* ---------- Элемент списка ---------- */
 
 @Composable
 fun DealListItem(
     item: DealItem,
     onClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
+    Column {
+        Row(
             modifier = Modifier
-                .size(56.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = item.iconLetter,
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = item.iconLetter,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    item.title,
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    item.description,
+                    color = Color.Gray,
+                    fontSize = 14.sp,
+                    maxLines = 1
+                )
+            }
+
+            Icon(
+                imageVector = Icons.Filled.PlayArrow,
+                contentDescription = null,
+                tint = Color.Gray,
+                modifier = Modifier.size(20.dp)
             )
         }
 
-        Spacer(modifier = Modifier.width(16.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.title,
-                color = Color.White,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                text = item.description,
-                color = Color.Gray,
-                fontSize = 14.sp,
-                maxLines = 1
-            )
-        }
-
-        Icon(
-            imageVector = androidx.compose.material.icons.Icons.Default.PlayArrow,
-            contentDescription = null,
-            tint = Color.Gray,
-            modifier = Modifier.size(20.dp)
-        )
+        HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
     }
-
-    HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
 }
