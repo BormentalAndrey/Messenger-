@@ -17,32 +17,45 @@ class WebRtcClient(
     private val factory: PeerConnectionFactory by lazy { createFactory() }
     private var peerConnection: PeerConnection? = null
     private var dataChannel: DataChannel? = null
+    private var pendingFile: ByteArray? = null
 
     init {
         setupPeerConnection()
-        listenForRemoteMessages()
+        listenForPresenceAndSignaling()
     }
 
     private fun createFactory(): PeerConnectionFactory {
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions()
         )
-        return PeerConnectionFactory.builder().setOptions(PeerConnectionFactory.Options()).createPeerConnectionFactory()
+        return PeerConnectionFactory.builder().createPeerConnectionFactory()
     }
 
     private fun setupPeerConnection() {
         val iceServers = listOf(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
-        val rtcConfig = PeerConnection.RTCConfiguration(iceServers)
-
-        peerConnection = factory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
+        peerConnection = factory.createPeerConnection(PeerConnection.RTCConfiguration(iceServers), object : PeerConnection.Observer {
             override fun onIceCandidate(candidate: IceCandidate) {
                 val data = mapOf("sdpMid" to candidate.sdpMid, "sdpMLineIndex" to candidate.sdpMLineIndex, "sdp" to candidate.sdp, "sender" to currentUserId)
                 db.collection("chats").document(chatId).collection("candidates").add(data)
             }
             override fun onDataChannel(dc: DataChannel) {
-                setupDataChannel(dc)
+                dataChannel = dc
+                dc.registerObserver(object : DataChannel.Observer {
+                    override fun onMessage(buffer: DataChannel.Buffer) {
+                        val data = ByteArray(buffer.data.remaining())
+                        buffer.data.get(data)
+                        onFileReceived(data)
+                    }
+                    override fun onStateChange() {
+                        if (dc.state() == DataChannel.State.OPEN && pendingFile != null) {
+                            dc.send(DataChannel.Buffer(ByteBuffer.wrap(pendingFile!!), false))
+                            pendingFile = null
+                        }
+                    }
+                    override fun onBufferedAmountChange(p0: Long) {}
+                })
             }
-            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) { Log.d("WebRTC", "State: $state") }
+            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {}
             override fun onSignalingChange(p0: PeerConnection.SignalingState?) {}
             override fun onIceConnectionReceivingChange(p0: Boolean) {}
             override fun onIceGatheringChange(p0: PeerConnection.IceGatheringState?) {}
@@ -54,66 +67,54 @@ class WebRtcClient(
         })
     }
 
-    private fun setupDataChannel(dc: DataChannel) {
-        dataChannel = dc
-        dc.registerObserver(object : DataChannel.Observer {
-            override fun onMessage(buffer: DataChannel.Buffer) {
-                val data = ByteArray(buffer.data.remaining())
-                buffer.data.get(data)
-                onFileReceived(data)
+    private fun listenForPresenceAndSignaling() {
+        db.collection("chats").document(chatId).addSnapshotListener { snapshot, _ ->
+            val remoteOffer = snapshot?.getString("offer")
+            val remoteAnswer = snapshot?.getString("answer")
+            val remoteId = if (currentUserId == "user1") "user2" else "user1" // Упрощенная логика ID
+            val isRemoteOnline = snapshot?.getString("status_$remoteId") == "online"
+
+            if (remoteOffer != null && peerConnection?.remoteDescription == null) {
+                handleOffer(remoteOffer)
+            } else if (remoteAnswer != null) {
+                peerConnection?.setRemoteDescription(SimpleSdpObserver(), SessionDescription(SessionDescription.Type.ANSWER, remoteAnswer))
             }
-            override fun onBufferedAmountChange(p0: Long) {}
-            override fun onStateChange() { Log.d("WebRTC", "DataChannel State: ${dc.state()}") }
-        })
+
+            if (isRemoteOnline && pendingFile != null) {
+                startConnection()
+            }
+        }
     }
 
-    // Инициировать соединение (отправить Offer)
-    fun startConnection() {
-        val dcInit = DataChannel.Init()
-        setupDataChannel(peerConnection!!.createDataChannel("fileTransfer", dcInit))
-        
-        peerConnection?.createOffer(object : SdpObserverAdapter() {
+    fun queueFile(bytes: ByteArray) {
+        pendingFile = bytes
+    }
+
+    private fun startConnection() {
+        dataChannel = peerConnection?.createDataChannel("fileTransfer", DataChannel.Init())
+        peerConnection?.createOffer(object : SimpleSdpObserver() {
             override fun onCreateSuccess(desc: SessionDescription) {
-                peerConnection?.setLocalDescription(SdpObserverAdapter(), desc)
+                peerConnection?.setLocalDescription(SimpleSdpObserver(), desc)
                 db.collection("chats").document(chatId).update("offer", desc.description)
             }
         }, MediaConstraints())
     }
 
-    private fun listenForRemoteMessages() {
-        db.collection("chats").document(chatId).addSnapshotListener { snapshot, _ ->
-            val offer = snapshot?.getString("offer")
-            val answer = snapshot?.getString("answer")
-
-            if (offer != null && peerConnection?.remoteDescription == null) {
-                handleOffer(offer)
-            } else if (answer != null && peerConnection?.remoteDescription == null) {
-                peerConnection?.setRemoteDescription(SdpObserverAdapter(), SessionDescription(SessionDescription.Type.ANSWER, answer))
-            }
-        }
-    }
-
     private fun handleOffer(offer: String) {
-        peerConnection?.setRemoteDescription(SdpObserverAdapter(), SessionDescription(SessionDescription.Type.OFFER, offer))
-        peerConnection?.createAnswer(object : SdpObserverAdapter() {
+        peerConnection?.setRemoteDescription(SimpleSdpObserver(), SessionDescription(SessionDescription.Type.OFFER, offer))
+        peerConnection?.createAnswer(object : SimpleSdpObserver() {
             override fun onCreateSuccess(desc: SessionDescription) {
-                peerConnection?.setLocalDescription(SdpObserverAdapter(), desc)
+                peerConnection?.setLocalDescription(SimpleSdpObserver(), desc)
                 db.collection("chats").document(chatId).update("answer", desc.description)
             }
         }, MediaConstraints())
     }
-
-    fun sendFile(bytes: ByteArray) {
-        if (dataChannel?.state() == DataChannel.State.OPEN) {
-            val buffer = ByteBuffer.wrap(bytes)
-            dataChannel?.send(DataChannel.Buffer(buffer, false))
-        }
-    }
 }
 
-open class SdpObserverAdapter : SdpObserver {
+open class SimpleSdpObserver : SdpObserver {
     override fun onCreateSuccess(p0: SessionDescription?) {}
     override fun onSetSuccess() {}
     override fun onCreateFailure(p0: String?) {}
     override fun onSetFailure(p0: String?) {}
 }
+
