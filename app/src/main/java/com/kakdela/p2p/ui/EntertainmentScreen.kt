@@ -42,79 +42,50 @@ data class EntertainmentItem(
 }
 
 private val entertainmentItems = listOf(
-    EntertainmentItem("global_chat", "ЧёКаВо? (глобальный чат)", "Общий чат", EntertainmentType.INTERNAL_CHAT, "chat/global"),
-    EntertainmentItem("tictactoe", "Крестики-нолики", "Игра против ИИ", EntertainmentType.GAME, Routes.TIC_TAC_TOE),
-    EntertainmentItem("chess", "Шахматы", "Игра (в разработке)", EntertainmentType.GAME, Routes.CHESS),
-    EntertainmentItem("pacman", "Пакман", "Аркада", EntertainmentType.GAME, Routes.PACMAN),
-    EntertainmentItem("jewels", "Jewels Blast", "3 в ряд", EntertainmentType.GAME, Routes.JEWELS),
-    EntertainmentItem("crazygames", "CrazyGames", "Онлайн-игры", EntertainmentType.WEB, "https://crazygames.ru")
-)
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun EntertainmentScreen(navController: NavHostController) {
-    val context = LocalContext.current
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Развлечения", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
-            )
-        }
-    ) { paddingValues ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().background(Color.Black).padding(paddingValues)
-        ) {
-            items(entertainmentItems) { item ->
-                EntertainmentListItem(item = item, navController = navController, context = context)
-            }
-        }
-    }
-}
-
-@Composable
-fun EntertainmentListItem(
-    item: EntertainmentItem,
-    navController: NavHostController,
-    context: android.content.Context
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-                when (item.type) {
-                    EntertainmentType.INTERNAL_CHAT -> navController.navigate(item.route!!)
-                    EntertainmentType.GAME -> navController.navigate(item.route!!)
-                    EntertainmentType.WEB -> {
-                        item.url?.let { url ->
-                            CustomTabsIntent.Builder()
-                                .setToolbarColor(MaterialTheme.colorScheme.primary.toArgb())
-                                .build()
-                                .launchUrl(context, url.toUri())
-                        }
-                    }
-                }
-            }
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(item.iconLetter, color = MaterialTheme.colorScheme.primary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        }
-
-        Spacer(Modifier.width(16.dp))
-
-        Column(Modifier.weight(1f)) {
-            Text(item.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Medium)
-            Text(item.description, color = Color.Gray, fontSize = 14.sp, maxLines = 1)
-        }
-
-        Icon(Icons.Filled.PlayArrow, contentDescription = "Открыть", tint = Color.Gray, modifier = Modifier.size(20.dp))
-    }
-
-    HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
-}
+    EntertainmentItem(
+        id = "global_chat",
+        title = "ЧёКаВо? (глобальный чат)",
+        description = "Общий чат всех пользователей приложения",
+        type = EntertainmentType.INTERNAL_CHAT,
+        route = "chat/global"
+    ),
+    EntertainmentItem(
+        id = "tictactoe",
+        title = "Крестики-нолики",
+        description = "Классическая игра против ИИ",
+        type = EntertainmentType.GAME,
+        route = Routes.TIC_TAC_TOE
+    ),
+    EntertainmentItem(
+        id = "chess",
+        title = "Шахматы",
+        description = "Стратегическая игра (в разработке)",
+        type = EntertainmentType.GAME,
+        route = Routes.CHESS
+    ),
+    EntertainmentItem(
+        id = "pacman",
+        title = "Пакман",
+        description = "Собери точки, убегай от привидений",
+        type = EntertainmentType.GAME,
+        route = Routes.PACMAN
+    ),
+    EntertainmentItem(
+        id = "jewels",
+        title = "Jewels Blast",
+        description = "Собирай камни три в ряд",
+        type = EntertainmentType.GAME,
+        route = Routes.JEWELS
+    ),
+    EntertainmentItem(
+        id = "pikabu",
+        title = "Пикабу",
+        description = "Юмор, истории, мемы и новости",
+        type = EntertainmentType.WEB,
+        url = "https://pikabu.ru"
+    ),
+    EntertainmentItem(
+        id = "tiktok",
+        title = "TikTok",
+        description = "Короткие видео, тренды, танцы и креатив",
+        type
