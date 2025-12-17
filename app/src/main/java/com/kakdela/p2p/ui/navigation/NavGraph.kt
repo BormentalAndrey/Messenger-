@@ -16,7 +16,8 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.navigate
+// ❌ снять вот это:
+// import androidx.navigation.compose.navigate
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.auth.ktx.auth
 import com.kakdela.p2p.ui.*
