@@ -20,7 +20,7 @@ android {
 
     signingConfigs {
         create("release") {
-            // Указываем на файл, который вы загрузили вручную в папку app
+            // Файл ключа, который вы загрузили в папку app
             storeFile = file("my-release-key.jks")
             storePassword = System.getenv("KEYSTORE_PASSWORD")
             keyAlias = System.getenv("KEY_ALIAS")
@@ -35,7 +35,6 @@ android {
             signingConfig = signingConfigs.getByName("release")
         }
         getByName("debug") {
-            // Оставляем ту же подпись, чтобы Firebase работал в любом режиме
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -49,9 +48,7 @@ android {
         jvmTarget = "17"
     }
 
-    buildFeatures {
-        compose = true
-    }
+    buildFeatures { compose = true }
 
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.11"
@@ -78,11 +75,12 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("androidx.compose.material:material-icons-extended:1.6.0")
 
-    // Firebase
+    // Firebase (BOM управляет версиями всех библиотек ниже)
     implementation(platform("com.google.firebase:firebase-bom:32.7.2"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
+    implementation("com.google.firebase:firebase-analytics-ktx")
 
     // WebRTC & Room
     implementation("io.getstream:stream-webrtc-android:1.1.1")
