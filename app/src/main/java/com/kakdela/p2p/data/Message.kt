@@ -6,5 +6,7 @@ data class Message(
     val timestamp: Long = System.currentTimeMillis(),
     val isDelivered: Boolean = false,
     val isRead: Boolean = false,
-    val fileUrl: String? = null  // <-- запятая перед этим полем обязательна
+    val fileUrl: String? = null,
+    val scheduledTime: Long = 0 // 0 — отправить сразу, >0 — время отложенной отправки
 )
+
