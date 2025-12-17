@@ -38,7 +38,6 @@ fun ChatScreen(chatId: String, currentUserId: String) {
     val messages by dao.getMessagesForChat(chatId).collectAsState(initial = emptyList())
     val listState = rememberLazyListState()
 
-    // Инициализация WebRTC
     val rtcClient = remember { WebRtcClient(context, chatId, currentUserId) }
     var text by remember { mutableStateOf("") }
 
@@ -56,7 +55,7 @@ fun ChatScreen(chatId: String, currentUserId: String) {
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("P2P Chat: $chatId") }) },
+        topBar = { TopAppBar(title = { Text("Чат: $chatId") }) },
         bottomBar = {
             Surface(tonalElevation = 2.dp) {
                 Row(
@@ -69,7 +68,8 @@ fun ChatScreen(chatId: String, currentUserId: String) {
                     BasicTextField(
                         value = text,
                         onValueChange = { text = it },
-                        modifier = Modifier.weight(1f).padding(8.dp).background(Color.LightGray.copy(0.3f), RoundedCornerShape(20.dp)).padding(12.dp),
+                        modifier = Modifier.weight(1f).padding(8.dp)
+                            .background(Color.LightGray.copy(0.3f), RoundedCornerShape(20.dp)).padding(12.dp),
                         textStyle = LocalTextStyle.current.copy(fontSize = 16.sp)
                     )
                     IconButton(onClick = {
@@ -78,7 +78,7 @@ fun ChatScreen(chatId: String, currentUserId: String) {
                             text = ""
                         }
                     }) {
-                        Icon(Icons.Default.Send, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Icon(Icons.Default.Send, tint = MaterialTheme.colorScheme.primary, contentDescription = null)
                     }
                 }
             }
@@ -99,7 +99,7 @@ fun ChatScreen(chatId: String, currentUserId: String) {
                     ) {
                         Column(modifier = Modifier.padding(8.dp)) {
                             msg.fileBytes?.let {
-                                val bitmap = BitmapFactory.decodeByteArray(it, 0, it.size)
+                                val bitmap = remember(msg.id) { BitmapFactory.decodeByteArray(it, 0, it.size) }
                                 bitmap?.let { b ->
                                     Image(
                                         bitmap = b.asImageBitmap(),
