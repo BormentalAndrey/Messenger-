@@ -18,11 +18,13 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      # Исправленный блок: создаем файл прямо в папке app
+      # ГАРАНТИРОВАННОЕ СОЗДАНИЕ КЛЮЧА
       - name: Decode Keystore
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > app/my-release-key.jks
-          ls -l app/my-release-key.jks
+          mkdir -p app
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ./app/my-release-key.jks
+          # Проверяем, что файл лежит именно там, где его ждет Gradle
+          find . -name "my-release-key.jks"
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -39,4 +41,3 @@ jobs:
         with:
           name: app-release
           path: app/build/outputs/apk/release/app-release.apk
-          
