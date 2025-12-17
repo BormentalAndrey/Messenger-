@@ -17,20 +17,19 @@ class WebRtcClient(
     private val db = Firebase.firestore
     private val dao = ChatDatabase.getDatabase(context).messageDao()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val factory: PeerConnectionFactory by lazy { createFactory() }
     private var peerConnection: PeerConnection? = null
     private var dataChannel: DataChannel? = null
+
+    private val factory: PeerConnectionFactory by lazy {
+        PeerConnectionFactory.initialize(
+            PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions()
+        )
+        PeerConnectionFactory.builder().createPeerConnectionFactory()
+    }
 
     init {
         setupPeerConnection()
         listenForSignaling()
-    }
-
-    private fun createFactory(): PeerConnectionFactory {
-        PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions()
-        )
-        return PeerConnectionFactory.builder().createPeerConnectionFactory()
     }
 
     private fun setupPeerConnection() {
@@ -83,7 +82,6 @@ class WebRtcClient(
     fun sendP2P(text: String, bytes: ByteArray? = null) {
         scope.launch {
             dao.insert(MessageEntity(chatId = chatId, text = text, fileBytes = bytes, senderId = currentUserId, timestamp = System.currentTimeMillis()))
-            
             if (dataChannel?.state() == DataChannel.State.OPEN) {
                 val buffer = if (bytes != null) DataChannel.Buffer(ByteBuffer.wrap(bytes), true)
                 else DataChannel.Buffer(ByteBuffer.wrap(text.toByteArray(Charsets.UTF_8)), false)
@@ -100,9 +98,11 @@ class WebRtcClient(
         dataChannel?.let { setupDataChannel(it) }
 
         peerConnection?.createOffer(object : SdpAdapter() {
-            override fun onCreateSuccess(desc: SessionDescription) {
-                peerConnection?.setLocalDescription(SdpAdapter(), desc)
-                db.collection("chats").document(chatId).set(mapOf("offer" to desc.description), com.google.firebase.firestore.SetOptions.merge())
+            override fun onCreateSuccess(desc: SessionDescription?) {
+                desc?.let {
+                    peerConnection?.setLocalDescription(SdpAdapter(), it)
+                    db.collection("chats").document(chatId).set(mapOf("offer" to it.description), com.google.firebase.firestore.SetOptions.merge())
+                }
             }
         }, MediaConstraints())
     }
@@ -131,9 +131,11 @@ class WebRtcClient(
     private fun handleOffer(offer: String) {
         peerConnection?.setRemoteDescription(SdpAdapter(), SessionDescription(SessionDescription.Type.OFFER, offer))
         peerConnection?.createAnswer(object : SdpAdapter() {
-            override fun onCreateSuccess(desc: SessionDescription) {
-                peerConnection?.setLocalDescription(SdpAdapter(), desc)
-                db.collection("chats").document(chatId).update("answer", desc.description)
+            override fun onCreateSuccess(desc: SessionDescription?) {
+                desc?.let {
+                    peerConnection?.setLocalDescription(SdpAdapter(), it)
+                    db.collection("chats").document(chatId).update("answer", it.description)
+                }
             }
         }, MediaConstraints())
     }
