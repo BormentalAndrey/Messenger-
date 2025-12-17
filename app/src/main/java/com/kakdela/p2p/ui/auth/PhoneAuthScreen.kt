@@ -16,20 +16,25 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.kakdela.p2p.auth.SmsCodeManager
+import com.kakdela.p2p.data.AuthManager // Наш новый менеджер
+import kotlinx.coroutines.launch
 
 @Composable
 fun PhoneAuthScreen(
     onSuccess: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val authManager = remember { AuthManager() }
 
+    var name by remember { mutableStateOf("") } // Добавили поле Имя
     var phone by remember { mutableStateOf("") }
     var generatedCode by remember { mutableStateOf<String?>(null) }
     var inputCode by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    var isRegistering by remember { mutableStateOf(false) } // Индикатор загрузки
     var permissionDenied by remember { mutableStateOf(false) }
 
-    // 🔐 Лаунчер разрешения SEND_SMS
     val smsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -39,13 +44,11 @@ fun PhoneAuthScreen(
         }
     }
 
-    // 🔁 Запрашиваем разрешение СРАЗУ при входе на экран
     LaunchedEffect(Unit) {
         val granted = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.SEND_SMS
         ) == PackageManager.PERMISSION_GRANTED
-
         if (!granted) {
             smsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
         }
@@ -58,95 +61,104 @@ fun PhoneAuthScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-
-        Text("Подтверждение номера", style = MaterialTheme.typography.headlineMedium)
+        Text("Регистрация", style = MaterialTheme.typography.headlineMedium)
 
         Spacer(Modifier.height(24.dp))
+
+        // Поле Имени (WhatsApp стиль)
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Ваше имя") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+
+        Spacer(Modifier.height(8.dp))
 
         OutlinedTextField(
             value = phone,
             onValueChange = { phone = it },
-            label = { Text("Номер телефона") },
-            modifier = Modifier.fillMaxWidth()
+            label = { Text("Номер телефона (например 7999...)") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
         )
 
         Spacer(Modifier.height(16.dp))
 
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = {
-                error = null
+        if (generatedCode == null) {
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    error = null
+                    if (name.isBlank() || phone.isBlank()) {
+                        error = "Заполните все поля"
+                        return@Button
+                    }
 
-                if (phone.isBlank()) {
-                    error = "Введите номер телефона"
-                    return@Button
+                    val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+                    if (!granted) {
+                        permissionDenied = true
+                        return@Button
+                    }
+
+                    val code = SmsCodeManager.generateCode()
+                    generatedCode = code
+                    SmsCodeManager.sendCode(context, phone, code)
                 }
-
-                val granted = ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.SEND_SMS
-                ) == PackageManager.PERMISSION_GRANTED
-
-                if (!granted) {
-                    permissionDenied = true
-                    return@Button
-                }
-
-                val code = SmsCodeManager.generateCode()
-                generatedCode = code
-
-                SmsCodeManager.sendCode(
-                    context = context,
-                    phone = phone,
-                    code = code
-                )
+            ) {
+                Text("Получить код")
             }
-        ) {
-            Text("Отправить код")
         }
 
         if (generatedCode != null) {
-
-            Spacer(Modifier.height(16.dp))
-
             OutlinedTextField(
                 value = inputCode,
                 onValueChange = { inputCode = it },
-                label = { Text("Код из SMS") },
+                label = { Text("Код подтверждения") },
                 modifier = Modifier.fillMaxWidth()
             )
 
             Spacer(Modifier.height(16.dp))
 
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    if (inputCode == generatedCode) {
-                        onSuccess()
-                    } else {
-                        error = "Неверный код"
+            if (isRegistering) {
+                CircularProgressIndicator()
+            } else {
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        if (inputCode == generatedCode) {
+                            isRegistering = true
+                            scope.launch {
+                                // 🚀 КРИТИЧЕСКИЙ МОМЕНТ: Сохраняем в Firestore
+                                val success = authManager.completeSignIn(name, phone)
+                                if (success) {
+                                    onSuccess()
+                                } else {
+                                    error = "Ошибка при создании профиля"
+                                    isRegistering = false
+                                }
+                            }
+                        } else {
+                            error = "Неверный код"
+                        }
                     }
+                ) {
+                    Text("Подтвердить и войти")
                 }
-            ) {
-                Text("Подтвердить")
             }
         }
 
-        // ❗ Если пользователь запретил SMS — кнопка перехода в настройки
         if (permissionDenied) {
             Spacer(Modifier.height(16.dp))
-
             Button(
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                 onClick = {
-                    val intent = Intent(
-                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.fromParts("package", context.packageName, null)
-                    )
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null))
                     context.startActivity(intent)
                 }
             ) {
-                Text("Открыть настройки и разрешить SMS")
+                Text("Разрешить отправку SMS в настройках")
             }
         }
 
@@ -156,3 +168,4 @@ fun PhoneAuthScreen(
         }
     }
 }
+
