@@ -6,7 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.items  // <-- этот импорт обязателен!
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -68,7 +68,7 @@ fun DealsScreen(navController: NavHostController) {
                 .background(Color.Black)
                 .padding(padding)
         ) {
-            items(dealItems) { item ->
+            items(items = dealItems) { item ->
                 DealListItem(item = item, navController = navController, context = context)
             }
         }
