@@ -49,7 +49,6 @@ android {
 }
 
 dependencies {
-    // Core
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.11.0")
@@ -66,10 +65,10 @@ dependencies {
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
 
-    // --- WebRTC (НОВЫЙ ВАРИАНТ) ---
-    // Используем проверенную сборку от Prerender (часто используется в мессенджерах как замена Google)
-    implementation("com.github.heremaps:oksse:0.9.0") // Вспомогательная, если нужно
-    implementation("com.github.webrtc-sdk:android:1.0.62424") // Через JitPack
+    // --- WebRTC (САМЫЙ СТАБИЛЬНЫЙ ВАРИАНТ) ---
+    // Эта библиотека заменяет стандартную org.webrtc и всегда доступна.
+    // API остается тем же самым.
+    implementation("io.getstream:stream-webrtc-android:1.1.1")
 
     // Room
     val roomVersion = "2.6.1"
