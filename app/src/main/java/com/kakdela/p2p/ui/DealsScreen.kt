@@ -6,7 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items  // <-- этот импорт обязателен!
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -81,6 +81,9 @@ fun DealListItem(
     navController: NavHostController,
     context: Context
 ) {
+    // ИСПРАВЛЕНИЕ: Получаем цвет здесь, в контексте Composable, а не внутри clickable
+    val toolbarColor = MaterialTheme.colorScheme.primary.toArgb()
+
     Column {
         Row(
             modifier = Modifier
@@ -91,7 +94,7 @@ fun DealListItem(
                         DealType.WEB -> {
                             item.url?.let { url ->
                                 CustomTabsIntent.Builder()
-                                    .setToolbarColor(MaterialTheme.colorScheme.primary.toArgb())
+                                    .setToolbarColor(toolbarColor) // Используем заранее сохраненный цвет
                                     .setShowTitle(true)
                                     .build()
                                     .launchUrl(context, url.toUri())
@@ -145,3 +148,4 @@ fun DealListItem(
         HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
     }
 }
+
