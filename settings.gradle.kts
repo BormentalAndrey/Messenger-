@@ -10,10 +10,11 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
-        mavenCentral() // Здесь лежит альтернативная версия WebRTC
+        mavenCentral()
+        // ДОБАВЛЯЕМ JitPack
+        maven { url = uri("https://jitpack.io") }
     }
 }
 
 rootProject.name = "Messenger-"
 include(":app")
-
