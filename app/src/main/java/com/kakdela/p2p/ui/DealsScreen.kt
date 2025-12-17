@@ -23,14 +23,10 @@ import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.navigation.NavHostController
 
-/* ---------- Типы ---------- */
-
 enum class DealType {
     WEB,
     CALCULATOR
 }
-
-/* ---------- Модель ---------- */
 
 data class DealItem(
     val id: String,
@@ -43,8 +39,6 @@ data class DealItem(
         get() = title.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
 }
 
-/* ---------- Данные ---------- */
-
 private val dealItems = listOf(
     DealItem(
         id = "calculator",
@@ -55,41 +49,25 @@ private val dealItems = listOf(
     DealItem(
         id = "gosuslugi",
         title = "Госуслуги",
-        description = "Официальный портал государственных услуг РФ",
+        description = "Государственные услуги РФ",
         type = DealType.WEB,
         url = "https://www.gosuslugi.ru"
     ),
     DealItem(
         id = "ozon",
         title = "Ozon",
-        description = "Интернет-магазин: товары, доставка, акции",
+        description = "Интернет-магазин и доставка",
         type = DealType.WEB,
         url = "https://www.ozon.ru"
     ),
     DealItem(
-        id = "wildberries",
+        id = "wb",
         title = "Wildberries",
-        description = "Маркетплейс одежды и электроники",
+        description = "Маркетплейс товаров",
         type = DealType.WEB,
         url = "https://www.wildberries.ru"
-    ),
-    DealItem(
-        id = "drom",
-        title = "Drom.ru",
-        description = "Автомобили, запчасти, отзывы",
-        type = DealType.WEB,
-        url = "https://www.drom.ru"
-    ),
-    DealItem(
-        id = "rbc",
-        title = "РБК",
-        description = "Новости экономики и бизнеса",
-        type = DealType.WEB,
-        url = "https://www.rbc.ru"
     )
 )
-
-/* ---------- Экран ---------- */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -122,8 +100,7 @@ fun DealsScreen(navController: NavHostController) {
                 DealListItem(item) {
                     when (item.type) {
                         DealType.CALCULATOR -> {
-                            // 🔧 Временно заглушка
-                            navController.navigate("deals") 
+                            navController.navigate("calculator")
                         }
                         DealType.WEB -> {
                             val intent = CustomTabsIntent.Builder()
@@ -141,8 +118,6 @@ fun DealsScreen(navController: NavHostController) {
         }
     }
 }
-
-/* ---------- Элемент списка ---------- */
 
 @Composable
 fun DealListItem(
