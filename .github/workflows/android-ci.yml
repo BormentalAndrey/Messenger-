@@ -21,15 +21,13 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 8.9
 
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      # Добавляем --refresh-dependencies чтобы форсировать поиск в JitPack
       - name: Assemble Debug APK
-        run: ./gradlew assembleDebug --no-daemon --no-configuration-cache --refresh-dependencies --stacktrace
+        # Очистка и сборка без использования кэша конфигурации
+        run: ./gradlew clean assembleDebug --no-daemon --no-configuration-cache --stacktrace
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
