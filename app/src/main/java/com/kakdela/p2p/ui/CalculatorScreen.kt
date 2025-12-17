@@ -2,31 +2,60 @@ package com.kakdela.p2p.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalculatorScreen() {
+
     var display by remember { mutableStateOf("0") }
-    var firstNumber by remember { mutableStateOf("") }
-    var operation by remember { mutableStateOf("") }
-    var waitingForSecondNumber by remember { mutableStateOf(false) }
+    var firstNumber by remember { mutableStateOf<Double?>(null) }
+    var operation by remember { mutableStateOf<String?>(null) }
+    var waitingForSecond by remember { mutableStateOf(false) }
+
+    fun clear() {
+        display = "0"
+        firstNumber = null
+        operation = null
+        waitingForSecond = false
+    }
+
+    fun calculate(second: Double): String {
+        val first = firstNumber ?: return second.toString()
+        val result = when (operation) {
+            "+" -> first + second
+            "-" -> first - second
+            "×" -> first * second
+            "÷" -> if (second == 0.0) return "Ошибка" else first / second
+            else -> second
+        }
+        return result.toString().removeSuffix(".0")
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Калькулятор", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
+                title = {
+                    Text(
+                        "Калькулятор",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Black
+                )
             )
         }
     ) { padding ->
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -35,6 +64,7 @@ fun CalculatorScreen() {
                 .padding(16.dp),
             horizontalAlignment = Alignment.End
         ) {
+
             Text(
                 text = display,
                 color = Color.White,
@@ -51,41 +81,50 @@ fun CalculatorScreen() {
             )
 
             buttons.forEach { row ->
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     row.forEach { label ->
                         Button(
                             onClick = {
                                 when (label) {
-                                    "C" -> {
-                                        display = "0"
-                                        firstNumber = ""
-                                        operation = ""
-                                        waitingForSecondNumber = false
-                                    }
-                                    "=" -> {
-                                        // Расчёт (упрощённый)
-                                        if (operation.isNotEmpty() && firstNumber.isNotEmpty()) {
-                                            val second = display.toDouble()
-                                            val result = when (operation) {
-                                                "+" -> firstNumber.toDouble() + second
-                                                "-" -> firstNumber.toDouble() - second
-                                                "×" -> firstNumber.toDouble() * second
-                                                "÷" -> firstNumber.toDouble() / second
-                                                else -> second
-                                            }
-                                            display = result.toString().removeSuffix(".0")
-                                            operation = ""
+
+                                    "C" -> clear()
+
+                                    "+/-" -> {
+                                        if (display != "0") {
+                                            display = if (display.startsWith("-"))
+                                                display.drop(1)
+                                            else
+                                                "-$display"
                                         }
                                     }
-                                    "+", "-", "×", "÷" -> {
-                                        firstNumber = display
-                                        operation = label
-                                        waitingForSecondNumber = true
+
+                                    "%" -> {
+                                        display =
+                                            (display.toDoubleOrNull()?.div(100))?.toString()
+                                                ?.removeSuffix(".0") ?: display
                                     }
+
+                                    "+", "-", "×", "÷" -> {
+                                        firstNumber = display.toDoubleOrNull()
+                                        operation = label
+                                        waitingForSecond = true
+                                    }
+
+                                    "=" -> {
+                                        val second = display.toDoubleOrNull() ?: return@Button
+                                        display = calculate(second)
+                                        firstNumber = display.toDoubleOrNull()
+                                        operation = null
+                                        waitingForSecond = false
+                                    }
+
                                     else -> {
-                                        if (waitingForSecondNumber || display == "0") {
+                                        if (waitingForSecond || display == "0") {
                                             display = label
-                                            waitingForSecondNumber = false
+                                            waitingForSecond = false
                                         } else {
                                             display += label
                                         }
