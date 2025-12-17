@@ -47,7 +47,6 @@ fun NavGraph(navController: NavHostController) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    // Убрали Routes.CONTACTS из списка отображения BottomBar
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS, 
         Routes.DEALS, 
@@ -64,30 +63,45 @@ fun NavGraph(navController: NavHostController) {
                 ) {
                     NavigationBarItem(
                         selected = currentRoute == Routes.CHATS,
-                        onClick = { navController.navigate(Routes.CHATS) { launchSingleTop = true } },
+                        onClick = { 
+                            navController.navigate(Routes.CHATS) { 
+                                popUpTo(Routes.CHATS) { inclusive = true }
+                                launchSingleTop = true 
+                            } 
+                        },
                         icon = { Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null) },
                         label = { Text("Чаты") }
                     )
 
-                    // КНОПКА «КОНТАКТЫ» УДАЛЕНА ОТСЮДА
-
                     NavigationBarItem(
                         selected = currentRoute == Routes.DEALS,
-                        onClick = { navController.navigate(Routes.DEALS) { launchSingleTop = true } },
+                        onClick = { 
+                            navController.navigate(Routes.DEALS) { 
+                                launchSingleTop = true 
+                            } 
+                        },
                         icon = { Icon(Icons.Filled.Checklist, contentDescription = null) },
                         label = { Text("Дела") }
                     )
 
                     NavigationBarItem(
                         selected = currentRoute == Routes.ENTERTAINMENT,
-                        onClick = { navController.navigate(Routes.ENTERTAINMENT) { launchSingleTop = true } },
+                        onClick = { 
+                            navController.navigate(Routes.ENTERTAINMENT) { 
+                                launchSingleTop = true 
+                            } 
+                        },
                         icon = { Icon(Icons.Outlined.PlayCircleOutline, contentDescription = null) },
                         label = { Text("Развлечения") }
                     )
 
                     NavigationBarItem(
                         selected = currentRoute == Routes.SETTINGS,
-                        onClick = { navController.navigate(Routes.SETTINGS) { launchSingleTop = true } },
+                        onClick = { 
+                            navController.navigate(Routes.SETTINGS) { 
+                                launchSingleTop = true 
+                            } 
+                        },
                         icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
                         label = { Text("Настройки") }
                     )
@@ -103,20 +117,30 @@ fun NavGraph(navController: NavHostController) {
                 .background(Color.Black)
         ) {
             composable(Routes.SPLASH) { SplashScreen(navController) }
+            
             composable(Routes.CHOICE) {
                 RegistrationChoiceScreen(
                     onEmail = { navController.navigate(Routes.AUTH_EMAIL) },
                     onPhone = { navController.navigate(Routes.AUTH_PHONE) }
                 )
             }
+
             composable(Routes.AUTH_EMAIL) {
                 EmailAuthScreen(navController = navController) {
-                    navController.navigate(Routes.CHATS) { popUpTo(0) { inclusive = true } }
+                    // ИСПРАВЛЕНИЕ: Очищаем весь стек до Splash включительно
+                    navController.navigate(Routes.CHATS) {
+                        popUpTo(Routes.SPLASH) { inclusive = true }
+                        launchSingleTop = true
+                    }
                 }
             }
+
             composable(Routes.AUTH_PHONE) {
                 PhoneAuthScreen {
-                    navController.navigate(Routes.CHATS) { popUpTo(0) { inclusive = true } }
+                    navController.navigate(Routes.CHATS) {
+                        popUpTo(Routes.SPLASH) { inclusive = true }
+                        launchSingleTop = true
+                    }
                 }
             }
             
@@ -152,7 +176,5 @@ fun NavGraph(navController: NavHostController) {
             }
         }
     }
-}
-}
 }
 
