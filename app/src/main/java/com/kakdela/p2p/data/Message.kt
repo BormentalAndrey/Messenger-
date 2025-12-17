@@ -5,7 +5,7 @@ data class Message(
     val senderId: String = "",
     val timestamp: Long = System.currentTimeMillis(),
     val fileUrl: String? = null,
-    val isP2P: Boolean = false, // Флаг: передается ли файл напрямую
+    val isP2P: Boolean = false, // Флаг прямого канала
     val scheduledTime: Long = 0
 )
 
