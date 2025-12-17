@@ -26,9 +26,10 @@ import com.google.firebase.storage.ktx.storage
 
 @Composable
 fun SettingsScreen(navController: NavHostController) {
-
     val context = LocalContext.current
-    val auth = Firebase.auth
+    val auth = remember { Firebase.auth }
+    val db = remember { Firebase.firestore }
+    val storage = remember { Firebase.storage }
     val user = auth.currentUser
 
     val hasPhone = user?.phoneNumber != null
@@ -37,17 +38,10 @@ fun SettingsScreen(navController: NavHostController) {
     var avatarUrl by remember { mutableStateOf<String?>(null) }
     var isUploading by remember { mutableStateOf(false) }
 
-    val db = Firebase.firestore
-    val storage = Firebase.storage
-
-    // Загружаем аватар
     LaunchedEffect(user?.uid) {
         user?.uid?.let { uid ->
-            db.collection("users").document(uid)
-                .get()
-                .addOnSuccessListener {
-                    avatarUrl = it.getString("avatarUrl")
-                }
+            db.collection("users").document(uid).get()
+                .addOnSuccessListener { avatarUrl = it.getString("avatarUrl") }
         }
     }
 
@@ -57,131 +51,60 @@ fun SettingsScreen(navController: NavHostController) {
         if (uri != null && user != null) {
             isUploading = true
             val ref = storage.reference.child("avatars/${user.uid}.jpg")
-
-            ref.putFile(uri)
-                .addOnSuccessListener {
-                    ref.downloadUrl.addOnSuccessListener { download ->
-                        avatarUrl = download.toString()
-                        db.collection("users")
-                            .document(user.uid)
-                            .set(mapOf("avatarUrl" to avatarUrl), com.google.firebase.firestore.SetOptions.merge())
-                        isUploading = false
-                    }
-                }
-                .addOnFailureListener {
+            ref.putFile(uri).addOnSuccessListener {
+                ref.downloadUrl.addOnSuccessListener { download ->
+                    avatarUrl = download.toString()
+                    db.collection("users").document(user.uid)
+                        .set(mapOf("avatarUrl" to avatarUrl), com.google.firebase.firestore.SetOptions.merge())
                     isUploading = false
                 }
+            }.addOnFailureListener { isUploading = false }
         }
     }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .padding(16.dp),
+        modifier = Modifier.fillMaxSize().background(Color.Black).padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-
-        Text(
-            "Настройки",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-
+        Text("Настройки", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(32.dp))
 
-        // Аватар
         Box(
-            modifier = Modifier
-                .size(120.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
-                .clickable {
-                    photoPickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                },
+            modifier = Modifier.size(120.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                .clickable { photoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
             contentAlignment = Alignment.Center
         ) {
             if (avatarUrl != null) {
-                AsyncImage(
-                    model = avatarUrl,
-                    contentDescription = "Аватар",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
+                AsyncImage(model = avatarUrl, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             } else {
-                Text(
-                    "Нажмите,\nчтобы выбрать\nаватар",
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Text("Нажмите,\nчтобы выбрать\nаватар", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.primary)
             }
-
-            if (isUploading) {
-                CircularProgressIndicator(color = Color.White)
-            }
+            if (isUploading) CircularProgressIndicator(color = Color.White)
         }
 
         Spacer(Modifier.height(32.dp))
-
-        // Привязка телефона
-        if (!hasPhone) {
-            Button(
-                onClick = { navController.navigate("auth_phone") },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Добавить номер телефона")
-            }
-        } else {
-            Text("📱 Телефон подтверждён", color = Color.Green)
-        }
-
+        InfoRow("📱 Телефон", hasPhone, "Добавить номер") { navController.navigate("auth_phone") }
         Spacer(Modifier.height(16.dp))
-
-        // Привязка email
-        if (!hasEmail) {
-            Button(
-                onClick = { navController.navigate("auth_email") },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Добавить Email")
-            }
-        } else {
-            Text("✉️ Email подтверждён", color = Color.Green)
-        }
-
-        Spacer(Modifier.height(24.dp))
-
-        // Итоговый доступ
-        if (hasPhone && hasEmail) {
-            Text(
-                "✅ Доступны ВСЕ функции приложения",
-                color = Color.Green
-            )
-        } else {
-            Text(
-                "⚠ Некоторые функции ограничены",
-                color = Color.Yellow
-            )
-        }
+        InfoRow("✉️ Email", hasEmail, "Добавить Email") { navController.navigate("auth_email") }
 
         Spacer(Modifier.height(32.dp))
-
-        // Выход
         OutlinedButton(
             onClick = {
                 auth.signOut()
-                navController.navigate("choice") {
-                    popUpTo(0) { inclusive = true }
-                }
+                navController.navigate("choice") { popUpTo(0) { inclusive = true } }
             },
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = MaterialTheme.colorScheme.error
-            )
-        ) {
-            Text("Выйти из аккаунта")
-        }
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+        ) { Text("Выйти из аккаунта") }
     }
 }
+
+@Composable
+fun InfoRow(label: String, isConfirmed: Boolean, actionText: String, onAction: () -> Unit) {
+    if (isConfirmed) {
+        Text("$label подтверждён", color = Color.Green)
+    } else {
+        Button(onClick = onAction, modifier = Modifier.fillMaxWidth()) { Text(actionText) }
+    }
+}
+
