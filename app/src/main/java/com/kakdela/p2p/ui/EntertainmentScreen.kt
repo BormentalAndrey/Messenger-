@@ -45,58 +45,44 @@ private val entertainmentItems = listOf(
     EntertainmentItem(
         id = "global_chat",
         title = "ЧёКаВо? (глобальный чат)",
-        description = "Общий чат всех пользователей приложения",
+        description = "Общий чат",
         type = EntertainmentType.INTERNAL_CHAT,
         route = "chat/global"
     ),
     EntertainmentItem(
         id = "tictactoe",
         title = "Крестики-нолики",
-        description = "Классическая игра против ИИ",
+        description = "Игра против ИИ",
         type = EntertainmentType.GAME,
         route = Routes.TIC_TAC_TOE
     ),
     EntertainmentItem(
         id = "chess",
         title = "Шахматы",
-        description = "Стратегическая игра (в разработке)",
+        description = "Игра (в разработке)",
         type = EntertainmentType.GAME,
         route = Routes.CHESS
     ),
     EntertainmentItem(
         id = "pacman",
         title = "Пакман",
-        description = "Собери точки, убегай от привидений",
+        description = "Аркада",
         type = EntertainmentType.GAME,
         route = Routes.PACMAN
     ),
     EntertainmentItem(
         id = "jewels",
         title = "Jewels Blast",
-        description = "Собирай камни три в ряд",
+        description = "3 в ряд",
         type = EntertainmentType.GAME,
         route = Routes.JEWELS
     ),
     EntertainmentItem(
-        id = "pikabu",
-        title = "Пикабу",
-        description = "Юмор, истории, мемы и новости",
-        type = EntertainmentType.WEB,
-        url = "https://pikabu.ru"
-    ),
-    EntertainmentItem(
-        id = "tiktok",
-        title = "TikTok",
-        description = "Короткие видео, тренды, танцы и креатив",
-        type = EntertainmentType.WEB,
-        url = "https://www.tiktok.com"
-    ),
-    EntertainmentItem(
         id = "crazygames",
         title = "CrazyGames",
-        description = "Тысячи бесплатных браузерных игр",
+        description = "Онлайн-игры",
         type = EntertainmentType.WEB,
-        url = "https://www.crazygames.ru"
+        url = "https://crazygames.ru"
     )
 )
 
@@ -149,7 +135,6 @@ fun EntertainmentListItem(
                         item.url?.let { url ->
                             CustomTabsIntent.Builder()
                                 .setToolbarColor(MaterialTheme.colorScheme.primary.toArgb())
-                                .setShowTitle(true)
                                 .build()
                                 .launchUrl(context, url.toUri())
                         }
