@@ -6,6 +6,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -59,20 +60,36 @@ fun ChatScreen(
 
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
 
-    // Лаунчеры для выбора файлов
     val photoVideoLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
-        uri?.let { uploadAndSendFile(it, chatId, viewModel, storage, currentUserId, coroutineScope) }
+        uri?.let {
+            uploadAndSendFile(
+                uri = it,
+                chatId = chatId,
+                viewModel = viewModel,
+                storageRef = storage,
+                currentUserId = currentUserId,
+                coroutineScope = coroutineScope
+            )
+        }
     }
 
     val documentLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.let { uploadAndSendFile(it, chatId, viewModel, storage, currentUserId, coroutineScope) }
+        uri?.let {
+            uploadAndSendFile(
+                uri = it,
+                chatId = chatId,
+                viewModel = viewModel,
+                storageRef = storage,
+                currentUserId = currentUserId,
+                coroutineScope = coroutineScope
+            )
+        }
     }
 
-    // Показ bottom sheet с выбором вложения
     var showAttachmentSheet by remember { mutableStateOf(false) }
 
     if (showAttachmentSheet) {
@@ -81,19 +98,27 @@ fun ChatScreen(
             containerColor = Color(0xFF1A1A1A)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
+
                 ListItem(
                     headlineContent = { Text("Фото или видео") },
-                    leadingContent = { Icon(Icons.Default.Image, null, tint = MaterialTheme.colorScheme.primary) },
+                    leadingContent = {
+                        Icon(Icons.Default.Image, null, tint = MaterialTheme.colorScheme.primary)
+                    },
                     modifier = Modifier.clickable {
                         photoVideoLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                            PickVisualMediaRequest(
+                                ActivityResultContracts.PickVisualMedia.ImageAndVideo
+                            )
                         )
                         showAttachmentSheet = false
                     }
                 )
+
                 ListItem(
                     headlineContent = { Text("Документ или файл") },
-                    leadingContent = { Icon(Icons.Default.InsertDriveFile, null, tint = MaterialTheme.colorScheme.primary) },
+                    leadingContent = {
+                        Icon(Icons.Default.InsertDriveFile, null, tint = MaterialTheme.colorScheme.primary)
+                    },
                     modifier = Modifier.clickable {
                         documentLauncher.launch("*/*")
                         showAttachmentSheet = false
@@ -116,7 +141,7 @@ fun ChatScreen(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Неоновый фон
+
         Image(
             painter = painterResource(id = R.drawable.chat_background),
             contentDescription = null,
@@ -126,52 +151,45 @@ fun ChatScreen(
         )
 
         Column(modifier = Modifier.fillMaxSize()) {
+
             LazyColumn(
                 state = listState,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 8.dp),
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
                 items(messages) { message ->
                     val isOwn = message.senderId == currentUserId
 
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                         horizontalArrangement = if (isOwn) Arrangement.End else Arrangement.Start
                     ) {
                         if (!isOwn) {
-                            AvatarPlaceholder(name = if (chatId == "global") "Ч" else "С")
-                            Spacer(modifier = Modifier.width(8.dp))
+                            AvatarPlaceholder("С")
+                            Spacer(Modifier.width(8.dp))
                         }
 
-                        Column(
-                            horizontalAlignment = if (isOwn) Alignment.End else Alignment.Start
-                        ) {
-                            // Отображение отправленного изображения
+                        Column(horizontalAlignment = if (isOwn) Alignment.End else Alignment.Start) {
+
                             if (!message.fileUrl.isNullOrBlank()) {
                                 Image(
                                     painter = rememberAsyncImagePainter(message.fileUrl),
-                                    contentDescription = "Изображение",
-                                    modifier = Modifier
-                                        .size(250.dp)
-                                        .clip(RoundedCornerShape(16.dp)),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(250.dp).clip(RoundedCornerShape(16.dp)),
                                     contentScale = ContentScale.Crop
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
+                                Spacer(Modifier.height(4.dp))
                             }
 
-                            // Текстовое сообщение
                             if (message.text.isNotBlank()) {
                                 Surface(
                                     shape = RoundedCornerShape(16.dp),
-                                    color = if (isOwn) MaterialTheme.colorScheme.primary else Color(0xFF2A2A2A),
-                                    modifier = Modifier.widthIn(max = 300.dp)
+                                    color = if (isOwn)
+                                        MaterialTheme.colorScheme.primary
+                                    else Color(0xFF2A2A2A)
                                 ) {
                                     Text(
-                                        text = message.text,
+                                        message.text,
                                         modifier = Modifier.padding(12.dp),
                                         color = if (isOwn) Color.Black else Color.White,
                                         fontSize = 16.sp
@@ -179,55 +197,22 @@ fun ChatScreen(
                                 }
                             }
 
-                            // Время и галочки статуса
-                            Row(
-                                horizontalArrangement = Arrangement.End,
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(top = 4.dp, start = 12.dp, end = 12.dp)
-                            ) {
-                                if (isOwn) {
-                                    if (message.isRead) {
-                                        Icon(
-                                            painter = painterResource(android.R.drawable.stat_notify_chat),
-                                            contentDescription = "Прочитано",
-                                            tint = Color(0xFF00FFF0),
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    } else if (message.isDelivered) {
-                                        Icon(
-                                            painter = painterResource(android.R.drawable.stat_notify_chat),
-                                            contentDescription = "Доставлено",
-                                            tint = Color.Gray,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    } else {
-                                        Icon(
-                                            painter = painterResource(android.R.drawable.presence_away),
-                                            contentDescription = "Отправлено",
-                                            tint = Color.Gray,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                    }
-                                    Spacer(Modifier.width(4.dp))
-                                }
-
-                                Text(
-                                    text = timeFormat.format(Date(message.timestamp)),
-                                    fontSize = 12.sp,
-                                    color = Color.Gray
-                                )
-                            }
+                            Text(
+                                text = timeFormat.format(Date(message.timestamp)),
+                                fontSize = 12.sp,
+                                color = Color.Gray,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
                         }
 
                         if (isOwn) {
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(Modifier.width(8.dp))
                             AvatarPlaceholder("Я")
                         }
                     }
                 }
             }
 
-            // Панель ввода с кнопкой прикрепления
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -235,55 +220,41 @@ fun ChatScreen(
                     .background(Color(0xFF1A1A1A), RoundedCornerShape(24.dp)),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Кнопка скрепки
                 IconButton(onClick = { showAttachmentSheet = true }) {
-                    Icon(
-                        imageVector = Icons.Default.AttachFile,
-                        contentDescription = "Прикрепить файл",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
+                    Icon(Icons.Default.AttachFile, null, tint = MaterialTheme.colorScheme.primary)
                 }
 
-                // Поле ввода
                 BasicTextField(
                     value = text,
                     onValueChange = { text = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(12.dp),
+                    modifier = Modifier.weight(1f).padding(12.dp),
                     decorationBox = { inner ->
                         if (text.isEmpty()) {
                             Text(
-                                text = stringResource(R.string.enter_message),
-                                color = Color.Gray,
-                                fontSize = 16.sp
+                                stringResource(R.string.enter_message),
+                                color = Color.Gray
                             )
                         }
                         inner()
                     }
                 )
 
-                // Кнопка отправки
                 IconButton(
+                    enabled = text.isNotBlank(),
                     onClick = {
-                        if (text.isNotBlank()) {
-                            viewModel.send(
-                                chatId,
-                                Message(
-                                    text = text.trim(),
-                                    senderId = currentUserId,
-                                    isDelivered = false,
-                                    isRead = false
-                                )
+                        viewModel.send(
+                            chatId,
+                            Message(
+                                text = text.trim(),
+                                senderId = currentUserId
                             )
-                            text = ""
-                        }
-                    },
-                    enabled = text.isNotBlank()
+                        )
+                        text = ""
+                    }
                 ) {
                     Icon(
                         painter = painterResource(android.R.drawable.ic_menu_send),
-                        contentDescription = "Отправить",
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -292,7 +263,6 @@ fun ChatScreen(
     }
 }
 
-// Исправленная функция загрузки файла
 private fun uploadAndSendFile(
     uri: Uri,
     chatId: String,
@@ -303,7 +273,7 @@ private fun uploadAndSendFile(
 ) {
     coroutineScope.launch {
         try {
-            val fileName = "file_\( {System.currentTimeMillis()}_ \){uri.lastPathSegment ?: "unknown"}"
+            val fileName = "file_${System.currentTimeMillis()}_${uri.lastPathSegment ?: "unknown"}"
             val fileRef = storageRef.child("chats/$chatId/$fileName")
             fileRef.putFile(uri).await()
             val downloadUrl = fileRef.downloadUrl.await().toString()
@@ -311,11 +281,8 @@ private fun uploadAndSendFile(
             viewModel.send(
                 chatId,
                 Message(
-                    text = "",
                     senderId = currentUserId,
-                    fileUrl = downloadUrl,
-                    isDelivered = false,
-                    isRead = false
+                    fileUrl = downloadUrl
                 )
             )
         } catch (e: Exception) {
@@ -329,10 +296,7 @@ fun AvatarPlaceholder(name: String) {
     Box(
         modifier = Modifier
             .size(40.dp)
-            .background(
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                CircleShape
-            ),
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), CircleShape),
         contentAlignment = Alignment.Center
     ) {
         Text(
