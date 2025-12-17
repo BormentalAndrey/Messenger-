@@ -42,48 +42,12 @@ data class EntertainmentItem(
 }
 
 private val entertainmentItems = listOf(
-    EntertainmentItem(
-        id = "global_chat",
-        title = "ЧёКаВо? (глобальный чат)",
-        description = "Общий чат",
-        type = EntertainmentType.INTERNAL_CHAT,
-        route = "chat/global"
-    ),
-    EntertainmentItem(
-        id = "tictactoe",
-        title = "Крестики-нолики",
-        description = "Игра против ИИ",
-        type = EntertainmentType.GAME,
-        route = Routes.TIC_TAC_TOE
-    ),
-    EntertainmentItem(
-        id = "chess",
-        title = "Шахматы",
-        description = "Игра (в разработке)",
-        type = EntertainmentType.GAME,
-        route = Routes.CHESS
-    ),
-    EntertainmentItem(
-        id = "pacman",
-        title = "Пакман",
-        description = "Аркада",
-        type = EntertainmentType.GAME,
-        route = Routes.PACMAN
-    ),
-    EntertainmentItem(
-        id = "jewels",
-        title = "Jewels Blast",
-        description = "3 в ряд",
-        type = EntertainmentType.GAME,
-        route = Routes.JEWELS
-    ),
-    EntertainmentItem(
-        id = "crazygames",
-        title = "CrazyGames",
-        description = "Онлайн-игры",
-        type = EntertainmentType.WEB,
-        url = "https://crazygames.ru"
-    )
+    EntertainmentItem("global_chat", "ЧёКаВо? (глобальный чат)", "Общий чат", EntertainmentType.INTERNAL_CHAT, "chat/global"),
+    EntertainmentItem("tictactoe", "Крестики-нолики", "Игра против ИИ", EntertainmentType.GAME, Routes.TIC_TAC_TOE),
+    EntertainmentItem("chess", "Шахматы", "Игра (в разработке)", EntertainmentType.GAME, Routes.CHESS),
+    EntertainmentItem("pacman", "Пакман", "Аркада", EntertainmentType.GAME, Routes.PACMAN),
+    EntertainmentItem("jewels", "Jewels Blast", "3 в ряд", EntertainmentType.GAME, Routes.JEWELS),
+    EntertainmentItem("crazygames", "CrazyGames", "Онлайн-игры", EntertainmentType.WEB, "https://crazygames.ru")
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -94,22 +58,13 @@ fun EntertainmentScreen(navController: NavHostController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        text = "Развлечения",
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                },
+                title = { Text("Развлечения", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
             )
         }
     ) { paddingValues ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-                .padding(paddingValues)
+            modifier = Modifier.fillMaxSize().background(Color.Black).padding(paddingValues)
         ) {
             items(entertainmentItems) { item ->
                 EntertainmentListItem(item = item, navController = navController, context = context)
@@ -133,10 +88,10 @@ fun EntertainmentListItem(
                     EntertainmentType.GAME -> navController.navigate(item.route!!)
                     EntertainmentType.WEB -> {
                         item.url?.let { url ->
-                            val tabs = CustomTabsIntent.Builder()
+                            CustomTabsIntent.Builder()
                                 .setToolbarColor(MaterialTheme.colorScheme.primary.toArgb())
                                 .build()
-                            tabs.launchUrl(context, url.toUri())
+                                .launchUrl(context, url.toUri())
                         }
                     }
                 }
@@ -145,43 +100,20 @@ fun EntertainmentListItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            modifier = Modifier
-                .size(56.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+            modifier = Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = item.iconLetter,
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Text(item.iconLetter, color = MaterialTheme.colorScheme.primary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         }
 
-        Spacer(modifier = Modifier.width(16.dp))
+        Spacer(Modifier.width(16.dp))
 
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.title,
-                color = Color.White,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                text = item.description,
-                color = Color.Gray,
-                fontSize = 14.sp,
-                maxLines = 1
-            )
+        Column(Modifier.weight(1f)) {
+            Text(item.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Medium)
+            Text(item.description, color = Color.Gray, fontSize = 14.sp, maxLines = 1)
         }
 
-        Icon(
-            imageVector = Icons.Filled.PlayArrow,
-            contentDescription = "Открыть",
-            tint = Color.Gray,
-            modifier = Modifier.size(20.dp)
-        )
+        Icon(Icons.Filled.PlayArrow, contentDescription = "Открыть", tint = Color.Gray, modifier = Modifier.size(20.dp))
     }
 
     HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
