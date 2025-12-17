@@ -22,8 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.navigation.NavHostController
+import com.kakdela.p2p.ui.navigation.Routes
 
-// Тип элемента: веб, внутренний чат или игра
 enum class EntertainmentType {
     WEB,
     INTERNAL_CHAT,
@@ -35,68 +35,55 @@ data class EntertainmentItem(
     val title: String,
     val description: String,
     val type: EntertainmentType,
-    val route: String? = null, // для внутренних экранов (игры, чат)
-    val url: String? = null,   // для веб
-    val iconLetter: String = title.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
-)
+    val route: String? = null,
+    val url: String? = null
+) {
+    val iconLetter: String
+        get() = title.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
+}
 
-// Список элементов в "Развлечения" с играми
 private val entertainmentItems = listOf(
     EntertainmentItem(
         id = "global_chat",
         title = "ЧёКаВо? (глобальный чат)",
-        description = "Общий чат всех пользователей приложения",
+        description = "Общий чат",
         type = EntertainmentType.INTERNAL_CHAT,
         route = "chat/global"
     ),
     EntertainmentItem(
         id = "tictactoe",
         title = "Крестики-нолики",
-        description = "Классическая игра против ИИ",
+        description = "Игра против ИИ",
         type = EntertainmentType.GAME,
-        route = "tictactoe"
+        route = Routes.TIC_TAC_TOE
     ),
     EntertainmentItem(
         id = "chess",
         title = "Шахматы",
-        description = "Стратегическая игра (в разработке)",
+        description = "Игра (в разработке)",
         type = EntertainmentType.GAME,
-        route = "chess"
+        route = Routes.CHESS
     ),
     EntertainmentItem(
         id = "pacman",
         title = "Пакман",
-        description = "Собери точки, убегай от привидений",
+        description = "Аркада",
         type = EntertainmentType.GAME,
-        route = "pacman"
+        route = Routes.PACMAN
     ),
     EntertainmentItem(
         id = "jewels",
         title = "Jewels Blast",
-        description = "Собирай камни три в ряд",
+        description = "3 в ряд",
         type = EntertainmentType.GAME,
-        route = "jewels"
-    ),
-    EntertainmentItem(
-        id = "pikabu",
-        title = "Пикабу",
-        description = "Юмор, истории, мемы и новости",
-        type = EntertainmentType.WEB,
-        url = "https://pikabu.ru"
-    ),
-    EntertainmentItem(
-        id = "tiktok",
-        title = "TikTok",
-        description = "Короткие видео, тренды, танцы и креатив",
-        type = EntertainmentType.WEB,
-        url = "https://www.tiktok.com"
+        route = Routes.JEWELS
     ),
     EntertainmentItem(
         id = "crazygames",
         title = "CrazyGames",
-        description = "Тысячи бесплатных браузерных игр",
+        description = "Онлайн-игры",
         type = EntertainmentType.WEB,
-        url = "https://www.crazygames.ru"
+        url = "https://crazygames.ru"
     )
 )
 
@@ -128,26 +115,22 @@ fun EntertainmentScreen(navController: NavHostController) {
                 .padding(paddingValues)
         ) {
             items(entertainmentItems) { item ->
-                EntertainmentListItem(
-                    item = item,
-                    onClick = {
-                        when (item.type) {
-                            EntertainmentType.INTERNAL_CHAT -> {
-                                navController.navigate(item.route!!)
-                            }
-                            EntertainmentType.GAME -> {
-                                navController.navigate(item.route!!)
-                            }
-                            EntertainmentType.WEB -> {
-                                val customTabsIntent = CustomTabsIntent.Builder()
-                                    .setToolbarColor(MaterialTheme.colorScheme.primary.toArgb())
-                                    .setShowTitle(true)
-                                    .build()
-                                customTabsIntent.launchUrl(context, item.url!!.toUri())
-                            }
+                EntertainmentListItem(item) {
+                    when (item.type) {
+                        EntertainmentType.INTERNAL_CHAT ->
+                            navController.navigate(item.route!!)
+
+                        EntertainmentType.GAME ->
+                            navController.navigate(item.route!!)
+
+                        EntertainmentType.WEB -> {
+                            val tabs = CustomTabsIntent.Builder()
+                                .setToolbarColor(MaterialTheme.colorScheme.primary.toArgb())
+                                .build()
+                            tabs.launchUrl(context, item.url!!.toUri())
                         }
                     }
-                )
+                }
             }
         }
     }
@@ -158,52 +141,52 @@ fun EntertainmentListItem(
     item: EntertainmentItem,
     onClick: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
+    Column {
+        Row(
             modifier = Modifier
-                .size(56.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = item.iconLetter,
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = item.iconLetter,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(Modifier.width(16.dp))
+
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = item.title,
+                    color = Color.White,
+                    fontSize = 17.sp
+                )
+                Text(
+                    text = item.description,
+                    color = Color.Gray,
+                    fontSize = 14.sp
+                )
+            }
+
+            Icon(
+                imageVector = Icons.Filled.PlayArrow,
+                contentDescription = null,
+                tint = Color.Gray,
+                modifier = Modifier.size(20.dp)
             )
         }
 
-        Spacer(modifier = Modifier.width(16.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = item.title,
-                color = Color.White,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                text = item.description,
-                color = Color.Gray,
-                fontSize = 14.sp,
-                maxLines = 1
-            )
-        }
-
-        Icon(
-            imageVector = Icons.Default.PlayArrow,
-            contentDescription = "Открыть",
-            tint = Color.Gray,
-            modifier = Modifier.size(20.dp)
-        )
+        HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
     }
-
-    HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
 }
