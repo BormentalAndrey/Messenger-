@@ -4,9 +4,8 @@ data class Message(
     val text: String = "",
     val senderId: String = "",
     val timestamp: Long = System.currentTimeMillis(),
-    val isDelivered: Boolean = false,
-    val isRead: Boolean = false,
     val fileUrl: String? = null,
-    val scheduledTime: Long = 0 // 0 — отправить сразу, >0 — время отложенной отправки
+    val isP2P: Boolean = false, // Флаг: передается ли файл напрямую
+    val scheduledTime: Long = 0
 )
 
