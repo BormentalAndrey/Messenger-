@@ -1,10 +1,12 @@
 package com.kakdela.p2p.ui
 
+import android.content.Context
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -59,14 +61,15 @@ fun DealsScreen(navController: NavHostController) {
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
             )
         }
-    ) { paddingValues ->
+    ) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().background(Color.Black).padding(paddingValues)
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .padding(padding)
         ) {
-            dealItems.forEach { item ->
-                item {
-                    DealListItem(item = item, navController = navController, context = context)
-                }
+            items(dealItems) { item ->
+                DealListItem(item = item, navController = navController, context = context)
             }
         }
     }
@@ -76,44 +79,69 @@ fun DealsScreen(navController: NavHostController) {
 fun DealListItem(
     item: DealItem,
     navController: NavHostController,
-    context: android.content.Context
+    context: Context
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable {
-                when (item.type) {
-                    DealType.CALCULATOR -> navController.navigate(Routes.CALCULATOR)
-                    DealType.WEB -> {
-                        item.url?.let { url ->
-                            CustomTabsIntent.Builder()
-                                .setToolbarColor(MaterialTheme.colorScheme.primary.toArgb())
-                                .setShowTitle(true)
-                                .build()
-                                .launchUrl(context, url.toUri())
+    Column {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable {
+                    when (item.type) {
+                        DealType.CALCULATOR -> navController.navigate(Routes.CALCULATOR)
+                        DealType.WEB -> {
+                            item.url?.let { url ->
+                                CustomTabsIntent.Builder()
+                                    .setToolbarColor(MaterialTheme.colorScheme.primary.toArgb())
+                                    .setShowTitle(true)
+                                    .build()
+                                    .launchUrl(context, url.toUri())
+                            }
                         }
                     }
                 }
-            }
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Box(
-            modifier = Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-            contentAlignment = Alignment.Center
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(item.iconLetter, color = MaterialTheme.colorScheme.primary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = item.iconLetter,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.title,
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = item.description,
+                    color = Color.Gray,
+                    fontSize = 14.sp,
+                    maxLines = 1
+                )
+            }
+
+            Icon(
+                imageVector = Icons.Filled.PlayArrow,
+                contentDescription = "Открыть",
+                tint = Color.Gray,
+                modifier = Modifier.size(20.dp)
+            )
         }
 
-        Spacer(Modifier.width(16.dp))
-
-        Column(Modifier.weight(1f)) {
-            Text(item.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Medium)
-            Text(item.description, color = Color.Gray, fontSize = 14.sp, maxLines = 1)
-        }
-
-        Icon(Icons.Filled.PlayArrow, contentDescription = "Открыть", tint = Color.Gray, modifier = Modifier.size(20.dp))
+        HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
     }
-
-    HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
 }
