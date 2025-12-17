@@ -24,9 +24,17 @@ fun EmailAuthScreen(
     var isLogin by remember { mutableStateOf(true) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var success by remember { mutableStateOf(false) } // Флаг успешного входа
 
     val auth = Firebase.auth
     val db = Firebase.firestore
+
+    // Если авторизация прошла успешно, вызываем callback перехода
+    LaunchedEffect(success) {
+        if (success) {
+            onAuthSuccess()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -38,7 +46,8 @@ fun EmailAuthScreen(
 
         Text(
             text = if (isLogin) "Вход по Email" else "Регистрация Email",
-            style = MaterialTheme.typography.headlineMedium
+            style = MaterialTheme.typography.headlineMedium,
+            color = Color.White
         )
 
         Spacer(Modifier.height(32.dp))
@@ -48,7 +57,8 @@ fun EmailAuthScreen(
             onValueChange = { email = it.trim() },
             label = { Text("Email") },
             modifier = Modifier.fillMaxWidth(),
-            enabled = !loading
+            enabled = !loading,
+            singleLine = true
         )
 
         Spacer(Modifier.height(16.dp))
@@ -59,7 +69,8 @@ fun EmailAuthScreen(
             label = { Text("Пароль") },
             visualTransformation = PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth(),
-            enabled = !loading
+            enabled = !loading,
+            singleLine = true
         )
 
         Spacer(Modifier.height(24.dp))
@@ -81,42 +92,46 @@ fun EmailAuthScreen(
                 loading = true
                 error = null
 
-                fun finishAuth() {
-                    val uid = auth.currentUser?.uid
-                    if (uid == null) {
+                fun saveUserToFirestore() {
+                    val user = auth.currentUser
+                    if (user == null) {
                         loading = false
-                        error = "Ошибка авторизации"
+                        error = "Пользователь не найден"
                         return
                     }
 
+                    val userData = mapOf(
+                        "uid" to user.uid,
+                        "email" to user.email,
+                        "hasEmailAuth" to true
+                    )
+
                     db.collection("users")
-                        .document(uid)
-                        .set(
-                            mapOf("hasEmailAuth" to true),
-                            SetOptions.merge()
-                        )
+                        .document(user.uid)
+                        .set(userData, SetOptions.merge())
                         .addOnSuccessListener {
-                            onAuthSuccess()
+                            loading = false
+                            success = true // Триггер для LaunchedEffect
                         }
                         .addOnFailureListener {
                             loading = false
-                            error = "Ошибка сохранения профиля"
+                            error = "Ошибка профиля: ${it.localizedMessage}"
                         }
                 }
 
                 if (isLogin) {
                     auth.signInWithEmailAndPassword(email, password)
-                        .addOnSuccessListener { finishAuth() }
+                        .addOnSuccessListener { saveUserToFirestore() }
                         .addOnFailureListener {
                             loading = false
-                            error = it.message
+                            error = "Ошибка входа: ${it.localizedMessage}"
                         }
                 } else {
                     auth.createUserWithEmailAndPassword(email, password)
-                        .addOnSuccessListener { finishAuth() }
+                        .addOnSuccessListener { saveUserToFirestore() }
                         .addOnFailureListener {
                             loading = false
-                            error = it.message
+                            error = "Ошибка регистрации: ${it.localizedMessage}"
                         }
                 }
             }
@@ -124,7 +139,8 @@ fun EmailAuthScreen(
             if (loading) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(20.dp),
-                    color = Color.White
+                    color = Color.White,
+                    strokeWidth = 2.dp
                 )
             } else {
                 Text(if (isLogin) "Войти" else "Зарегистрироваться")
@@ -133,18 +149,24 @@ fun EmailAuthScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        TextButton(onClick = { isLogin = !isLogin }) {
+        TextButton(
+            onClick = { isLogin = !isLogin },
+            enabled = !loading
+        ) {
             Text(
-                if (isLogin)
-                    "Нет аккаунта? Регистрация"
-                else
-                    "Уже есть аккаунт? Войти"
+                if (isLogin) "Нет аккаунта? Регистрация" else "Уже есть аккаунт? Войти",
+                color = MaterialTheme.colorScheme.primary
             )
         }
 
         error?.let {
             Spacer(Modifier.height(12.dp))
-            Text(text = it, color = MaterialTheme.colorScheme.error)
+            Text(
+                text = it,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
         }
     }
 }
+
