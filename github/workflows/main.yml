@@ -2,7 +2,7 @@ name: Android Build and Sign
 
 on:
   push:
-    branches: [ "main" ] # Сборка начнется сразу после сохранения
+    branches: [ "main" ]
 
 jobs:
   build:
@@ -18,14 +18,15 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      # Превращаем текст из секрета обратно в файл ключа
+      # Исправленный блок: создаем файл прямо в папке app
       - name: Decode Keystore
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > app/my-release-key.jks
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > app/my-release-key.jks
+          ls -l app/my-release-key.jks
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # Собираем приложение
       - name: Build with Gradle
         run: ./gradlew assembleRelease
         env:
@@ -33,7 +34,6 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
-      # Сохраняем готовый APK, чтобы вы могли его скачать
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
