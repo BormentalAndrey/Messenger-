@@ -14,65 +14,32 @@ import androidx.compose.ui.unit.sp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalculatorScreen() {
-
     var display by remember { mutableStateOf("0") }
-    var firstNumber by remember { mutableStateOf<Double?>(null) }
-    var operation by remember { mutableStateOf<String?>(null) }
-    var waitingForSecond by remember { mutableStateOf(false) }
-
-    fun clear() {
-        display = "0"
-        firstNumber = null
-        operation = null
-        waitingForSecond = false
-    }
-
-    fun calculate(second: Double): String {
-        val first = firstNumber ?: return second.toString()
-        val result = when (operation) {
-            "+" -> first + second
-            "-" -> first - second
-            "×" -> first * second
-            "÷" -> if (second == 0.0) return "Ошибка" else first / second
-            else -> second
-        }
-        return result.toString().removeSuffix(".0")
-    }
+    var first by remember { mutableStateOf("") }
+    var op by remember { mutableStateOf("") }
+    var waitSecond by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        "Калькулятор",
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Text("Калькулятор", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Black
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
             )
         }
-    ) { padding ->
-
+    ) { padd ->
         Column(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
                 .background(Color.Black)
-                .padding(padding)
+                .padding(padd)
                 .padding(16.dp),
             horizontalAlignment = Alignment.End
         ) {
+            Text(display, color = Color.White, fontSize = 48.sp, modifier = Modifier.padding(16.dp))
 
-            Text(
-                text = display,
-                color = Color.White,
-                fontSize = 48.sp,
-                modifier = Modifier.padding(16.dp)
-            )
-
-            val buttons = listOf(
+            val rows = listOf(
                 listOf("C", "+/-", "%", "÷"),
                 listOf("7", "8", "9", "×"),
                 listOf("4", "5", "6", "-"),
@@ -80,53 +47,46 @@ fun CalculatorScreen() {
                 listOf("0", ".", "=")
             )
 
-            buttons.forEach { row ->
+            rows.forEach { row ->
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    row.forEach { label ->
+                    row.forEach { b ->
                         Button(
                             onClick = {
-                                when (label) {
-
-                                    "C" -> clear()
-
-                                    "+/-" -> {
-                                        if (display != "0") {
-                                            display = if (display.startsWith("-"))
-                                                display.drop(1)
-                                            else
-                                                "-$display"
+                                when (b) {
+                                    "C" -> {
+                                        display = "0"
+                                        first = ""
+                                        op = ""
+                                        waitSecond = false
+                                    }
+                                    "=" -> {
+                                        if (op.isNotEmpty() && first.isNotEmpty()) {
+                                            val s = display.toDouble()
+                                            val r = when (op) {
+                                                "+" -> first.toDouble() + s
+                                                "-" -> first.toDouble() - s
+                                                "×" -> first.toDouble() * s
+                                                "÷" -> first.toDouble() / s
+                                                else -> s
+                                            }
+                                            display = r.toString().removeSuffix(".0")
+                                            op = ""
                                         }
                                     }
-
-                                    "%" -> {
-                                        display =
-                                            (display.toDoubleOrNull()?.div(100))?.toString()
-                                                ?.removeSuffix(".0") ?: display
-                                    }
-
                                     "+", "-", "×", "÷" -> {
-                                        firstNumber = display.toDoubleOrNull()
-                                        operation = label
-                                        waitingForSecond = true
+                                        first = display
+                                        op = b
+                                        waitSecond = true
                                     }
-
-                                    "=" -> {
-                                        val second = display.toDoubleOrNull() ?: return@Button
-                                        display = calculate(second)
-                                        firstNumber = display.toDoubleOrNull()
-                                        operation = null
-                                        waitingForSecond = false
-                                    }
-
                                     else -> {
-                                        if (waitingForSecond || display == "0") {
-                                            display = label
-                                            waitingForSecond = false
+                                        if (waitSecond || display == "0") {
+                                            display = b
+                                            waitSecond = false
                                         } else {
-                                            display += label
+                                            display += b
                                         }
                                     }
                                 }
@@ -134,11 +94,9 @@ fun CalculatorScreen() {
                             modifier = Modifier
                                 .weight(1f)
                                 .height(80.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF2A2A2A)
-                            )
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2A2A2A))
                         ) {
-                            Text(label, fontSize = 24.sp)
+                            Text(b, fontSize = 24.sp)
                         }
                     }
                 }
