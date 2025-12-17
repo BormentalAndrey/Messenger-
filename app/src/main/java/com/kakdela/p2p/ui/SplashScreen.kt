@@ -10,6 +10,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.google.firebase.auth.ktx.auth
@@ -20,7 +21,7 @@ import kotlinx.coroutines.delay
 fun SplashScreen(navController: NavHostController) {
 
     LaunchedEffect(Unit) {
-        // имитация загрузки (Firebase, prefs, etc)
+        // имитация загрузки
         delay(1200)
 
         val user = Firebase.auth.currentUser
