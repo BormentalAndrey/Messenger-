@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.PlayCircleOutline
@@ -39,7 +38,6 @@ object Routes {
     const val PACMAN = "pacman"
     const val JEWELS = "jewels"
     const val CHAT = "chat/{chatId}"
-    // Новый маршрут
     const val WEB_VIEW = "webview/{url}/{title}"
 }
 
@@ -49,43 +47,48 @@ fun NavGraph(navController: NavHostController) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
+    // Убрали Routes.CONTACTS из списка отображения BottomBar
     val showBottomBar = currentRoute in listOf(
-        Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, 
-        Routes.SETTINGS, Routes.CONTACTS
+        Routes.CHATS, 
+        Routes.DEALS, 
+        Routes.ENTERTAINMENT, 
+        Routes.SETTINGS
     )
 
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar(containerColor = Color.Black, contentColor = Color.White) {
+                NavigationBar(
+                    containerColor = Color.Black,
+                    contentColor = Color.White
+                ) {
                     NavigationBarItem(
                         selected = currentRoute == Routes.CHATS,
                         onClick = { navController.navigate(Routes.CHATS) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Outlined.ChatBubbleOutline, null) },
+                        icon = { Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = null) },
                         label = { Text("Чаты") }
                     )
-                    NavigationBarItem(
-                        selected = currentRoute == Routes.CONTACTS,
-                        onClick = { navController.navigate(Routes.CONTACTS) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Filled.Contacts, null) },
-                        label = { Text("Контакты") }
-                    )
+
+                    // КНОПКА «КОНТАКТЫ» УДАЛЕНА ОТСЮДА
+
                     NavigationBarItem(
                         selected = currentRoute == Routes.DEALS,
                         onClick = { navController.navigate(Routes.DEALS) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Filled.Checklist, null) },
+                        icon = { Icon(Icons.Filled.Checklist, contentDescription = null) },
                         label = { Text("Дела") }
                     )
+
                     NavigationBarItem(
                         selected = currentRoute == Routes.ENTERTAINMENT,
                         onClick = { navController.navigate(Routes.ENTERTAINMENT) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Outlined.PlayCircleOutline, null) },
+                        icon = { Icon(Icons.Outlined.PlayCircleOutline, contentDescription = null) },
                         label = { Text("Развлечения") }
                     )
+
                     NavigationBarItem(
                         selected = currentRoute == Routes.SETTINGS,
                         onClick = { navController.navigate(Routes.SETTINGS) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Filled.Settings, null) },
+                        icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
                         label = { Text("Настройки") }
                     )
                 }
@@ -95,24 +98,40 @@ fun NavGraph(navController: NavHostController) {
         NavHost(
             navController = navController,
             startDestination = Routes.SPLASH,
-            modifier = Modifier.padding(padding).background(Color.Black)
+            modifier = Modifier
+                .padding(padding)
+                .background(Color.Black)
         ) {
             composable(Routes.SPLASH) { SplashScreen(navController) }
-            composable(Routes.CHOICE) { RegistrationChoiceScreen({ navController.navigate(Routes.AUTH_EMAIL) }, { navController.navigate(Routes.AUTH_PHONE) }) }
-            composable(Routes.AUTH_EMAIL) { EmailAuthScreen(navController) { navController.navigate(Routes.CHATS) { popUpTo(0) } } }
-            composable(Routes.AUTH_PHONE) { PhoneAuthScreen { navController.navigate(Routes.CHATS) { popUpTo(0) } } }
+            composable(Routes.CHOICE) {
+                RegistrationChoiceScreen(
+                    onEmail = { navController.navigate(Routes.AUTH_EMAIL) },
+                    onPhone = { navController.navigate(Routes.AUTH_PHONE) }
+                )
+            }
+            composable(Routes.AUTH_EMAIL) {
+                EmailAuthScreen(navController = navController) {
+                    navController.navigate(Routes.CHATS) { popUpTo(0) { inclusive = true } }
+                }
+            }
+            composable(Routes.AUTH_PHONE) {
+                PhoneAuthScreen {
+                    navController.navigate(Routes.CHATS) { popUpTo(0) { inclusive = true } }
+                }
+            }
+            
             composable(Routes.CHATS) { ChatsListScreen(navController) }
             composable(Routes.CONTACTS) { ContactsScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
+            
             composable(Routes.CALCULATOR) { CalculatorScreen() }
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
             composable(Routes.JEWELS) { JewelsBlastScreen() }
 
-            // WebView с параметрами
             composable(
                 route = Routes.WEB_VIEW,
                 arguments = listOf(
@@ -133,5 +152,7 @@ fun NavGraph(navController: NavHostController) {
             }
         }
     }
+}
+}
 }
 
