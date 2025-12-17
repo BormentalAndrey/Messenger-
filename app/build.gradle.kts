@@ -59,15 +59,17 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("androidx.navigation:navigation-compose:2.7.7")
+    
+    // Иконки (необходимы для Checklist, ChatBubbleOutline и др.)
+    implementation("androidx.compose.material:material-icons-extended:1.6.0")
 
     // Firebase
     implementation(platform("com.google.firebase:firebase-bom:32.7.2"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
+    implementation("com.google.firebase:firebase-storage-ktx")
 
-    // --- WebRTC (САМЫЙ СТАБИЛЬНЫЙ ВАРИАНТ) ---
-    // Эта библиотека заменяет стандартную org.webrtc и всегда доступна.
-    // API остается тем же самым.
+    // WebRTC
     implementation("io.getstream:stream-webrtc-android:1.1.1")
 
     // Room
@@ -78,4 +80,5 @@ dependencies {
 
     implementation("io.coil-kt:coil-compose:2.5.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 }
