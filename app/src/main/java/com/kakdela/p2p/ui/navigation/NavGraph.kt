@@ -1,21 +1,24 @@
 package com.kakdela.p2p.ui.navigation
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.*
-import com.google.firebase.auth.ktx.auth
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.navigate
 import com.google.firebase.ktx.Firebase
+import com.google.firebase.auth.ktx.auth
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
 
@@ -29,20 +32,26 @@ object Routes {
     const val DEALS = "deals"
     const val ENTERTAINMENT = "entertainment"
     const val SETTINGS = "settings"
-    const val CALCULATOR = "calculator"        // Калькулятор в "Делах"
-    const val TIC_TAC_TOE = "tictactoe"        // Крестики-нолики
-    const val CHESS = "chess"                  // Шахматы
-    const val PACMAN = "pacman"                // Пакман
-    const val JEWELS = "jewels"                // Jewels Blast
+
+    // доп. экраны
+    const val CALCULATOR = "calculator"
+    const val TIC_TAC_TOE = "tictactoe"
+    const val CHESS = "chess"
+    const val PACMAN = "pacman"
+    const val JEWELS = "jewels"
+
     const val CHAT = "chat/{chatId}"
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NavGraph(navController: NavHostController) {
 
+    // --- узнаём текущий маршрут ---
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
+    // --- показываем ли нижнее меню ---
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS,
         Routes.DEALS,
@@ -59,13 +68,23 @@ fun NavGraph(navController: NavHostController) {
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar(containerColor = Color.Black) {
+                NavigationBar(
+                    containerColor = Color.Black,
+                    contentColor = Color.White
+                ) {
 
                     NavigationBarItem(
                         selected = currentRoute == Routes.CHATS,
                         onClick = { navController.navigate(Routes.CHATS) { launchSingleTop = true } },
                         icon = { Icon(Icons.Outlined.ChatBubbleOutline, null) },
                         label = { Text("Чаты") }
+                    )
+
+                    NavigationBarItem(
+                        selected = currentRoute == Routes.CONTACTS,
+                        onClick = { navController.navigate(Routes.CONTACTS) { launchSingleTop = true } },
+                        icon = { Icon(Icons.Filled.Contacts, null) },
+                        label = { Text("Контакты") }
                     )
 
                     NavigationBarItem(
@@ -96,11 +115,17 @@ fun NavGraph(navController: NavHostController) {
         NavHost(
             navController = navController,
             startDestination = Routes.SPLASH,
-            modifier = Modifier.padding(padding)
+            modifier = Modifier
+                .padding(padding)
+                .background(Color.Black)
         ) {
 
-            composable(Routes.SPLASH) { SplashScreen(navController) }
+            // ---------- SPLASH ----------
+            composable(Routes.SPLASH) {
+                SplashScreen(navController)
+            }
 
+            // ---------- CHOICE ----------
             composable(Routes.CHOICE) {
                 RegistrationChoiceScreen(
                     onEmail = { navController.navigate(Routes.AUTH_EMAIL) },
@@ -108,42 +133,44 @@ fun NavGraph(navController: NavHostController) {
                 )
             }
 
+            // ---------- AUTH EMAIL ----------
             composable(Routes.AUTH_EMAIL) {
                 EmailAuthScreen(
                     navController = navController,
                     onAuthSuccess = {
                         navController.navigate(Routes.CHATS) {
-                            popUpTo(Routes.SPLASH) { inclusive = true }
+                            popUpTo(0) { inclusive = true }   // очищаем стек
                         }
                     }
                 )
             }
 
+            // ---------- AUTH PHONE ----------
             composable(Routes.AUTH_PHONE) {
                 PhoneAuthScreen(
                     onSuccess = {
                         navController.navigate(Routes.CHATS) {
-                            popUpTo(Routes.SPLASH) { inclusive = true }
+                            popUpTo(0) { inclusive = true }
                         }
                     }
                 )
             }
 
+            // ---------- MAIN SCREENS ----------
             composable(Routes.CHATS) { ChatsListScreen(navController) }
             composable(Routes.CONTACTS) { ContactsScreen(navController) }
-            composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
             composable(Routes.DEALS) { DealsScreen(navController) }
+            composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
 
-            // Калькулятор (из "Дел")
+            // ---------- ДОП. ЭКРАНЫ ----------
             composable(Routes.CALCULATOR) { CalculatorScreen() }
-
-            // Мини-игры (из "Развлечений")
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
             composable(Routes.JEWELS) { JewelsBlastScreen() }
 
+            // ---------- CHAT ----------
             composable(Routes.CHAT) { backStackEntry ->
                 val chatId = backStackEntry.arguments?.getString("chatId") ?: "global"
                 ChatScreen(chatId, Firebase.auth.currentUser?.uid ?: "")
