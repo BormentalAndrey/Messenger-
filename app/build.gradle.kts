@@ -18,10 +18,27 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Блок настройки подписи (подключает ваши секреты из GitHub)
+    signingConfigs {
+        create("release") {
+            // Файл ключа будет создан из секрета KEYSTORE_BASE64
+            storeFile = file("my-release-key.jks")
+            storePassword = System.getenv("KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("KEY_ALIAS")
+            keyPassword = System.getenv("KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
-        release {
+        getByName("release") {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Применяем подпись к релизной версии
+            signingConfig = signingConfigs.getByName("release")
+        }
+        getByName("debug") {
+            // Чтобы дебаг-версия тоже работала с Firebase, используем тот же ключ
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -34,7 +51,9 @@ android {
         jvmTarget = "17"
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+    }
 
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.11"
@@ -60,7 +79,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("androidx.navigation:navigation-compose:2.7.7")
     
-    // Иконки (необходимы для Checklist, ChatBubbleOutline и др.)
     implementation("androidx.compose.material:material-icons-extended:1.6.0")
 
     // Firebase
@@ -82,3 +100,4 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 }
+
