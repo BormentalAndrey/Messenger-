@@ -88,4 +88,116 @@ private val entertainmentItems = listOf(
         id = "tiktok",
         title = "TikTok",
         description = "Короткие видео, тренды, танцы и креатив",
-        type
+        type = EntertainmentType.WEB,
+        url = "https://www.tiktok.com"
+    ),
+    EntertainmentItem(
+        id = "crazygames",
+        title = "CrazyGames",
+        description = "Тысячи бесплатных браузерных игр",
+        type = EntertainmentType.WEB,
+        url = "https://www.crazygames.ru"
+    )
+)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EntertainmentScreen(navController: NavHostController) {
+    val context = LocalContext.current
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "Развлечения",
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
+            )
+        }
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .padding(paddingValues)
+        ) {
+            items(entertainmentItems) { item ->
+                EntertainmentListItem(item = item, navController = navController, context = context)
+            }
+        }
+    }
+}
+
+@Composable
+fun EntertainmentListItem(
+    item: EntertainmentItem,
+    navController: NavHostController,
+    context: android.content.Context
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                when (item.type) {
+                    EntertainmentType.INTERNAL_CHAT -> navController.navigate(item.route!!)
+                    EntertainmentType.GAME -> navController.navigate(item.route!!)
+                    EntertainmentType.WEB -> {
+                        item.url?.let { url ->
+                            CustomTabsIntent.Builder()
+                                .setToolbarColor(MaterialTheme.colorScheme.primary.toArgb())
+                                .setShowTitle(true)
+                                .build()
+                                .launchUrl(context, url.toUri())
+                        }
+                    }
+                }
+            }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = item.iconLetter,
+                color = MaterialTheme.colorScheme.primary,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.title,
+                color = Color.White,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = item.description,
+                color = Color.Gray,
+                fontSize = 14.sp,
+                maxLines = 1
+            )
+        }
+
+        Icon(
+            imageVector = Icons.Filled.PlayArrow,
+            contentDescription = "Открыть",
+            tint = Color.Gray,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+
+    HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
+}
