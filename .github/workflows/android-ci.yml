@@ -11,45 +11,39 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Клонируем репозиторий
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Делаем gradlew исполняемым
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      # 3. Настройка JDK 21
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      # 4. Обновляем Gradle Wrapper до 8.9
       - name: Recreate Gradle Wrapper (Gradle 8.9)
         run: |
           ./gradlew wrapper --gradle-version 8.9
           chmod +x ./gradlew
 
-      # 5. Настройка кеширования Gradle
       - name: Setup Gradle caching
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
           cache-enabled: true
 
-      # 6. Чистая сборка (рекомендуется при проблемах с KSP)
       - name: Clean project
         run: ./gradlew clean --no-daemon
 
-      # 7. Сборка Debug APK
+      # Добавлен флаг --no-configuration-cache для обхода ошибки сериализации
       - name: Assemble Debug APK
-        run: ./gradlew assembleDebug --stacktrace --no-daemon
+        run: ./gradlew assembleDebug --stacktrace --no-daemon --no-configuration-cache
 
-      # 8. Загрузка APK как артефакта
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
           name: kakdela-debug
           path: app/build/outputs/apk/debug/*.apk
+          
