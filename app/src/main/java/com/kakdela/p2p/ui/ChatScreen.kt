@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable // ДОБАВЛЕНО
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -62,7 +63,6 @@ fun ChatScreen(
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     var showTimePicker by remember { mutableStateOf(false) }
 
-    // Диалог выбора времени
     if (showTimePicker) {
         val calendar = Calendar.getInstance()
         android.app.TimePickerDialog(
@@ -72,7 +72,6 @@ fun ChatScreen(
                     set(Calendar.HOUR_OF_DAY, hour)
                     set(Calendar.MINUTE, minute)
                     set(Calendar.SECOND, 0)
-                    // Если время уже прошло сегодня, ставим на завтра
                     if (timeInMillis <= System.currentTimeMillis()) {
                         add(Calendar.DAY_OF_YEAR, 1)
                     }
@@ -106,12 +105,18 @@ fun ChatScreen(
                 ListItem(
                     headlineContent = { Text("Фото или видео") },
                     leadingContent = { Icon(Icons.Default.Image, null, tint = MaterialTheme.colorScheme.primary) },
-                    modifier = Modifier.clickable { photoVideoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)); showAttachmentSheet = false }
+                    modifier = Modifier.clickable { 
+                        photoVideoLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo))
+                        showAttachmentSheet = false 
+                    }
                 )
                 ListItem(
                     headlineContent = { Text("Документ или файл") },
                     leadingContent = { Icon(Icons.Default.InsertDriveFile, null, tint = MaterialTheme.colorScheme.primary) },
-                    modifier = Modifier.clickable { documentLauncher.launch("*/*"); showAttachmentSheet = false }
+                    modifier = Modifier.clickable { 
+                        documentLauncher.launch("*/*")
+                        showAttachmentSheet = false 
+                    }
                 )
             }
         }
@@ -170,7 +175,6 @@ fun ChatScreen(
                     }
                 )
 
-                // Кастомная кнопка отправки с поддержкой долгого нажатия
                 Box(
                     modifier = Modifier
                         .padding(end = 4.dp)
