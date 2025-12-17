@@ -18,11 +18,11 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    // Блок настройки подписи (подключает ваши секреты из GitHub)
     signingConfigs {
         create("release") {
-            // Файл ключа будет создан из секрета KEYSTORE_BASE64
-            storeFile = file("my-release-key.jks")
+            // Gradle ищет файл относительно папки app
+            val keystoreFile = file("my-release-key.jks")
+            storeFile = keystoreFile
             storePassword = System.getenv("KEYSTORE_PASSWORD")
             keyAlias = System.getenv("KEY_ALIAS")
             keyPassword = System.getenv("KEY_PASSWORD")
@@ -33,11 +33,10 @@ android {
         getByName("release") {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Применяем подпись к релизной версии
             signingConfig = signingConfigs.getByName("release")
         }
         getByName("debug") {
-            // Чтобы дебаг-версия тоже работала с Firebase, используем тот же ключ
+            // Используем ту же подпись для теста Firebase в дебаге
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -51,9 +50,7 @@ android {
         jvmTarget = "17"
     }
 
-    buildFeatures {
-        compose = true
-    }
+    buildFeatures { compose = true }
 
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.11"
@@ -78,7 +75,6 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("androidx.navigation:navigation-compose:2.7.7")
-    
     implementation("androidx.compose.material:material-icons-extended:1.6.0")
 
     // Firebase
@@ -87,10 +83,8 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
 
-    // WebRTC
+    // WebRTC & Room
     implementation("io.getstream:stream-webrtc-android:1.1.1")
-
-    // Room
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
