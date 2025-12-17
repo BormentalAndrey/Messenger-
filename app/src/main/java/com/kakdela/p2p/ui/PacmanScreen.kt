@@ -8,7 +8,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -16,6 +18,7 @@ import kotlinx.coroutines.delay
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PacmanScreen() {
+
     var pacmanX by remember { mutableStateOf(200f) }
     var pacmanY by remember { mutableStateOf(300f) }
     var mouthAngle by remember { mutableStateOf(0.3f) }
@@ -30,19 +33,36 @@ fun PacmanScreen() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Пакман", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
+                title = {
+                    Text(
+                        text = "Пакман",
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Black
+                )
             )
         }
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black).padding(padding)) {
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .padding(padding)
+        ) {
+
             Canvas(modifier = Modifier.fillMaxSize()) {
-                // Простой Пакман
+
+                // Пакман
                 drawCircle(
                     color = Color.Yellow,
                     radius = 80f,
                     center = Offset(pacmanX, pacmanY)
                 )
+
                 // Рот
                 drawArc(
                     color = Color.Black,
@@ -50,10 +70,10 @@ fun PacmanScreen() {
                     sweepAngle = 300f * mouthAngle,
                     useCenter = true,
                     topLeft = Offset(pacmanX - 80f, pacmanY - 80f),
-                    size = androidx.compose.ui.geometry.Size(160f, 160f)
+                    size = Size(160f, 160f)
                 )
 
-                // Точки (еда)
+                // Еда
                 drawCircle(Color.White, 10f, Offset(100f, 100f))
                 drawCircle(Color.White, 10f, Offset(300f, 100f))
                 drawCircle(Color.White, 10f, Offset(100f, 500f))
@@ -61,7 +81,7 @@ fun PacmanScreen() {
             }
 
             Text(
-                "Управление в разработке\n(Скоро добавим движение)",
+                text = "Управление в разработке\n(Скоро добавим движение)",
                 color = Color.Gray,
                 fontSize = 18.sp,
                 modifier = Modifier.align(Alignment.Center)
