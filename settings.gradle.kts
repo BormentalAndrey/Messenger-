@@ -11,8 +11,11 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // WebRTC иногда требует jcenter для старых зависимостей, 
+        // но сначала пробуем без него.
     }
 }
 
 rootProject.name = "Messenger-"
 include(":app")
+
