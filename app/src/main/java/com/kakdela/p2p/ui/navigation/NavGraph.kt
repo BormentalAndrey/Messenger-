@@ -76,9 +76,7 @@ fun NavGraph(navController: NavHostController) {
                     NavigationBarItem(
                         selected = currentRoute == Routes.DEALS,
                         onClick = { 
-                            navController.navigate(Routes.DEALS) { 
-                                launchSingleTop = true 
-                            } 
+                            navController.navigate(Routes.DEALS) { launchSingleTop = true } 
                         },
                         icon = { Icon(Icons.Filled.Checklist, contentDescription = null) },
                         label = { Text("Дела") }
@@ -87,9 +85,7 @@ fun NavGraph(navController: NavHostController) {
                     NavigationBarItem(
                         selected = currentRoute == Routes.ENTERTAINMENT,
                         onClick = { 
-                            navController.navigate(Routes.ENTERTAINMENT) { 
-                                launchSingleTop = true 
-                            } 
+                            navController.navigate(Routes.ENTERTAINMENT) { launchSingleTop = true } 
                         },
                         icon = { Icon(Icons.Outlined.PlayCircleOutline, contentDescription = null) },
                         label = { Text("Развлечения") }
@@ -98,9 +94,7 @@ fun NavGraph(navController: NavHostController) {
                     NavigationBarItem(
                         selected = currentRoute == Routes.SETTINGS,
                         onClick = { 
-                            navController.navigate(Routes.SETTINGS) { 
-                                launchSingleTop = true 
-                            } 
+                            navController.navigate(Routes.SETTINGS) { launchSingleTop = true } 
                         },
                         icon = { Icon(Icons.Filled.Settings, contentDescription = null) },
                         label = { Text("Настройки") }
@@ -127,7 +121,6 @@ fun NavGraph(navController: NavHostController) {
 
             composable(Routes.AUTH_EMAIL) {
                 EmailAuthScreen(navController = navController) {
-                    // ИСПРАВЛЕНИЕ: Очищаем весь стек до Splash включительно
                     navController.navigate(Routes.CHATS) {
                         popUpTo(Routes.SPLASH) { inclusive = true }
                         launchSingleTop = true
@@ -145,7 +138,14 @@ fun NavGraph(navController: NavHostController) {
             }
             
             composable(Routes.CHATS) { ChatsListScreen(navController) }
-            composable(Routes.CONTACTS) { ContactsScreen(navController) }
+            
+            composable(Routes.CONTACTS) { 
+                // ИСПРАВЛЕНИЕ: Передаем функцию навигации
+                ContactsScreen(onContactClick = { userId ->
+                    navController.navigate("chat/$userId")
+                }) 
+            }
+            
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
