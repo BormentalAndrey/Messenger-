@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -21,7 +23,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import androidx.navigation.NavHostController
 
-// Тип элемента: веб или внутренняя игра/чат
+// Тип элемента: веб, внутренний чат или игра
 enum class EntertainmentType {
     WEB,
     INTERNAL_CHAT,
@@ -38,7 +40,7 @@ data class EntertainmentItem(
     val iconLetter: String = title.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
 )
 
-// Обновлённый список с играми
+// Список элементов в "Развлечения" с играми
 private val entertainmentItems = listOf(
     EntertainmentItem(
         id = "global_chat",
@@ -196,7 +198,7 @@ fun EntertainmentListItem(
         }
 
         Icon(
-            imageVector = androidx.compose.material.icons.Icons.Default.PlayArrow,
+            imageVector = Icons.Default.PlayArrow,
             contentDescription = "Открыть",
             tint = Color.Gray,
             modifier = Modifier.size(20.dp)
