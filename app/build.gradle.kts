@@ -21,7 +21,7 @@ android {
     signingConfigs {
         create("release") {
             storeFile = file("my-release-key.jks")
-            storePassword = "ВАШ_ПАРОЛЬ" // Впиши свой пароль
+            storePassword = "ВАШ_ПАРОЛЬ" 
             keyAlias = "my-key-alias"
             keyPassword = "ВАШ_ПАРОЛЬ"
         }
@@ -57,38 +57,35 @@ android {
 }
 
 dependencies {
-    // Основные зависимости
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
     
-    // Compose (UI)
+    // Compose (UI) - Используем стабильный набор библиотек
     implementation(platform("androidx.compose:compose-bom:2024.02.00"))
     implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.graphics:graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.ui:ui-tooling-preview")
     
-    // Navigation (РЕШАЕТ ОШИБКУ rememberNavController)
+    // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.7")
     
-    // Firebase (СТАБИЛЬНЫЙ BoM)
+    // Firebase
     implementation(platform("com.google.firebase:firebase-bom:32.7.2"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-storage-ktx") // Для SettingsScreen
+    implementation("com.google.firebase:firebase-storage-ktx")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 
-    // Room (Локальная база данных чатов)
+    // Room
     val room_version = "2.6.1"
     implementation("androidx.room:room-runtime:$room_version")
     implementation("androidx.room:room-ktx:$room_version")
     kapt("androidx.room:room-compiler:$room_version")
 
-    // WebRTC (Для звонков и P2P)
-    implementation("org.webrtc:google-webrtc:1.0.32006")
+    // WebRTC (Используем стабильное зеркало для сборки)
+    implementation("com.github.webrtc-sdk:android:104.5112.03")
 
-    // Coil (Для загрузки картинок/аватарок)
+    // Coil
     implementation("io.coil-kt:coil-compose:2.5.0")
 }
-
