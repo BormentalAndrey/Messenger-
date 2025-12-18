@@ -8,26 +8,21 @@ import com.wireguard.config.Interface
 import com.wireguard.config.Peer
 import com.wireguard.config.InetEndpoint
 import com.wireguard.crypto.Key
-import com.wireguard.util.InetNetwork // ПРОВЕРЬ ЭТОТ ПАКЕТ
+import com.wireguard.util.InetNetwork
 
 class VpnBackend(private val context: Context) {
     private val backend by lazy { WgQuickBackend(context) }
+    
     private val tunnel = object : Tunnel {
-        override fun getName() = "P2PVpn"
+        override fun getName(): String = "P2PVpn"
         override fun onStateChange(newState: Tunnel.State) {}
     }
 
-    // Параметры p1, p2 исправлены на нормальные имена
-    fun up(config: Config) {
-        try {
-            backend.setState(tunnel, Tunnel.State.UP, config)
-        } catch (e: Exception) { e.printStackTrace() }
-    }
-
+    // Исправлено: функция теперь принимает понятные параметры
     fun buildConfig(serverHost: String, serverPort: Int, serverPubKey: String, privateKey: String): Config {
         val iFace = Interface.Builder()
             .addAddress(InetNetwork.parse("10.0.0.2/32"))
-            .setPrivateKey(Key.fromBase64(privateKey)) // Key.fromBase64 вместо строки
+            .setPrivateKey(Key.fromBase64(privateKey))
             .build()
 
         val peer = Peer.Builder()
@@ -36,7 +31,19 @@ class VpnBackend(private val context: Context) {
             .setEndpoint(InetEndpoint.parse("$serverHost:$serverPort"))
             .build()
 
-        return Config.Builder().setInterface(iFace).addPeer(peer).build()
+        return Config.Builder()
+            .setInterface(iFace)
+            .addPeer(peer)
+            .build()
+    }
+
+    fun up(config: Config) {
+        backend.setState(tunnel, Tunnel.State.UP, config)
+    }
+
+    // Добавлена функция остановки, которой не хватало
+    fun down() {
+        backend.setState(tunnel, Tunnel.State.DOWN, null)
     }
 }
 
