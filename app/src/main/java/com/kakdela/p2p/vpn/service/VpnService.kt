@@ -1,58 +1,26 @@
 package com.kakdela.p2p.vpn.service
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.Service
 import android.content.Intent
-import android.os.IBinder
-import android.os.Build
-import androidx.core.app.NotificationCompat
-import com.kakdela.p2p.R
 import com.kakdela.p2p.vpn.core.VpnBackend
-import com.kakdela.p2p.vpn.data.ServerRepository
+import com.kakdela.p2p.vpn.model.VpnServer
 
-class VpnService : Service() {
+// ... (остальные импорты)
 
-    private lateinit var backend: VpnBackend
+// Внутри класса VpnService, где происходит запуск:
+private fun startVpn(server: VpnServer) {
+    val vpnBackend = VpnBackend(this)
+    val myPrivateKey = "ВАШ_ПРИВАТНЫЙ_КЛЮЧ_ИЗ_KEYSTORE" // Должен быть Base64
 
-    override fun onCreate() {
-        super.onCreate()
-        backend = VpnBackend(this)
-        showNotification()
-        startVpn()
-    }
+    // 1. Создаем объект Config
+    val config = vpnBackend.buildConfig(server, myPrivateKey)
 
-    private fun showNotification() {
-        val channelId = "vpn_channel"
-        if (Build.VERSION.SDK_INT >= 26) {
-            val channel = NotificationChannel(
-                channelId,
-                "VPN Service",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        }
-
-        val notification: Notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("VPN активен")
-            .setContentText("Трафик проходит через защищённый туннель")
-            .setSmallIcon(R.drawable.ic_vpn)
-            .build()
-
-        startForeground(1, notification)
-    }
-
-    private fun startVpn() {
-        val server = ServerRepository(this).load().first()
-        val config = backend.buildConfig(server)
-        backend.up("kakdela", config)
-    }
-
-    override fun onDestroy() {
-        backend.down("kakdela")
-        super.onDestroy()
-    }
-
-    override fun onBind(intent: Intent?): IBinder? = null
+    // 2. Запускаем (теперь аргумент только один)
+    vpnBackend.up(config)
 }
+
+private fun stopVpn() {
+    val vpnBackend = VpnBackend(this)
+    // 3. Останавливаем (без аргументов)
+    vpnBackend.down()
+}
+
