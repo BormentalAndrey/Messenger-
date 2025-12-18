@@ -1,166 +1,161 @@
 package com.kakdela.p2p.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.outlined.AttachFile
-import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.shadow
-import com.kakdela.p2p.model.ChatMessage
 
-// Неоновые цвета
-private val NeonCyan = Color(0xFF00FFFF)
-private val NeonMagenta = Color(0xFFFF00FF)
-private val NeonPink = Color(0xFFE91E63)
+// Модель сообщения
+data class Message(
+    val text: String,
+    val isMine: Boolean,
+    val time: String = "12:00"
+)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(
-    chatId: String,
-    messages: List<ChatMessage>,
-    onSendMessage: (String) -> Unit,
-    onScheduleMessage: (String, Long) -> Unit
-) {
+fun ChatScreen() {
+    val messages = remember { mutableStateListOf(
+        Message("Привет! Как тебе неоновый стиль?", false, "10:05"),
+        Message("Выглядит круто!", true, "10:06")
+    ) }
     var textState by remember { mutableStateOf("") }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0A0A0A))) { // Тёмный фон для неона
-        LazyColumn(
-            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-            reverseLayout = false
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("ГЛОБАЛЬНЫЙ ЧАТ", fontWeight = FontWeight.Bold, color = Color(0xFF00FFF0)) },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black)
+            )
+        },
+        containerColor = Color.Black // Полностью черный фон
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
         ) {
-            items(messages) { message ->
-                ChatBubble(message)
-            }
-        }
-
-        // Полупрозрачная нижняя панель с лёгким блюром
-        Surface(
-            modifier = Modifier.blur(12.dp), // Glass-эффект
-            color = Color.Black.copy(alpha = 0.4f),
-            elevation = 16.dp
-        ) {
-            Row(
+            // Список сообщений
+            LazyColumn(
                 modifier = Modifier
+                    .weight(1f)
                     .fillMaxWidth()
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 16.dp),
+                reverseLayout = false
             ) {
-                NeonIconButton(onClick = { /* Прикрепить файл */ }) {
-                    Icon(Icons.Outlined.AttachFile, contentDescription = "Attach", tint = NeonCyan)
+                items(messages) { msg ->
+                    MessageBubble(msg)
                 }
+            }
 
-                TextField(
-                    value = textState,
-                    onValueChange = { textState = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Сообщение...", color = Color.Gray) },
-                    colors = TextFieldDefaults.textFieldColors(
-                        backgroundColor = Color.Transparent,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        textColor = Color.White
-                    )
-                )
-
-                NeonIconButton(onClick = {
-                    val timeInMs = System.currentTimeMillis() + 10000
-                    onScheduleMessage(textState, timeInMs)
-                    textState = ""
-                }) {
-                    Icon(Icons.Outlined.Schedule, contentDescription = "Schedule", tint = NeonCyan)
-                }
-
-                NeonIconButton(onClick = {
+            // Поле ввода
+            ChatInput(
+                text = textState,
+                onTextChange = { textState = it },
+                onSend = {
                     if (textState.isNotBlank()) {
-                        onSendMessage(textState)
+                        messages.add(Message(textState, true, "12:05"))
                         textState = ""
                     }
-                }) {
-                    Icon(Icons.Filled.Send, contentDescription = "Send", tint = NeonCyan)
                 }
-            }
+            )
         }
     }
 }
 
-// Кастомная неоновая кнопка с многослойным glow
 @Composable
-fun NeonIconButton(
-    onClick: () -> Unit,
-    content: @Composable () -> Unit
-) {
+fun MessageBubble(message: Message) {
+    val alignment = if (message.isMine) Alignment.CenterEnd else Alignment.CenterStart
+    val bubbleColor = if (message.isMine) Color(0xFF000000) else Color(0xFF1A1A1A)
+    val neonColor = if (message.isMine) Color(0xFF00FFF0) else Color(0xFFFF00C8)
+    
     Box(
         modifier = Modifier
-            .size(48.dp)
-            .shadow(8.dp, CircleShape, clip = false, ambientColor = NeonMagenta, spotColor = NeonMagenta)
-            .shadow(16.dp, CircleShape, clip = false, ambientColor = NeonCyan, spotColor = NeonCyan)
-            .shadow(24.dp, CircleShape, clip = false, ambientColor = NeonPink.copy(alpha = 0.6f), spotColor = NeonPink.copy(alpha = 0.6f))
-            .padding(8.dp),
-        contentAlignment = Alignment.Center
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        contentAlignment = alignment
     ) {
-        IconButton(onClick = onClick) {
-            content()
+        Column(horizontalAlignment = alignment) {
+            Surface(
+                color = bubbleColor,
+                shape = RoundedCornerShape(
+                    topStart = 16.dp, 
+                    topEnd = 16.dp, 
+                    bottomStart = if (message.isMine) 16.dp else 0.dp,
+                    bottomEnd = if (message.isMine) 0.dp else 16.dp
+                ),
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .border(1.dp, neonColor, RoundedCornerShape(16.dp)) // Неоновая обводка
+                    .shadow(elevation = 4.dp, spotColor = neonColor) // Эффект свечения
+            ) {
+                Text(
+                    text = message.text,
+                    color = Color.White,
+                    modifier = Modifier.padding(12.dp),
+                    fontSize = 16.sp
+                )
+            }
+            Text(
+                text = message.time,
+                color = neonColor.copy(alpha = 0.6f),
+                fontSize = 10.sp,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+            )
         }
     }
 }
 
 @Composable
-fun ChatBubble(message: ChatMessage) {
-    val isMe = message.isMine
-    val alignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
-    val bubbleColor = if (isMe) NeonCyan.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.9f) // Лёгкий неон для своих
-    val shape: Shape = if (isMe) {
-        RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp)
-    } else {
-        RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp)
-    }
-
-    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), contentAlignment = alignment) {
-        Surface(
+fun ChatInput(text: String, onTextChange: (String) -> Unit, onSend: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+            .navigationBarsPadding() // Чтобы не перекрывалось системной полоской
+            .imePadding(), // Чтобы поднималось вместе с клавиатурой
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        TextField(
+            value = text,
+            onValueChange = onTextChange,
             modifier = Modifier
-                .widthIn(max = 300.dp)
-                .shadow(8.dp, shape, clip = false, ambientColor = if (isMe) NeonCyan else Color.Transparent),
-            shape = shape,
-            color = bubbleColor
+                .weight(1f)
+                .border(1.dp, Color(0xFF00FFF0), RoundedCornerShape(24.dp)),
+            placeholder = { Text("Сообщение...", color = Color.Gray) },
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Color(0xFF0D0D0D),
+                unfocusedContainerColor = Color(0xFF0D0D0D),
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                focusedTextColor = Color.White
+            ),
+            shape = RoundedCornerShape(24.dp)
+        )
+        
+        Spacer(modifier = Modifier.width(8.dp))
+        
+        IconButton(
+            onClick = onSend,
+            modifier = Modifier
+                .background(Color(0xFF00FFF0), CircleShape)
+                .size(48.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
-            ) {
-                Text(text = message.text, fontSize = 16.sp, color = if (isMe) Color.White else Color.Black)
-                Text(
-                    text = "12:00",
-                    fontSize = 10.sp,
-                    color = Color.Gray,
-                    modifier = Modifier.align(Alignment.End)
-                )
-            }
-        }
-    }
-}                                        contentDescription = null,
-                                        modifier = Modifier.fillMaxWidth().height(200.dp),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                }
-                            }
-                            if (msg.text.isNotEmpty()) {
-                                Text(text = msg.text, fontSize = 16.sp)
-                            }
-                        }
-                    }
-                }
-            }
+            Icon(Icons.Default.Send, contentDescription = null, tint = Color.Black)
         }
     }
 }
