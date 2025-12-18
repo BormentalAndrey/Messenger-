@@ -1,5 +1,6 @@
 package com.kakdela.p2p
 
+import com.kakdela.p2p.vpn.service.VpnService
 import android.app.Application
 import android.content.Intent
 import com.google.firebase.FirebaseApp
