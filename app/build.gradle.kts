@@ -20,8 +20,10 @@ android {
 
     signingConfigs {
         create("release") {
+            // Файл ключа должен лежать в папке app/
             storeFile = file("my-release-key.jks")
-            // Вытягиваем данные из секретов GitHub
+            
+            // Читаем переменные окружения, которые пробрасывает GitHub Actions
             storePassword = System.getenv("KEYSTORE_PASSWORD")
             keyAlias = System.getenv("KEY_ALIAS")
             keyPassword = System.getenv("KEY_PASSWORD")
@@ -32,10 +34,11 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Привязываем подпись к релизу
             signingConfig = signingConfigs.getByName("release")
         }
         debug {
-            // Чтобы дебаг-версия тоже собиралась с твоим ключом
+            // Чтобы APK, собранный для теста, тоже был подписан твоим ключом
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -55,11 +58,11 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
     
-    // UI и Навигация
+    // UI
     implementation(platform("androidx.compose:compose-bom:2024.02.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.material:material-icons-extended") // Для иконок Attach, Send и т.д.
     implementation("androidx.navigation:navigation-compose:2.7.7")
     
     // Firebase
@@ -75,7 +78,7 @@ dependencies {
     implementation("androidx.room:room-ktx:$room_version")
     kapt("androidx.room:room-compiler:$room_version")
 
-    // WebRTC (Maven Central версия)
+    // WebRTC (Стабильный Maven Central)
     implementation("io.getstream:stream-webrtc-android:1.1.1")
 
     // Coil
