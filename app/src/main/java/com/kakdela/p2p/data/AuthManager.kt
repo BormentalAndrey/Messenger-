@@ -11,13 +11,12 @@ class AuthManager {
 
     suspend fun completeSignIn(userName: String, phoneNumber: String): Boolean {
         return try {
-            // 1. Если пользователь еще не вошел в систему Google, 
-            // делаем анонимный вход, чтобы получить UID
+            // Если пользователь не авторизован в Firebase, делаем это анонимно
+            // Это даст нам UID, необходимый для создания документа в Firestore
             if (auth.currentUser == null) {
                 auth.signInAnonymously().await()
             }
 
-            // Теперь UID точно не будет null
             val uid = auth.currentUser?.uid ?: return false
             val cleanPhone = phoneNumber.filter { it.isDigit() }
 
@@ -41,9 +40,8 @@ class AuthManager {
             }
             true
         } catch (e: Exception) {
-            // Если что-то пошло не так (например, нет интернета), выводим ошибку в логи
             e.printStackTrace()
-            false
+            false // Если сработает этот блок, в приложении будет "Ошибка при создании профиля"
         }
     }
 }
