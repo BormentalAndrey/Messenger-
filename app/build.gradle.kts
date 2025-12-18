@@ -20,11 +20,11 @@ android {
 
     signingConfigs {
         create("release") {
-            // Файл ключа, который вы загрузили в папку app
+            // Файл должен лежать в папке app/ вашего репозитория
             storeFile = file("my-release-key.jks")
-            storePassword = System.getenv("KEYSTORE_PASSWORD")
-            keyAlias = System.getenv("KEY_ALIAS")
-            keyPassword = System.getenv("KEY_PASSWORD")
+            storePassword = "ВАШ_ПАРОЛЬ" // ЗАМЕНИТЕ НА ВАШ
+            keyAlias = "my-key-alias"
+            keyPassword = "ВАШ_ПАРОЛЬ" // ЗАМЕНИТЕ НА ВАШ
         }
     }
 
@@ -35,6 +35,7 @@ android {
             signingConfig = signingConfigs.getByName("release")
         }
         getByName("debug") {
+            // Исправляет ошибку сборки debug-версии
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -53,13 +54,6 @@ android {
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.11"
     }
-
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-            excludes += "META-INF/gradle/incremental.annotation.processors"
-        }
-    }
 }
 
 dependencies {
@@ -73,24 +67,12 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
     implementation("androidx.navigation:navigation-compose:2.7.7")
-    implementation("androidx.compose.material:material-icons-extended:1.6.0")
 
-    // Firebase (BOM управляет версиями всех библиотек ниже)
+    // Firebase
     implementation(platform("com.google.firebase:firebase-bom:32.7.2"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-storage-ktx")
-    implementation("com.google.firebase:firebase-analytics-ktx")
 
-    // WebRTC & Room
-    implementation("io.getstream:stream-webrtc-android:1.1.1")
-    val roomVersion = "2.6.1"
-    implementation("androidx.room:room-runtime:$roomVersion")
-    implementation("androidx.room:room-ktx:$roomVersion")
-    kapt("androidx.room:room-compiler:$roomVersion")
-
-    implementation("io.coil-kt:coil-compose:2.5.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    // Coroutines для работы с await()
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 }
-
