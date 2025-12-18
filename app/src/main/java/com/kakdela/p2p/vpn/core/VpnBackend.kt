@@ -1,3 +1,4 @@
+// Файл: app/src/main/java/com/kakdela/p2p/vpn/core/VpnBackend.kt
 package com.kakdela.p2p.vpn.core
 
 import android.content.Context
@@ -9,13 +10,11 @@ import com.wireguard.config.Interface
 import com.wireguard.config.Peer
 import com.wireguard.config.InetEndpoint
 import com.wireguard.crypto.Key
-import com.wireguard.util.InetNetwork
+import com.wireguard.util.InetNetwork // ВАЖНО: правильный пакет для InetNetwork
 
 class VpnBackend(private val context: Context) {
-
     private val backend by lazy { WgQuickBackend(context) }
     
-    // Объект туннеля для управления состоянием
     private val tunnel = object : Tunnel {
         override fun getName(): String = "P2PVpn"
         override fun onStateChange(newState: Tunnel.State) {}
@@ -39,22 +38,12 @@ class VpnBackend(private val context: Context) {
             .build()
     }
 
-    // Здесь должен быть ТОЛЬКО ОДИН аргумент
     fun up(config: Config) {
-        try {
-            backend.setState(tunnel, Tunnel.State.UP, config)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        backend.setState(tunnel, Tunnel.State.UP, config)
     }
 
-    // Здесь аргументов быть НЕ ДОЛЖНО
     fun down() {
-        try {
-            backend.setState(tunnel, Tunnel.State.DOWN, null)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        backend.setState(tunnel, Tunnel.State.DOWN, null)
     }
 }
 
