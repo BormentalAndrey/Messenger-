@@ -10,31 +10,40 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
+// Неоновая палитра
 private val NeonCyan = Color(0xFF00FFF0)
 private val NeonPink = Color(0xFFFF00C8)
-private val DeepBlack = Color(0xFF000000)
-private val DarkGray = Color(0xFF121212)
+private val NeonPurple = Color(0xFFD700FF)
+private val BackgroundBlack = Color(0xFF000000)
+private val SurfaceGray = Color(0xFF121212)
 
 private val DarkColorScheme = darkColorScheme(
     primary = NeonCyan,
     secondary = NeonPink,
-    background = DeepBlack,
-    surface = DarkGray,
+    tertiary = NeonPurple,
+    background = BackgroundBlack,
+    surface = SurfaceGray,
     onPrimary = Color.Black,
+    onSecondary = Color.White,
     onBackground = Color.White,
-    onSurface = Color.White
+    onSurface = Color(0xFFE0E0E0)
 )
 
 @Composable
 fun Theme(content: @Composable () -> Unit) {
     val view = LocalView.current
+    
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = DeepBlack.toArgb()
-            window.navigationBarColor = DeepBlack.toArgb()
-            // Делаем иконки в статус-баре светлыми (так как фон черный)
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+            // Делаем фон системных панелей чисто черным
+            window.statusBarColor = BackgroundBlack.toArgb()
+            window.navigationBarColor = BackgroundBlack.toArgb()
+
+            // Указываем, что иконки в статус-баре должны быть светлыми
+            val controller = WindowCompat.getInsetsController(window, view)
+            controller.isAppearanceLightStatusBars = false
+            controller.isAppearanceLightNavigationBars = false
         }
     }
 
