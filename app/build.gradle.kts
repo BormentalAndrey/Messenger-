@@ -1,3 +1,4 @@
+// Файл: /app/build.gradle.kts
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -20,6 +21,7 @@ android {
 
     signingConfigs {
         create("release") {
+            // Убедись, что файл my-release-key.jks лежит в папке app/
             storeFile = file("my-release-key.jks")
             storePassword = System.getenv("KEYSTORE_PASSWORD")
             keyAlias = System.getenv("KEY_ALIAS")
@@ -37,6 +39,7 @@ android {
             )
         }
         debug {
+            // Используем release подпись для тестов Google Play Integrity
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -50,9 +53,12 @@ android {
         jvmTarget = "17"
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+    }
+    
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.11"
+        kotlinCompilerExtensionVersion = "1.5.11" // Совместимо с Kotlin 1.9.23
     }
 }
 
@@ -61,7 +67,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.0")
 
-    // Compose BOM
+    // Compose
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -69,33 +75,34 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.navigation:navigation-compose:2.8.0")
 
-    // Coil
+    // Coil для загрузки фото
     implementation("io.coil-kt:coil-compose:2.6.0")
 
-    // Room
+    // Room (Локальная база данных)
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // Firebase
+    // Firebase (Основной бэкенд)
     implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
+    implementation("com.google.firebase:firebase-appcheck-playintegrity")
 
-    // Coroutines + Task await()
+    // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 
-    // WebRTC
+    // WebRTC для звонков
     implementation("io.getstream:stream-webrtc-android:1.2.0")
 
-    // DataStore for AuthState
+    // DataStore (Хранение настроек)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
-    // WorkManager
+    // WorkManager (Фоновые задачи)
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
-    // Testing
     testImplementation("junit:junit:4.13.2")
 }
+
