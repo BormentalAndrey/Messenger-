@@ -18,6 +18,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
+import com.kakdela.p2p.model.ChatMessage // Добавьте этот импорт
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -25,7 +26,6 @@ fun NavGraph(navController: NavHostController) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    // Проверка маршрута для отображения BottomBar
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
     )
@@ -74,7 +74,6 @@ fun NavGraph(navController: NavHostController) {
                 .padding(padding)
                 .background(Color.Black)
         ) {
-            // Экраны авторизации
             composable(Routes.SPLASH) { SplashScreen(navController) }
             composable(Routes.CHOICE) {
                 RegistrationChoiceScreen(
@@ -85,7 +84,6 @@ fun NavGraph(navController: NavHostController) {
             composable(Routes.AUTH_EMAIL) { EmailAuthScreen(navController) { navController.navigate(Routes.CHATS) } }
             composable(Routes.AUTH_PHONE) { PhoneAuthScreen { navController.navigate(Routes.CHATS) } }
             
-            // Основные разделы
             composable(Routes.CHATS) { ChatsListScreen(navController) }
             composable(Routes.CONTACTS) { 
                 ContactsScreen(onContactClick = { userId -> navController.navigate("chat/$userId") }) 
@@ -94,30 +92,43 @@ fun NavGraph(navController: NavHostController) {
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             
-            // Игры
             composable(Routes.CALCULATOR) { CalculatorScreen() }
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
             composable(Routes.JEWELS) { JewelsBlastScreen() }
 
-            // ЭКРАН ЧАТА С ПОДКЛЮЧЕНИЕМ VIEWMODEL
             composable(Routes.CHAT) { backStackEntry ->
                 val chatId = backStackEntry.arguments?.getString("chatId") ?: "global"
                 val chatViewModel: ChatViewModel = viewModel()
-                
-                // Инициализируем чат (подставляем ID текущего юзера из твоей системы Auth)
+                val currentUserId = "my_user_id" // В идеале брать из FirebaseAuth
+
                 LaunchedEffect(chatId) {
-                    chatViewModel.initChat(chatId, "my_user_id") 
+                    chatViewModel.initChat(chatId, currentUserId) 
                 }
 
-                val messages by chatViewModel.messages.collectAsState()
+                // Получаем список Entity и преобразуем его в ChatMessage для UI
+                val rawMessages by chatViewModel.messages.collectAsState()
+                val uiMessages = remember(rawMessages) {
+                    rawMessages.map { entity ->
+                        ChatMessage(
+                            id = entity.id.toString(),
+                            text = entity.text,
+                            senderId = entity.senderId,
+                            timestamp = entity.timestamp,
+                            isMine = entity.senderId == currentUserId
+                        )
+                    }
+                }
 
                 ChatScreen(
                     chatId = chatId,
-                    messages = messages,
+                    messages = uiMessages,
                     onSendMessage = { text -> chatViewModel.sendMessage(text) },
-                    onScheduleMessage = { text, time -> chatViewModel.scheduleMessage(text, time) }
+                    onScheduleMessage = { text, time -> 
+                        // Проверьте наличие этого метода в ChatViewModel
+                        chatViewModel.scheduleMessage(text, time) 
+                    }
                 )
             }
         }
