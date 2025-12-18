@@ -1,20 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- ===== Permissions ===== -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Firebase / Phone Auth -->
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
+    <!-- Contacts -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
+    <!-- Foreground service (VPN foreground) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Android 14+ required for network foreground -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!-- Notifications on Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- VPN binding permission -->
+    <uses-permission android:name="android.permission.BIND_VPN_SERVICE" />
+
+    <!-- ===== Application ===== -->
     <application
         android:name=".App"
         android:label="@string/app_name"
@@ -23,6 +34,7 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
+        <!-- Launcher Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -33,6 +45,7 @@
             </intent-filter>
         </activity>
 
+        <!-- SMS Receiver for OTP -->
         <receiver
             android:name=".auth.SmsReceiver"
             android:permission="android.permission.BROADCAST_SMS"
@@ -42,15 +55,16 @@
             </intent-filter>
         </receiver>
 
+        <!-- VPN Service -->
         <service
             android:name=".vpn.service.VpnService"
             android:exported="false"
-            android:foregroundServiceType="dataSync"
-            android:permission="android.permission.BIND_VPN_SERVICE">
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="dataSync">
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>
         </service>
+
     </application>
 </manifest>
-
