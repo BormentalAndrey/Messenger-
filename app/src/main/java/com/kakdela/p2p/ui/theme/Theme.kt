@@ -1,36 +1,46 @@
 package com.kakdela.p2p.ui.theme
 
+import android.app.Activity
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Shapes
-import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
-// Ваша неоновая тёмная цветовая схема
+private val NeonCyan = Color(0xFF00FFF0)
+private val NeonPink = Color(0xFFFF00C8)
+private val DeepBlack = Color(0xFF000000)
+private val DarkGray = Color(0xFF121212)
+
 private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFF00FFF0),      // Неоновый голубой
-    secondary = Color(0xFFFF00C8),     // Неоновый розовый
-    tertiary = Color(0xFFD700FF),      // Неоновый фиолетовый
-    background = Color(0xFF000000),    // Чёрный фон
-    surface = Color(0xFF1A1A1A),
+    primary = NeonCyan,
+    secondary = NeonPink,
+    background = DeepBlack,
+    surface = DarkGray,
     onPrimary = Color.Black,
-    onSecondary = Color.Black,
-    onTertiary = Color.Black,
     onBackground = Color.White,
-    onSurface = Color.White,
+    onSurface = Color.White
 )
-
-// Дефолтные shapes и typography — прямо здесь, без конфликтов
-private val AppShapes = Shapes()
-private val AppTypography = Typography()
 
 @Composable
 fun Theme(content: @Composable () -> Unit) {
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as Activity).window
+            window.statusBarColor = DeepBlack.toArgb()
+            window.navigationBarColor = DeepBlack.toArgb()
+            // Делаем иконки в статус-баре светлыми (так как фон черный)
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+        }
+    }
+
     MaterialTheme(
         colorScheme = DarkColorScheme,
-        typography = AppTypography,
-        shapes = AppShapes,
         content = content
     )
 }
+
