@@ -20,11 +20,11 @@ android {
 
     signingConfigs {
         create("release") {
-            // Файл ключа my-release-key.jks должен лежать в папке app/
             storeFile = file("my-release-key.jks")
-            storePassword = "ВАШ_ПАРОЛЬ" // ЗАМЕНИТЕ НА ВАШ ПАРОЛЬ
-            keyAlias = "my-key-alias"
-            keyPassword = "ВАШ_ПАРОЛЬ" // ЗАМЕНИТЕ НА ВАШ ПАРОЛЬ
+            // Вытягиваем данные из секретов GitHub
+            storePassword = System.getenv("KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("KEY_ALIAS")
+            keyPassword = System.getenv("KEY_PASSWORD")
         }
     }
 
@@ -35,6 +35,7 @@ android {
             signingConfig = signingConfigs.getByName("release")
         }
         debug {
+            // Чтобы дебаг-версия тоже собиралась с твоим ключом
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -44,53 +45,39 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
-    buildFeatures {
-        compose = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.11"
-    }
+    kotlinOptions { jvmTarget = "17" }
+    buildFeatures { compose = true }
+    composeOptions { kotlinCompilerExtensionVersion = "1.5.11" }
 }
 
 dependencies {
-    // Базовые библиотеки Android
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
     
-    // Jetpack Compose (Интерфейс)
+    // UI и Навигация
     implementation(platform("androidx.compose:compose-bom:2024.02.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    
-    // ИКОНКИ (Исправляет ошибки Unresolved reference: AttachFile, Checklist и др.)
     implementation("androidx.compose.material:material-icons-extended")
-    
-    // Навигация (Исправляет ошибку rememberNavController)
     implementation("androidx.navigation:navigation-compose:2.7.7")
     
-    // Firebase (База данных и Авторизация)
+    // Firebase
     implementation(platform("com.google.firebase:firebase-bom:32.7.2"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 
-    // Room (Локальное хранение чатов)
+    // Room
     val room_version = "2.6.1"
     implementation("androidx.room:room-runtime:$room_version")
     implementation("androidx.room:room-ktx:$room_version")
     kapt("androidx.room:room-compiler:$room_version")
 
-    // WebRTC (Для звонков, стабильная версия из MavenCentral)
+    // WebRTC (Maven Central версия)
     implementation("io.getstream:stream-webrtc-android:1.1.1")
 
-    // Coil (Загрузка картинок)
+    // Coil
     implementation("io.coil-kt:coil-compose:2.5.0")
 }
