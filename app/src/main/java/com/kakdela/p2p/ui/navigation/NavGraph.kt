@@ -11,15 +11,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.navArgument
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
-import com.kakdela.p2p.model.ChatMessage
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,6 +25,7 @@ fun NavGraph(navController: NavHostController) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
+    // Проверка маршрута для отображения BottomBar
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
     )
@@ -37,8 +36,13 @@ fun NavGraph(navController: NavHostController) {
                 NavigationBar(containerColor = Color.Black, contentColor = Color.White) {
                     NavigationBarItem(
                         selected = currentRoute == Routes.CHATS,
-                        onClick = { navController.navigate(Routes.CHATS) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Outlined.ChatBubbleOutline, null) },
+                        onClick = { 
+                            navController.navigate(Routes.CHATS) { 
+                                popUpTo(Routes.CHATS) { inclusive = true }
+                                launchSingleTop = true 
+                            } 
+                        },
+                        icon = { Icon(Icons.Outlined.ChatBubbleOutline, null, tint = if(currentRoute == Routes.CHATS) Color.Cyan else Color.Gray) },
                         label = { Text("Чаты") }
                     )
                     NavigationBarItem(
@@ -51,7 +55,7 @@ fun NavGraph(navController: NavHostController) {
                         selected = currentRoute == Routes.ENTERTAINMENT,
                         onClick = { navController.navigate(Routes.ENTERTAINMENT) { launchSingleTop = true } },
                         icon = { Icon(Icons.Outlined.PlayCircleOutline, null) },
-                        label = { Text("Развлечения") }
+                        label = { Text("Игры") }
                     )
                     NavigationBarItem(
                         selected = currentRoute == Routes.SETTINGS,
@@ -66,8 +70,11 @@ fun NavGraph(navController: NavHostController) {
         NavHost(
             navController = navController,
             startDestination = Routes.SPLASH,
-            modifier = Modifier.padding(padding).background(Color.Black)
+            modifier = Modifier
+                .padding(padding)
+                .background(Color.Black)
         ) {
+            // Экраны авторизации
             composable(Routes.SPLASH) { SplashScreen(navController) }
             composable(Routes.CHOICE) {
                 RegistrationChoiceScreen(
@@ -78,6 +85,7 @@ fun NavGraph(navController: NavHostController) {
             composable(Routes.AUTH_EMAIL) { EmailAuthScreen(navController) { navController.navigate(Routes.CHATS) } }
             composable(Routes.AUTH_PHONE) { PhoneAuthScreen { navController.navigate(Routes.CHATS) } }
             
+            // Основные разделы
             composable(Routes.CHATS) { ChatsListScreen(navController) }
             composable(Routes.CONTACTS) { 
                 ContactsScreen(onContactClick = { userId -> navController.navigate("chat/$userId") }) 
@@ -93,15 +101,23 @@ fun NavGraph(navController: NavHostController) {
             composable(Routes.PACMAN) { PacmanScreen() }
             composable(Routes.JEWELS) { JewelsBlastScreen() }
 
+            // ЭКРАН ЧАТА С ПОДКЛЮЧЕНИЕМ VIEWMODEL
             composable(Routes.CHAT) { backStackEntry ->
                 val chatId = backStackEntry.arguments?.getString("chatId") ?: "global"
+                val chatViewModel: ChatViewModel = viewModel()
                 
-                // ИСПРАВЛЕНИЕ: Передаем необходимые аргументы в ChatScreen
+                // Инициализируем чат (подставляем ID текущего юзера из твоей системы Auth)
+                LaunchedEffect(chatId) {
+                    chatViewModel.initChat(chatId, "my_user_id") 
+                }
+
+                val messages by chatViewModel.messages.collectAsState()
+
                 ChatScreen(
                     chatId = chatId,
-                    messages = emptyList(), // Здесь должна быть загрузка из ViewModel
-                    onSendMessage = { /* логика */ },
-                    onScheduleMessage = { text, time -> /* логика */ }
+                    messages = messages,
+                    onSendMessage = { text -> chatViewModel.sendMessage(text) },
+                    onScheduleMessage = { text, time -> chatViewModel.scheduleMessage(text, time) }
                 )
             }
         }
