@@ -9,13 +9,8 @@ object SmsCodeManager {
     fun generateCode(): String =
         Random.nextInt(100000, 999999).toString()
 
-    fun sendCode(
-        context: Context,
-        phone: String,
-        code: String
-    ) {
+    fun sendCode(context: Context, phone: String, code: String) {
         try {
-            // Современный способ получения SmsManager
             val smsManager: SmsManager = context.getSystemService(SmsManager::class.java)
             smsManager.sendTextMessage(
                 phone,
@@ -29,3 +24,4 @@ object SmsCodeManager {
         }
     }
 }
+
