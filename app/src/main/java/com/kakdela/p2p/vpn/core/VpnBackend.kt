@@ -15,6 +15,7 @@ class VpnBackend(private val context: Context) {
 
     private val backend by lazy { WgQuickBackend(context) }
     
+    // Объект туннеля для управления состоянием
     private val tunnel = object : Tunnel {
         override fun getName(): String = "P2PVpn"
         override fun onStateChange(newState: Tunnel.State) {}
@@ -38,12 +39,22 @@ class VpnBackend(private val context: Context) {
             .build()
     }
 
+    // Здесь должен быть ТОЛЬКО ОДИН аргумент
     fun up(config: Config) {
-        backend.setState(tunnel, Tunnel.State.UP, config)
+        try {
+            backend.setState(tunnel, Tunnel.State.UP, config)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
+    // Здесь аргументов быть НЕ ДОЛЖНО
     fun down() {
-        backend.setState(tunnel, Tunnel.State.DOWN, null)
+        try {
+            backend.setState(tunnel, Tunnel.State.DOWN, null)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }
 
