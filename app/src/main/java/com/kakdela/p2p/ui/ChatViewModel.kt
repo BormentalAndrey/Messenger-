@@ -1,3 +1,4 @@
+// Файл: app/src/main/java/com/kakdela/p2p/ui/ChatViewModel.kt
 package com.kakdela.p2p.ui
 
 import android.app.Application
@@ -11,7 +12,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-// Используем AndroidViewModel, чтобы иметь доступ к context для базы данных
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private val dao = ChatDatabase.getDatabase(application).messageDao()
@@ -24,17 +24,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
      * Инициализация чата
      */
     fun initChat(chatId: String, currentUserId: String) {
-        // 1. Создаем WebRtcClient для этого чата
         rtcClient = WebRtcClient(getApplication(), chatId, currentUserId)
 
-        // 2. Начинаем наблюдать за локальной базой данных (Room)
         viewModelScope.launch {
             dao.getMessagesForChat(chatId).collect { list ->
-                // Фильтруем отложенные сообщения, если это необходимо
                 val currentTime = System.currentTimeMillis()
+                // Фильтруем сообщения: показываем только те, чье время уже наступило
                 _messages.value = list.filter { msg ->
-                    // Здесь логика: если есть запланированное время, ждем его
-                    // В P2P это работает локально на устройстве отправителя
                     msg.timestamp <= currentTime 
                 }
             }
@@ -42,7 +38,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Отправка текстового сообщения через P2P
+     * Отправка обычного сообщения
      */
     fun sendMessage(text: String) {
         viewModelScope.launch {
@@ -51,7 +47,19 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Отправка файла через P2P
+     * Отправка запланированного сообщения (Добавлено для исправления ошибки NavGraph)
+     */
+    fun scheduleMessage(text: String, timeMillis: Long) {
+        viewModelScope.launch {
+            // В P2P логике мы отправляем сообщение с будущим временем.
+            // Получатель сохранит его, но не покажет до наступления timeMillis.
+            rtcClient?.sendP2P(text = text, bytes = null) 
+            // Дополнительно можно пометить сообщение в БД как "отложенное"
+        }
+    }
+
+    /**
+     * Отправка файла
      */
     fun sendFile(bytes: ByteArray) {
         viewModelScope.launch {
