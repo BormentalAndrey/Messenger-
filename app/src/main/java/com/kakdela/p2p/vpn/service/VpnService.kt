@@ -1,4 +1,3 @@
-// Файл: app/src/main/java/com/kakdela/p2p/vpn/service/VpnService.kt
 package com.kakdela.p2p.vpn.service
 
 import android.app.Service
@@ -8,18 +7,29 @@ import com.kakdela.p2p.vpn.core.VpnBackend
 import com.kakdela.p2p.vpn.model.VpnServer
 
 class VpnService : Service() {
-    // Используем lazy, чтобы контекст 'this' был доступен только после создания сервиса
     private val vpnBackend by lazy { VpnBackend(this) }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    fun startVpn(server: VpnServer, privateKey: String) {
-        val config = vpnBackend.buildConfig(server, privateKey)
+    // Эта функция вызывается при старте VPN
+    fun startVpn(server: VpnServer, myPrivateKey: String) {
+        // Исправлено: передаем поля объекта VpnServer по отдельности
+        val config = vpnBackend.buildConfig(
+            serverHost = server.host,
+            serverPort = server.port,
+            serverPubKey = server.publicKey,
+            privateKey = myPrivateKey
+        )
         vpnBackend.up(config)
     }
 
     fun stopVpn() {
         vpnBackend.down()
+    }
+    
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Здесь логика обработки команд старта/стопа через Intent
+        return START_STICKY
     }
 }
 
