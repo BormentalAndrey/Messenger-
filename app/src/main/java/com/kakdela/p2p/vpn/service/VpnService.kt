@@ -11,12 +11,11 @@ class VpnService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    // Эта функция вызывается при старте VPN
     fun startVpn(server: VpnServer, myPrivateKey: String) {
-        // Исправлено: передаем поля объекта VpnServer по отдельности
+        // Убедитесь, что server.port — это Int, а остальные — String
         val config = vpnBackend.buildConfig(
             serverHost = server.host,
-            serverPort = server.port,
+            serverPort = server.port, 
             serverPubKey = server.publicKey,
             privateKey = myPrivateKey
         )
@@ -24,12 +23,7 @@ class VpnService : Service() {
     }
 
     fun stopVpn() {
-        vpnBackend.down()
-    }
-    
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Здесь логика обработки команд старта/стопа через Intent
-        return START_STICKY
+        vpnBackend.down() // Теперь метод down() определен в VpnBackend
     }
 }
 
