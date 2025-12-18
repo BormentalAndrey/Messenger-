@@ -8,8 +8,8 @@ import com.wireguard.config.Interface
 import com.wireguard.config.Peer
 import com.wireguard.config.InetEndpoint
 import com.wireguard.crypto.Key
-// ВАЖНО: В версии 1.0.20230706 InetNetwork находится именно здесь:
-import com.wireguard.util.InetNetwork
+// ВАЖНО: В новых версиях InetNetwork находится в com.wireguard.config или com.wireguard.util
+import com.wireguard.config.InetNetwork 
 
 class VpnBackend(private val context: Context) {
     private val backend by lazy { WgQuickBackend(context) }
@@ -17,23 +17,18 @@ class VpnBackend(private val context: Context) {
     private val tunnel = object : Tunnel {
         override fun getName(): String = "P2PVpn"
         
-        // Исправление ошибок p1, p2: явно указываем имена параметров
+        // Исправлено: В актуальном SDK метод принимает (newState: Tunnel.State)
         override fun onStateChange(newState: Tunnel.State) {
-            // Логика изменения состояния (можно оставить пустой)
+            // Оставьте пустым или добавьте логику логов
         }
     }
 
-    /**
-     * Сборка конфигурации WireGuard
-     */
     fun buildConfig(serverHost: String, serverPort: Int, serverPubKey: String, privateKey: String): Config {
-        // Настройка интерфейса клиента
         val iFace = Interface.Builder()
             .addAddress(InetNetwork.parse("10.0.0.2/32"))
-            .setPrivateKey(Key.fromBase64(privateKey)) // Исправлено: используем Key object
+            .setPrivateKey(Key.fromBase64(privateKey)) // Key object вместо String
             .build()
 
-        // Настройка сервера (Пира)
         val peer = Peer.Builder()
             .setPublicKey(Key.fromBase64(serverPubKey))
             .addAllowedIp(InetNetwork.parse("0.0.0.0/0"))
@@ -46,20 +41,15 @@ class VpnBackend(private val context: Context) {
             .build()
     }
 
-    /**
-     * Включение VPN
-     */
     fun up(config: Config) {
         try {
+            // WgQuickBackend.setState принимает (Tunnel, State, Config)
             backend.setState(tunnel, Tunnel.State.UP, config)
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
-    /**
-     * Выключение VPN
-     */
     fun down() {
         try {
             backend.setState(tunnel, Tunnel.State.DOWN, null)
