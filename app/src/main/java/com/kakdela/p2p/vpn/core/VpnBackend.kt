@@ -8,42 +8,50 @@ import com.wireguard.config.Interface
 import com.wireguard.config.Peer
 import com.wireguard.config.InetEndpoint
 import com.wireguard.crypto.Key
-// ВАЖНО: В новых версиях InetNetwork находится в com.wireguard.config или com.wireguard.util
-import com.wireguard.config.InetNetwork 
+import com.wireguard.config.InetNetwork
 
 class VpnBackend(private val context: Context) {
+    // Используем WgQuickBackend для работы через стандартные конфиги WireGuard
     private val backend by lazy { WgQuickBackend(context) }
     
+    // Реализация интерфейса Tunnel с корректными именами параметров для Kotlin
     private val tunnel = object : Tunnel {
         override fun getName(): String = "P2PVpn"
         
-        // Исправлено: В актуальном SDK метод принимает (newState: Tunnel.State)
+        // Именно здесь возникала ошибка p1/p2. Теперь параметры указаны верно.
         override fun onStateChange(newState: Tunnel.State) {
-            // Оставьте пустым или добавьте логику логов
+            // Можно добавить логирование состояния для отладки
         }
     }
 
+    /**
+     * Создание конфигурации туннеля.
+     * Все ключи должны быть в формате Base64 String.
+     */
     fun buildConfig(serverHost: String, serverPort: Int, serverPubKey: String, privateKey: String): Config {
-        val iFace = Interface.Builder()
+        // Создаем интерфейс клиента (наш телефон)
+        val interfaceBuilder = Interface.Builder()
             .addAddress(InetNetwork.parse("10.0.0.2/32"))
-            .setPrivateKey(Key.fromBase64(privateKey)) // Key object вместо String
+            // Метод setPrivateKey требует объект Key, а не String!
+            .setPrivateKey(Key.fromBase64(privateKey)) 
             .build()
 
-        val peer = Peer.Builder()
+        // Настройка пира (удаленного сервера)
+        val peerBuilder = Peer.Builder()
             .setPublicKey(Key.fromBase64(serverPubKey))
-            .addAllowedIp(InetNetwork.parse("0.0.0.0/0"))
+            .addAllowedIp(InetNetwork.parse("0.0.0.0/0")) // Весь трафик через VPN
             .setEndpoint(InetEndpoint.parse("$serverHost:$serverPort"))
             .build()
 
         return Config.Builder()
-            .setInterface(iFace)
-            .addPeer(peer)
+            .setInterface(interfaceBuilder)
+            .addPeer(peerBuilder)
             .build()
     }
 
     fun up(config: Config) {
         try {
-            // WgQuickBackend.setState принимает (Tunnel, State, Config)
+            // Включаем VPN туннель
             backend.setState(tunnel, Tunnel.State.UP, config)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -52,6 +60,7 @@ class VpnBackend(private val context: Context) {
 
     fun down() {
         try {
+            // Выключаем VPN туннель (config передаем null)
             backend.setState(tunnel, Tunnel.State.DOWN, null)
         } catch (e: Exception) {
             e.printStackTrace()
