@@ -14,13 +14,18 @@ object SmsCodeManager {
         phone: String,
         code: String
     ) {
-        val sms = SmsManager.getDefault()
-        sms.sendTextMessage(
-            phone,
-            null,
-            "Код подтверждения KakDela: $code",
-            null,
-            null
-        )
+        try {
+            // Современный способ получения SmsManager
+            val smsManager: SmsManager = context.getSystemService(SmsManager::class.java)
+            smsManager.sendTextMessage(
+                phone,
+                null,
+                "Код подтверждения KakDela: $code",
+                null,
+                null
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 }
