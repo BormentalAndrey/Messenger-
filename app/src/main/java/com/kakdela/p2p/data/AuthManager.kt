@@ -11,38 +11,46 @@ class AuthManager {
 
     suspend fun completeSignIn(userName: String, phoneNumber: String): Boolean {
         return try {
-            // Если пользователь не авторизован в Firebase, делаем это анонимно
-            // Это даст нам UID, необходимый для создания документа в Firestore
+            // 1. Авторизация (получаем UID)
             if (auth.currentUser == null) {
                 auth.signInAnonymously().await()
             }
 
             val uid = auth.currentUser?.uid ?: return false
-            val cleanPhone = phoneNumber.filter { it.isDigit() }
 
+            // 2. Исправление номера (Нормализация)
+            val digitsOnly = phoneNumber.filter { it.isDigit() }
+            val cleanPhone = if (digitsOnly.startsWith("8") && digitsOnly.length == 11) {
+                "7" + digitsOnly.substring(1)
+            } else {
+                digitsOnly
+            }
+
+            // 3. Сохранение в базу
             val userRef = db.collection("users").document(uid)
             val snapshot = userRef.get().await()
             
+            val userData = mapOf(
+                "uid" to uid,
+                "name" to userName,
+                "phoneNumber" to cleanPhone,
+                "status" to "online",
+                "createdAt" to System.currentTimeMillis()
+            )
+
             if (!snapshot.exists()) {
-                val newUser = mapOf(
-                    "uid" to uid,
-                    "name" to userName,
-                    "phoneNumber" to cleanPhone,
-                    "status" to "online",
-                    "createdAt" to System.currentTimeMillis()
-                )
-                userRef.set(newUser).await()
+                userRef.set(userData).await()
             } else {
                 userRef.update(mapOf(
                     "status" to "online",
-                    "name" to userName
+                    "name" to userName,
+                    "phoneNumber" to cleanPhone
                 )).await()
             }
             true
         } catch (e: Exception) {
             e.printStackTrace()
-            false // Если сработает этот блок, в приложении будет "Ошибка при создании профиля"
+            false
         }
     }
 }
-
