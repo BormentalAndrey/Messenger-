@@ -1,26 +1,25 @@
+// Файл: app/src/main/java/com/kakdela/p2p/vpn/service/VpnService.kt
 package com.kakdela.p2p.vpn.service
 
+import android.app.Service
 import android.content.Intent
+import android.os.IBinder
 import com.kakdela.p2p.vpn.core.VpnBackend
 import com.kakdela.p2p.vpn.model.VpnServer
 
-// ... (остальные импорты)
+class VpnService : Service() {
+    // Используем lazy, чтобы контекст 'this' был доступен только после создания сервиса
+    private val vpnBackend by lazy { VpnBackend(this) }
 
-// Внутри класса VpnService, где происходит запуск:
-private fun startVpn(server: VpnServer) {
-    val vpnBackend = VpnBackend(this)
-    val myPrivateKey = "ВАШ_ПРИВАТНЫЙ_КЛЮЧ_ИЗ_KEYSTORE" // Должен быть Base64
+    override fun onBind(intent: Intent?): IBinder? = null
 
-    // 1. Создаем объект Config
-    val config = vpnBackend.buildConfig(server, myPrivateKey)
+    fun startVpn(server: VpnServer, privateKey: String) {
+        val config = vpnBackend.buildConfig(server, privateKey)
+        vpnBackend.up(config)
+    }
 
-    // 2. Запускаем (теперь аргумент только один)
-    vpnBackend.up(config)
-}
-
-private fun stopVpn() {
-    val vpnBackend = VpnBackend(this)
-    // 3. Останавливаем (без аргументов)
-    vpnBackend.down()
+    fun stopVpn() {
+        vpnBackend.down()
+    }
 }
 
