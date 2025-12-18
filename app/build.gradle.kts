@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.gms.google-services")
+    id("kotlin-kapt") 
 }
 
 android {
@@ -14,21 +15,22 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
         create("release") {
-            // Файл ключа должен лежать в папке app/ вашего репозитория
             storeFile = file("my-release-key.jks")
-            storePassword = "ВАШ_ПАРОЛЬ" // Замените на свой
+            storePassword = "ВАШ_ПАРОЛЬ" // Впиши свой пароль
             keyAlias = "my-key-alias"
-            keyPassword = "ВАШ_ПАРОЛЬ" // Замените на свой
+            keyPassword = "ВАШ_ПАРОЛЬ"
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")
         }
         debug {
@@ -41,22 +43,52 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
-    composeOptions { kotlinCompilerExtensionVersion = "1.5.11" }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    buildFeatures {
+        compose = true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.11"
+    }
 }
 
 dependencies {
+    // Основные зависимости
     implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.compose.ui:ui:1.5.4")
-    implementation("androidx.compose.material3:material3:1.2.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.2")
     
-    // Firebase
+    // Compose (UI)
+    implementation(platform("androidx.compose:compose-bom:2024.02.00"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.graphics:graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.material3:material3")
+    
+    // Navigation (РЕШАЕТ ОШИБКУ rememberNavController)
+    implementation("androidx.navigation:navigation-compose:2.7.7")
+    
+    // Firebase (СТАБИЛЬНЫЙ BoM)
     implementation(platform("com.google.firebase:firebase-bom:32.7.2"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
-    
-    // Для работы с .await()
+    implementation("com.google.firebase:firebase-storage-ktx") // Для SettingsScreen
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+
+    // Room (Локальная база данных чатов)
+    val room_version = "2.6.1"
+    implementation("androidx.room:room-runtime:$room_version")
+    implementation("androidx.room:room-ktx:$room_version")
+    kapt("androidx.room:room-compiler:$room_version")
+
+    // WebRTC (Для звонков и P2P)
+    implementation("org.webrtc:google-webrtc:1.0.32006")
+
+    // Coil (Для загрузки картинок/аватарок)
+    implementation("io.coil-kt:coil-compose:2.5.0")
 }
+
