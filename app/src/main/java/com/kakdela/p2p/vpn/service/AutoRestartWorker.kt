@@ -3,12 +3,16 @@ package com.kakdela.p2p.vpn.service
 import android.content.Context
 import androidx.work.*
 import com.kakdela.p2p.vpn.core.VpnBackend
+import com.kakdela.p2p.vpn.core.WgKeyStore
 
-class AutoRestartWorker(app: Context, params: WorkerParameters) :
-    CoroutineWorker(app, params) {
+class AutoRestartWorker(appContext: Context, params: WorkerParameters) :
+    CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
-        VpnBackend(applicationContext).safeReconnect()
+        val backend = VpnBackend(applicationContext)
+        val keyStore = WgKeyStore(applicationContext)
+        val config = backend.buildWarpConfig(keyStore.getPrivateKey())
+        backend.up(config)
         return Result.success()
     }
 
