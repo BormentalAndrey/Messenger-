@@ -22,10 +22,11 @@ android {
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas")
         }
-        
-        // Оптимизация для нативных библиотек (WebRTC/WireGuard)
+
         ndk {
-            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
+            abiFilters.addAll(
+                listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            )
         }
     }
 
@@ -74,7 +75,6 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "META-INF/DEPENDENCIES"
         }
-        // Исправляет ошибки с дубликатами .so файлов при сборке
         jniLibs {
             useLegacyPackaging = true
             pickFirsts += "lib/**/libjingle_peerconnection_so.so"
@@ -84,11 +84,17 @@ android {
 }
 
 dependencies {
-    // Android Core & Lifecycle
+
+    // Core
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.0")
+
+    // WireGuard (VPN)
     implementation("com.wireguard.android:tunnel:1.0.20230706")
+
+    // OkHttp (для Cloudflare API)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     // Jetpack Compose
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
@@ -99,8 +105,10 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.navigation:navigation-compose:2.8.0")
 
-    // Media & DB
+    // Coil
     implementation("io.coil-kt:coil-compose:2.6.0")
+
+    // Room
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
@@ -113,23 +121,25 @@ dependencies {
     implementation("com.google.firebase:firebase-storage-ktx")
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
 
-    // Utils & Network
+    // Coroutine + Play Services
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    // Datastore & WorkManager
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    // JSON
     implementation("com.google.code.gson:gson:2.10.1")
     
-    // VPN: ИСПОЛЬЗУЕМ ВЕРСИЮ С ДАТОЙ (WireGuard)
-    implementation("com.wireguard.android:tunnel:1.0.20230706")
-
     // WebRTC
     implementation("io.getstream:stream-webrtc-android:1.2.0")
 
-    // Misc
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    // Для Foreground Notifications (Android 13+)
+    implementation("androidx.core:core-ktx:1.13.1")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 }
-
