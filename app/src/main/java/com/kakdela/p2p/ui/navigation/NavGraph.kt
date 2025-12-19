@@ -13,12 +13,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.navArgument
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
-import com.kakdela.p2p.model.ChatMessage // Добавьте этот импорт
+import com.kakdela.p2p.model.ChatMessage
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,7 +59,7 @@ fun NavGraph(navController: NavHostController) {
                         selected = currentRoute == Routes.ENTERTAINMENT,
                         onClick = { navController.navigate(Routes.ENTERTAINMENT) { launchSingleTop = true } },
                         icon = { Icon(Icons.Outlined.PlayCircleOutline, null) },
-                        label = { Text("Игры") }
+                        label = { Text("Развлечения") }
                     )
                     NavigationBarItem(
                         selected = currentRoute == Routes.SETTINGS,
@@ -98,16 +102,33 @@ fun NavGraph(navController: NavHostController) {
             composable(Routes.PACMAN) { PacmanScreen() }
             composable(Routes.JEWELS) { JewelsBlastScreen() }
 
-            composable(Routes.CHAT) { backStackEntry ->
+            // Исправленный маршрут WebView (решает проблему из скриншота 8)
+            composable(
+                route = "webview/{url}/{title}",
+                arguments = listOf(
+                    navArgument("url") { type = NavType.StringType },
+                    navArgument("title") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val encodedUrl = backStackEntry.arguments?.getString("url") ?: ""
+                val title = backStackEntry.arguments?.getString("title") ?: "Просмотр"
+                
+                // Декодируем URL, так как при навигации он передается в кодированном виде
+                val decodedUrl = URLDecoder.decode(encodedUrl, StandardCharsets.UTF_8.toString())
+                
+                EntertainmentWebViewScreen(url = decodedUrl, title = title)
+            }
+
+            // Исправленный маршрут чата с аргументом
+            composable("chat/{chatId}") { backStackEntry ->
                 val chatId = backStackEntry.arguments?.getString("chatId") ?: "global"
                 val chatViewModel: ChatViewModel = viewModel()
-                val currentUserId = "my_user_id" // В идеале брать из FirebaseAuth
+                val currentUserId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: "unknown"
 
                 LaunchedEffect(chatId) {
                     chatViewModel.initChat(chatId, currentUserId) 
                 }
 
-                // Получаем список Entity и преобразуем его в ChatMessage для UI
                 val rawMessages by chatViewModel.messages.collectAsState()
                 val uiMessages = remember(rawMessages) {
                     rawMessages.map { entity ->
@@ -126,7 +147,6 @@ fun NavGraph(navController: NavHostController) {
                     messages = uiMessages,
                     onSendMessage = { text -> chatViewModel.sendMessage(text) },
                     onScheduleMessage = { text, time -> 
-                        // Проверьте наличие этого метода в ChatViewModel
                         chatViewModel.scheduleMessage(text, time) 
                     }
                 )
