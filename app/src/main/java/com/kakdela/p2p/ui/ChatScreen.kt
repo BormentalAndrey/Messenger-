@@ -1,5 +1,8 @@
 package com.kakdela.p2p.ui
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -18,10 +21,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kakdela.p2p.model.ChatMessage
+import java.util.Calendar
 
 // Константы неоновых цветов
 private val NeonCyan = Color(0xFF00FFFF)
@@ -38,6 +43,28 @@ fun ChatScreen(
     onScheduleMessage: (String, Long) -> Unit
 ) {
     var textState by remember { mutableStateOf("") }
+
+    // --- Состояния для диалогов выбора даты и времени ---
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
+    val datePickerState = rememberDatePickerState()
+    val timePickerState = rememberTimePickerState()
+    
+    // Вспомогательная функция для обработки полного времени
+    fun scheduleWithSelectedTime() {
+        val selectedDateMillis = datePickerState.selectedDateMillis
+        if (selectedDateMillis != null && textState.isNotBlank()) {
+            val calendar = Calendar.getInstance()
+            calendar.timeInMillis = selectedDateMillis
+            calendar.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
+            calendar.set(Calendar.MINUTE, timePickerState.minute)
+            
+            // Если время уже прошло, добавляем 1 день (опционально, или просто отправляем как есть)
+            // Здесь отправляем именно на выбранное время
+            onScheduleMessage(textState, calendar.timeInMillis)
+            textState = ""
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -66,17 +93,79 @@ fun ChatScreen(
                         textState = ""
                     }
                 },
-                onSchedule = {
+                onAttachFile = { uri ->
+                    // Отправляем URI файла как сообщение (или здесь можно добавить логику загрузки)
+                    onSendMessage("Файл: $uri")
+                },
+                onScheduleClick = {
                     if (textState.isNotBlank()) {
-                        val tenSecondsLater = System.currentTimeMillis() + 10000
-                        onScheduleMessage(textState, tenSecondsLater)
-                        textState = ""
+                        showDatePicker = true
                     }
                 }
             )
         },
         containerColor = DarkBackground
     ) { paddingValues ->
+        
+        // --- Диалоги выбора даты и времени ---
+        if (showDatePicker) {
+            DatePickerDialog(
+                onDismissRequest = { showDatePicker = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showDatePicker = false
+                        showTimePicker = true // После даты открываем время
+                    }) {
+                        Text("Далее", color = NeonCyan)
+                    }
+                },
+                colors = DatePickerDefaults.colors(
+                    containerColor = SurfaceGray,
+                    titleContentColor = NeonCyan,
+                    headlineContentColor = Color.White,
+                    dayContentColor = Color.White,
+                    selectedDayContainerColor = NeonCyan,
+                    selectedDayContentColor = Color.Black
+                )
+            ) {
+                DatePicker(state = datePickerState)
+            }
+        }
+
+        if (showTimePicker) {
+            AlertDialog(
+                onDismissRequest = { showTimePicker = false },
+                containerColor = SurfaceGray,
+                confirmButton = {
+                    TextButton(onClick = {
+                        showTimePicker = false
+                        scheduleWithSelectedTime()
+                    }) {
+                        Text("Запланировать", color = NeonCyan)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showTimePicker = false }) {
+                        Text("Отмена", color = Color.Gray)
+                    }
+                },
+                text = {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Выберите время", color = Color.White, modifier = Modifier.padding(bottom = 16.dp))
+                        TimeInput(
+                            state = timePickerState,
+                            colors = TimePickerDefaults.colors(
+                                timeSelectorSelectedContainerColor = NeonMagenta.copy(alpha = 0.2f),
+                                timeSelectorUnselectedContainerColor = Color.Black,
+                                timeSelectorSelectedContentColor = NeonMagenta,
+                                timeSelectorUnselectedContentColor = Color.White
+                            )
+                        )
+                    }
+                }
+            )
+        }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -97,7 +186,6 @@ fun ChatBubble(message: ChatMessage) {
     val isMe = message.isMine
     val neonColor = if (isMe) NeonCyan else NeonMagenta
     
-    // Правильные типы выравнивания для Compose
     val boxAlignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
     val columnAlignment = if (isMe) Alignment.End else Alignment.Start
 
@@ -131,7 +219,7 @@ fun ChatBubble(message: ChatMessage) {
                     )
                     
                     Text(
-                        text = "12:00", // Здесь можно выводить message.timestamp
+                        text = "12:00", 
                         color = neonColor.copy(alpha = 0.6f),
                         fontSize = 10.sp,
                         modifier = Modifier
@@ -149,8 +237,16 @@ fun ChatInputField(
     text: String,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
-    onSchedule: () -> Unit
+    onAttachFile: (Uri) -> Unit,
+    onScheduleClick: () -> Unit
 ) {
+    // Лаунчер для выбора файлов из системы
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { onAttachFile(it) }
+    }
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -165,7 +261,8 @@ fun ChatInputField(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = { /* Логика файлов */ }) {
+            // Кнопка скрепки: открывает выбор файла
+            IconButton(onClick = { launcher.launch("*/*") }) {
                 Icon(Icons.Outlined.AttachFile, "Attach", tint = NeonCyan)
             }
 
@@ -187,8 +284,8 @@ fun ChatInputField(
                 shape = RoundedCornerShape(20.dp)
             )
 
-            // Кнопка отложенной отправки
-            IconButton(onClick = onSchedule) {
+            // Кнопка отложенной отправки: вызывает колбэк для открытия календаря
+            IconButton(onClick = onScheduleClick) {
                 Icon(Icons.Outlined.Schedule, "Schedule", tint = NeonMagenta)
             }
 
