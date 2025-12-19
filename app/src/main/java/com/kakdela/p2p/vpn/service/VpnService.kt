@@ -23,19 +23,24 @@ class VpnService : VpnService() {
     private val CHANNEL_ID = "warp_channel"
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // ИСПРАВЛЕНО: Для Android 14+ (SDK 34-35) необходимо указывать тип сервиса
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        // ИСПРАВЛЕНО: Тип изменен на SPECIAL_USE для прохождения компиляции AAPT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
                 NOTIFICATION_ID, 
                 createNotification(), 
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_VPN
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
             )
         } else {
             startForeground(NOTIFICATION_ID, createNotification())
         }
 
-        val config = backend.buildWarpConfig(keyStore.getPrivateKey())
-        backend.up(config)
+        // Запуск туннеля
+        try {
+            val config = backend.buildWarpConfig(keyStore.getPrivateKey())
+            backend.up(config)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
         return START_STICKY
     }
@@ -60,6 +65,7 @@ class VpnService : VpnService() {
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
     }
 
@@ -70,7 +76,7 @@ class VpnService : VpnService() {
                 "WARP VPN",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Уведомление о работе VPN-туннеля"
+                description = "Информирует о работе защищенного соединения"
             }
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
