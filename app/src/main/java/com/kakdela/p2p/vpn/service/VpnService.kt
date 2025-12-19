@@ -1,29 +1,68 @@
 package com.kakdela.p2p.vpn.service
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
 import android.net.VpnService
-import android.os.IBinder
-import com.kakdela.p2p.vpn.core.*
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import com.kakdela.p2p.MainActivity
+import com.kakdela.p2p.R
+import com.kakdela.p2p.vpn.core.VpnBackend
+import com.kakdela.p2p.vpn.core.WgKeyStore
 
 class VpnService : VpnService() {
+
     private val backend by lazy { VpnBackend(this) }
     private val keyStore by lazy { WgKeyStore(this) }
-    private val firewall by lazy { KillSwitchFirewall() }
 
-    override fun onCreate() {
-        super.onCreate()
-        NetworkMonitor(this).register()
-    }
+    private val NOTIFICATION_ID = 1001
+    private val CHANNEL_ID = "warp_channel"
 
-    override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
-        val builder = Builder()
-        firewall.apply(builder)
-        builder.establish()
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startForeground(NOTIFICATION_ID, createNotification())
 
-        backend.safeReconnect()
-        AutoRestartWorker.schedule(this)
+        val config = backend.buildWarpConfig(keyStore.getPrivateKey())
+        backend.up(config)
+
+        // Если нужно авторестарт — раскомментируй
+        // AutoRestartWorker.schedule(this)
 
         return START_STICKY
     }
 
-    override fun onBind(intent: android.content.Intent?): IBinder? = null
+    override fun onDestroy() {
+        backend.down()
+        super.onDestroy()
+    }
+
+    private fun createNotification(): Notification {
+        createChannel()
+
+        val pendingIntent = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("WARP активен")
+            .setContentText("Защищённое соединение через Cloudflare")
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true)
+            .build()
+    }
+
+    private fun createChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "WARP VPN",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
+        }
+    }
 }
