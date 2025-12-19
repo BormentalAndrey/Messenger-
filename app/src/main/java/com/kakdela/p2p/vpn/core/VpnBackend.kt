@@ -18,7 +18,7 @@ class VpnBackend(private val context: Context) {
         override fun getName() = "WARP"
 
         override fun onStateChange(state: Tunnel.State) {
-            // Логирование состояния (опционально)
+            // Логирование (опционально)
         }
     }
 
@@ -26,15 +26,15 @@ class VpnBackend(private val context: Context) {
         val iface = Interface.Builder()
             .addAddress(InetNetwork.parse("172.16.0.2/32"))
             .addDnsServer(InetAddress.getByName("1.1.1.1"))
-            .parsePrivateKey(privateKey)  // Для приватного ключа
+            .parsePrivateKey(privateKey)  // parsePrivateKey для приватного ключа
             .build()
 
         val peer = Peer.Builder()
-            .parsePublicKey("bmXOC+F1FxEMY9dyU9S47Vp00nU8NAs4W8uNP0R2D1s=")  // Для публичного ключа
-            .setEndpoint(InetEndpoint.parse("162.159.193.2:2408"))  // Правильный метод: setEndpoint
+            .parsePublicKey("bmXOC+F1FxEMY9dyU9S47Vp00nU8NAs4W8uNP0R2D1s=")  // parsePublicKey
+            .setEndpoint(InetEndpoint.parse("162.159.193.2:2408"))  // setEndpoint
             .addAllowedIp(InetNetwork.parse("0.0.0.0/0"))
-            .addAllowedIp(InetNetwork.parse("::/0"))  // Для IPv6
-            .persistentKeepalive(25)
+            .addAllowedIp(InetNetwork.parse("::/0"))  // IPv6
+            .setPersistentKeepalive(25)  // Правильный метод: setPersistentKeepalive
             .build()
 
         return Config.Builder()
