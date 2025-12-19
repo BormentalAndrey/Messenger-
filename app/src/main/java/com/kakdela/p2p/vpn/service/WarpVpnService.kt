@@ -1,35 +1,44 @@
 package com.kakdela.p2p.vpn.service
 
-import android.app.Service
-import android.content.Intent
-import android.os.IBinder
+import android.net.VpnService
+import android.os.Build
+import android.os.ParcelFileDescriptor
 import com.kakdela.p2p.vpn.core.VpnBackend
-import com.kakdela.p2p.vpn.core.WarpRegistrar
-import com.kakdela.p2p.vpn.notification.VpnNotification
-import kotlinx.coroutines.*
+import com.kakdela.p2p.vpn.core.WgKeyStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
-class WarpVpnService : Service() {
+class WarpVpnService : VpnService() {
 
-    private val backend by lazy { VpnBackend(this) }
-    private val reg by lazy { WarpRegistrar(this) }
+    private var conn: ParcelFileDescriptor? = null
 
-    override fun onBind(i: Intent?): IBinder? = null
-
-    override fun onStartCommand(i: Intent?, f: Int, s: Int): Int {
-        startForeground(1, VpnNotification.create(this))
+    override fun onCreate() {
+        super.onCreate()
 
         CoroutineScope(Dispatchers.IO).launch {
-            reg.load { cfg ->
-                val config = backend.build(cfg)
-                backend.up(config)
-            }
-        }
+            val backend = VpnBackend(this@WarpVpnService)
+            val priv = WgKeyStore(this@WarpVpnService).getPrivateKey()
+            val cfg = backend.buildWarpConfig(priv)
 
-        return START_STICKY
+            backend.up(cfg)
+
+            val builder = Builder()
+                .addAddress("172.16.0.2", 32)
+                .addDnsServer("1.1.1.1")
+                .addRoute("0.0.0.0", 0)
+                .setSession("Warp")
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                builder.setMetered(false)
+            }
+
+            conn = builder.establish()
+        }
     }
 
     override fun onDestroy() {
-        backend.down()
+        conn?.close()
         super.onDestroy()
     }
 }
