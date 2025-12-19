@@ -5,10 +5,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.BIND_VPN_SERVICE" />
+
     <!-- Firebase / Phone Auth -->
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
@@ -17,11 +16,6 @@
 
     <!-- Contacts -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
-
-    <!-- Foreground service -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <!-- Android 14+ -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_VPN" />
 
     <!-- Notifications on Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -58,11 +52,24 @@
             </intent-filter>
         </receiver>
 
-        <!-- WARP Foreground Service (NOT VpnService class!) -->
+        <!-- Правильный VPN сервис -->
         <service
-            android:name=".vpn.service.WarpVpnService"
-            android:exported="false"
-            android:foregroundServiceType="vpn" />
-    </application>
+            android:name=".vpn.service.VpnService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
 
+        <!-- Авто-рестарт VPN после ребута -->
+        <receiver
+            android:name=".vpn.service.VpnBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+            </intent-filter>
+        </receiver>
+
+    </application>
 </manifest>
