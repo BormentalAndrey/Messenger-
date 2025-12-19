@@ -1,5 +1,3 @@
-// Файл: app/build.gradle.kts
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -32,24 +30,30 @@ android {
 
     signingConfigs {
         create("release") {
+            // Файл ключа должен лежать в папке app/
             storeFile = file("my-release-key.jks")
-            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "debug_pass"
-            keyAlias = System.getenv("KEY_ALIAS") ?: "debug_alias"
-            keyPassword = System.getenv("KEY_PASSWORD") ?: "debug_pass"
+            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
+            keyAlias = System.getenv("KEY_ALIAS") ?: ""
+            keyPassword = System.getenv("KEY_PASSWORD") ?: ""
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            // Подпись только если ключи найдены, иначе билд упадет корректно
+            if ((System.getenv("KEYSTORE_PASSWORD") ?: "").isNotEmpty()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
         debug {
-            signingConfig = signingConfigs.getByName("release")
+            // ИСПРАВЛЕНО: Для дебага используем стандартный ключ Android, 
+            // чтобы GitHub Actions мог собрать APK без пароля от твоего JKS.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
@@ -74,29 +78,35 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             excludes += "META-INF/DEPENDENCIES"
+            excludes += "META-INF/INDEX.LIST"
         }
         jniLibs {
+            // ИСПРАВЛЕНО: Добавлены маски для всех библиотек WireGuard и WebRTC
             useLegacyPackaging = true
-            pickFirsts += "lib/**/libjingle_peerconnection_so.so"
-            pickFirsts += "lib/**/libandroidx.graphics.path.so"
+            pickFirsts += "**/libwg.so"
+            pickFirsts += "**/libwg-go.so"
+            pickFirsts += "**/libwg-quick.so"
+            pickFirsts += "**/libjingle_peerconnection_so.so"
+            pickFirsts += "**/libandroidx.graphics.path.so"
+            pickFirsts += "**/libdatastore_shared_counter.so"
         }
     }
 }
 
 dependencies {
-
     // Core
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.0")
 
-    // WireGuard (VPN)
+    // WireGuard (VPN - Cloudflare WARP использует этот протокол)
     implementation("com.wireguard.android:tunnel:1.0.20230706")
 
-    // OkHttp (для Cloudflare API)
+    // Network
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.google.code.gson:gson:2.10.1")
 
-    // Jetpack Compose
+    // UI & Compose
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
@@ -104,11 +114,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.navigation:navigation-compose:2.8.0")
-
-    // Coil
     implementation("io.coil-kt:coil-compose:2.6.0")
 
-    // Room
+    // Database (Room)
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
@@ -121,25 +129,20 @@ dependencies {
     implementation("com.google.firebase:firebase-storage-ktx")
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
 
-    // Coroutine + Play Services
+    // Async
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
-    // Datastore & WorkManager
+    // Storage & Background
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
-
-    // JSON
-    implementation("com.google.code.gson:gson:2.10.1")
     
-    // WebRTC
+    // WebRTC & Calls
     implementation("io.getstream:stream-webrtc-android:1.2.0")
-
-    // Для Foreground Notifications (Android 13+)
-    implementation("androidx.core:core-ktx:1.13.1")
 
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 }
+
