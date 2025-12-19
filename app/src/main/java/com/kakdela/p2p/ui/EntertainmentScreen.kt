@@ -54,7 +54,7 @@ fun EntertainmentScreen(navController: NavHostController) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("GAME ZONE", fontWeight = FontWeight.Black, color = Color.Green, letterSpacing = 2.sp) },
+                title = { Text("Развлечения", fontWeight = FontWeight.Black, color = Color.Green, letterSpacing = 2.sp) },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black)
             )
         }
