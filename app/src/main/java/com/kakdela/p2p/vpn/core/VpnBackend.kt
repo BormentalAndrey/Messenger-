@@ -7,43 +7,34 @@ import com.wireguard.config.*
 import com.wireguard.crypto.Key
 
 class VpnBackend(private val context: Context) {
+
     private val backend by lazy { WgQuickBackend(context) }
-    
+
     private val tunnel = object : Tunnel {
-        override fun getName(): String = "CloudflareWARP"
+        override fun getName() = "CloudflareWARP"
         override fun onStateChange(newState: Tunnel.State) {}
     }
 
-    fun buildWarpConfig(privateKey: String): Config {
-        // Стандартные параметры Cloudflare WARP
-        val interfaceBuilder = Interface.Builder()
-            .addAddress(InetNetwork.parse("172.16.0.2/32"))
-            .setPrivateKey(Key.fromBase64(privateKey))
+    fun build(config: WarpRegistrar.WarpConfig): Config {
+        val iface = Interface.Builder()
+            .addAddress(InetNetwork.parse(config.address))
+            .setPrivateKey(Key.fromBase64(config.privateKey))
             .addDnsServer(java.net.InetAddress.getByName("1.1.1.1"))
             .build()
 
-        val peerBuilder = Peer.Builder()
-            .setPublicKey(Key.fromBase64("bmXOC+F1FxEMY9dyU9S47Vp00nU8NAs4W8uNP0R2D1s=")) // Публичный ключ Cloudflare
-            .addAllowedIp(InetNetwork.parse("0.0.0.0/0")) // Весь трафик приложения
-            .setEndpoint(InetEndpoint.parse("162.159.193.2:2408")) // Или 162.159.192.1:2408
+        val peer = Peer.Builder()
+            .setPublicKey(Key.fromBase64(config.publicKey))
+            .addAllowedIp(InetNetwork.parse("0.0.0.0/0"))
+            .setEndpoint(InetEndpoint.parse(config.endpoint))
             .setPersistentKeepalive(25)
             .build()
 
         return Config.Builder()
-            .setInterface(interfaceBuilder)
-            .addPeer(peerBuilder)
+            .setInterface(iface)
+            .addPeer(peer)
             .build()
     }
 
-    fun up(config: Config) {
-        try {
-            backend.setState(tunnel, Tunnel.State.UP, config)
-        } catch (e: Exception) { e.printStackTrace() }
-    }
-
-    fun down() {
-        try {
-            backend.setState(tunnel, Tunnel.State.DOWN, null)
-        } catch (e: Exception) { e.printStackTrace() }
-    }
+    fun up(cfg: Config) = backend.setState(tunnel, Tunnel.State.UP, cfg)
+    fun down() = backend.setState(tunnel, Tunnel.State.DOWN, null)
 }
