@@ -1,4 +1,4 @@
-// Файл: app/build.gradle.kts (исправленный и обновлённый на декабрь 2025)
+// Файл: app/build.gradle.kts
 
 plugins {
     id("com.android.application")
@@ -67,7 +67,7 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.15"  // Обновлено до актуальной для Compose 2025
+        kotlinCompilerExtensionVersion = "1.5.11"
     }
 
     packaging {
@@ -90,14 +90,14 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.0")
 
-    // WireGuard (VPN) — обновлено до последней версии на декабрь 2025
-    implementation("com.wireguard.android:tunnel:1.0.20250531")
+    // WireGuard (VPN)
+    implementation("com.wireguard.android:tunnel:1.0.20230706")
 
     // OkHttp (для Cloudflare API)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // Jetpack Compose — обновлён BOM до актуального (примерно 2025.12.00, проверьте точную на developer.android.com)
-    implementation(platform("androidx.compose:compose-bom:2025.12.00"))
+    // Jetpack Compose
+    implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -114,14 +114,14 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // Firebase — обновлён BOM до актуального (примерно 34.6.0 на конец 2025)
-    implementation(platform("com.google.firebase:firebase-bom:34.6.0"))
+    // Firebase
+    implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
 
-    // Coroutines + Play Services
+    // Coroutine + Play Services
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
@@ -132,10 +132,10 @@ dependencies {
     // JSON
     implementation("com.google.code.gson:gson:2.10.1")
     
-    // WebRTC — версия 1.2.0 актуальна, но проверьте на GitHub GetStream (может быть новее)
+    // WebRTC
     implementation("io.getstream:stream-webrtc-android:1.2.0")
 
-    // Для Foreground Notifications (дубликат, можно убрать один)
+    // Для Foreground Notifications (Android 13+)
     implementation("androidx.core:core-ktx:1.13.1")
 
     // Testing
