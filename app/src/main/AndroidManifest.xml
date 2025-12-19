@@ -1,26 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- ===== Permissions ===== -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.BIND_VPN_SERVICE" />
+    
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_VPN" />
 
-    <!-- Firebase / Phone Auth -->
     <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
-    <!-- Contacts -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
-    <!-- Notifications on Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- VPN capability -->
     <uses-feature android:name="android.software.vpn" />
 
     <application
@@ -31,7 +28,6 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
-        <!-- Launcher Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -42,7 +38,6 @@
             </intent-filter>
         </activity>
 
-        <!-- SMS Receiver for OTP -->
         <receiver
             android:name=".auth.SmsReceiver"
             android:permission="android.permission.BROADCAST_SMS"
@@ -52,17 +47,16 @@
             </intent-filter>
         </receiver>
 
-        <!-- Правильный VPN сервис -->
         <service
             android:name=".vpn.service.VpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="vpn"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>
         </service>
 
-        <!-- Авто-рестарт VPN после ребута -->
         <receiver
             android:name=".vpn.service.VpnBootReceiver"
             android:exported="false">
@@ -73,3 +67,4 @@
 
     </application>
 </manifest>
+
