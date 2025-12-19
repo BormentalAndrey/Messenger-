@@ -3,44 +3,30 @@ package com.kakdela.p2p.vpn.core
 import android.content.Context
 import com.wireguard.android.backend.Tunnel
 import com.wireguard.android.backend.WgQuickBackend
-import com.wireguard.config.Config
-import com.wireguard.config.Interface
-import com.wireguard.config.Peer
-import com.wireguard.config.InetEndpoint
+import com.wireguard.config.*
 import com.wireguard.crypto.Key
-import com.wireguard.config.InetNetwork
 
 class VpnBackend(private val context: Context) {
-    // Используем WgQuickBackend для работы через стандартные конфиги WireGuard
     private val backend by lazy { WgQuickBackend(context) }
     
-    // Реализация интерфейса Tunnel с корректными именами параметров для Kotlin
     private val tunnel = object : Tunnel {
-        override fun getName(): String = "P2PVpn"
-        
-        // Именно здесь возникала ошибка p1/p2. Теперь параметры указаны верно.
-        override fun onStateChange(newState: Tunnel.State) {
-            // Можно добавить логирование состояния для отладки
-        }
+        override fun getName(): String = "CloudflareWARP"
+        override fun onStateChange(newState: Tunnel.State) {}
     }
 
-    /**
-     * Создание конфигурации туннеля.
-     * Все ключи должны быть в формате Base64 String.
-     */
-    fun buildConfig(serverHost: String, serverPort: Int, serverPubKey: String, privateKey: String): Config {
-        // Создаем интерфейс клиента (наш телефон)
+    fun buildWarpConfig(privateKey: String): Config {
+        // Стандартные параметры Cloudflare WARP
         val interfaceBuilder = Interface.Builder()
-            .addAddress(InetNetwork.parse("10.0.0.2/32"))
-            // Метод setPrivateKey требует объект Key, а не String!
-            .setPrivateKey(Key.fromBase64(privateKey)) 
+            .addAddress(InetNetwork.parse("172.16.0.2/32"))
+            .setPrivateKey(Key.fromBase64(privateKey))
+            .addDnsServer(java.net.InetAddress.getByName("1.1.1.1"))
             .build()
 
-        // Настройка пира (удаленного сервера)
         val peerBuilder = Peer.Builder()
-            .setPublicKey(Key.fromBase64(serverPubKey))
-            .addAllowedIp(InetNetwork.parse("0.0.0.0/0")) // Весь трафик через VPN
-            .setEndpoint(InetEndpoint.parse("$serverHost:$serverPort"))
+            .setPublicKey(Key.fromBase64("bmXOC+F1FxEMY9dyU9S47Vp00nU8NAs4W8uNP0R2D1s=")) // Публичный ключ Cloudflare
+            .addAllowedIp(InetNetwork.parse("0.0.0.0/0")) // Весь трафик приложения
+            .setEndpoint(InetEndpoint.parse("162.159.193.2:2408")) // Или 162.159.192.1:2408
+            .setPersistentKeepalive(25)
             .build()
 
         return Config.Builder()
@@ -51,20 +37,13 @@ class VpnBackend(private val context: Context) {
 
     fun up(config: Config) {
         try {
-            // Включаем VPN туннель
             backend.setState(tunnel, Tunnel.State.UP, config)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        } catch (e: Exception) { e.printStackTrace() }
     }
 
     fun down() {
         try {
-            // Выключаем VPN туннель (config передаем null)
             backend.setState(tunnel, Tunnel.State.DOWN, null)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        } catch (e: Exception) { e.printStackTrace() }
     }
 }
-
