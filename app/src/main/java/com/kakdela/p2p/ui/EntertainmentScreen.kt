@@ -20,19 +20,27 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.kakdela.p2p.ui.navigation.Routes
 import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 enum class EntertainmentType { WEB, INTERNAL_CHAT, GAME }
 
-data class EntertainmentItem(val id: String, val title: String, val description: String, val type: EntertainmentType, val route: String? = null, val url: String? = null) {
+data class EntertainmentItem(
+    val id: String, 
+    val title: String, 
+    val description: String, 
+    val type: EntertainmentType, 
+    val route: String? = null, 
+    val url: String? = null
+) {
     val iconLetter: String get() = title.firstOrNull()?.uppercaseChar()?.toString() ?: "?"
 }
 
 private val entertainmentItems = listOf(
-    EntertainmentItem("global_chat", "ЧёКаВо? (глобальный чат)", "Общий чат", EntertainmentType.INTERNAL_CHAT, "chat/global"),
+    EntertainmentItem("global_chat", "ЧёКаВо?", "Общий чат", EntertainmentType.INTERNAL_CHAT, "chat/global"),
     EntertainmentItem("tictactoe", "Крестики-нолики", "Игра против ИИ", EntertainmentType.GAME, Routes.TIC_TAC_TOE),
     EntertainmentItem("pikabu", "Пикабу", "Юмор и новости", EntertainmentType.WEB, url = "https://pikabu.ru"),
     EntertainmentItem("tiktok", "TikTok", "Короткие видео", EntertainmentType.WEB, url = "https://www.tiktok.com"),
-    EntertainmentItem("crazygames", "CrazyGames", "Браузерные игры", EntertainmentType.WEB, url = "https://www.crazygames.ru")
+    EntertainmentItem("crazygames", "CrazyGames", "Браузерные игры", EntertainmentType.WEB, url = "https://www.crazygames.com")
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,12 +49,17 @@ fun EntertainmentScreen(navController: NavHostController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Развлечения", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
+                title = { Text("Развлечения", fontWeight = FontWeight.Bold, color = Color.White) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
             )
         }
     ) { padding ->
-        LazyColumn(modifier = Modifier.fillMaxSize().background(Color.Black).padding(padding)) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .padding(padding)
+        ) {
             items(items = entertainmentItems) { item ->
                 EntertainmentListItem(item, navController)
             }
@@ -62,11 +75,16 @@ fun EntertainmentListItem(item: EntertainmentItem, navController: NavHostControl
                 .fillMaxWidth()
                 .clickable {
                     when (item.type) {
-                        EntertainmentType.INTERNAL_CHAT -> navController.navigate(item.route!!)
-                        EntertainmentType.GAME -> navController.navigate(item.route!!)
+                        EntertainmentType.INTERNAL_CHAT -> {
+                            item.route?.let { navController.navigate(it) }
+                        }
+                        EntertainmentType.GAME -> {
+                            item.route?.let { navController.navigate(it) }
+                        }
                         EntertainmentType.WEB -> {
                             item.url?.let {
-                                val encodedUrl = URLEncoder.encode(it, "UTF-8")
+                                // КРИТИЧНО: Кодируем URL, чтобы символы "/" не ломали навигацию Compose
+                                val encodedUrl = URLEncoder.encode(it, StandardCharsets.UTF_8.toString())
                                 navController.navigate("webview/$encodedUrl/${item.title}")
                             }
                         }
@@ -76,15 +94,33 @@ fun EntertainmentListItem(item: EntertainmentItem, navController: NavHostControl
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
-                modifier = Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
                 contentAlignment = Alignment.Center
             ) {
-                Text(text = item.iconLetter, color = MaterialTheme.colorScheme.primary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = item.iconLetter, 
+                    color = MaterialTheme.colorScheme.primary, 
+                    fontSize = 24.sp, 
+                    fontWeight = FontWeight.Bold
+                )
             }
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = item.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Medium)
-                Text(text = item.description, color = Color.Gray, fontSize = 14.sp, maxLines = 1)
+                Text(
+                    text = item.title, 
+                    color = Color.White, 
+                    fontSize = 17.sp, 
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = item.description, 
+                    color = Color.Gray, 
+                    fontSize = 14.sp, 
+                    maxLines = 1
+                )
             }
             Icon(Icons.Filled.PlayArrow, null, tint = Color.Gray, modifier = Modifier.size(20.dp))
         }
