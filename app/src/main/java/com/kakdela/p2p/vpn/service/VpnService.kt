@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -22,13 +23,19 @@ class VpnService : VpnService() {
     private val CHANNEL_ID = "warp_channel"
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIFICATION_ID, createNotification())
+        // ИСПРАВЛЕНО: Для Android 14+ (SDK 34-35) необходимо указывать тип сервиса
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID, 
+                createNotification(), 
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_VPN
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, createNotification())
+        }
 
         val config = backend.buildWarpConfig(keyStore.getPrivateKey())
         backend.up(config)
-
-        // Если нужно авторестарт — раскомментируй
-        // AutoRestartWorker.schedule(this)
 
         return START_STICKY
     }
@@ -52,6 +59,7 @@ class VpnService : VpnService() {
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
     }
 
@@ -61,8 +69,11 @@ class VpnService : VpnService() {
                 CHANNEL_ID,
                 "WARP VPN",
                 NotificationManager.IMPORTANCE_LOW
-            )
+            ).apply {
+                description = "Уведомление о работе VPN-туннеля"
+            }
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
     }
 }
+
