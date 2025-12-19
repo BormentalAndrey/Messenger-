@@ -45,7 +45,7 @@ fun DealsScreen(navController: NavHostController) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("SERVICES", fontWeight = FontWeight.Black, color = Color.Magenta, letterSpacing = 2.sp) },
+                title = { Text("Дела", fontWeight = FontWeight.Black, color = Color.Magenta, letterSpacing = 2.sp) },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black)
             )
         }
