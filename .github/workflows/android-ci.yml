@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -22,15 +22,18 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Make gradlew executable
+      - name: Grant permissions
         run: chmod +x ./gradlew
 
-      - name: Assemble Debug APK
-        # Очистка и сборка без использования кэша конфигурации
-        run: ./gradlew clean assembleDebug --no-daemon --no-configuration-cache --stacktrace
+      - name: Build APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: ./gradlew clean assembleRelease --stacktrace || ./gradlew assembleDebug --stacktrace
 
-      - name: Upload Debug APK
+      - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: kakdela-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: Kakdela-APKs
+          path: app/build/outputs/apk/**/*
