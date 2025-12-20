@@ -214,41 +214,38 @@ fun TicTacToeScreen() {
 
             Spacer(Modifier.height(20.dp))
 
-            Box(Modifier.size(330.dp)) {
-                Column(Modifier.fillMaxSize()) {
-                    for (i in 0..2) {
-                        Row(Modifier.weight(1f)) {
-                            for (j in 0..2) {
-                                val index = i * 3 + j
-                                val value = board[index]
+            Box(modifier = Modifier.size(330.dp)) {
+    Column(Modifier.fillMaxSize()) {
+        for (i in 0..2) {
+            Row(Modifier.weight(1f)) {
+                for (j in 0..2) {
+                    val index = i * 3 + j
+                    val value = board[index]
 
-                                Box(
-                                    Modifier
-                                        .weight(1f)
-                                        .aspectRatio(1f)
-                                        .background(Color(0xFF191919))
-                                        .clickable { playerTurn(index) },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    AnimatedVisibility(
-                                        visible = value.isNotEmpty(),
-                                        enter = scaleIn(),
-                                        exit = scaleOut()
-                                    ) {
-                                        Text(
-                                            value,
-                                            fontSize = 48.sp,
-                                            color = if (value == "X")
-                                                MaterialTheme.colorScheme.primary
-                                            else Color.Red
-                                        )
-                                    }
-                                }
-                            }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .aspectRatio(1f)
+                            .background(Color(0xFF191919))
+                            .clickable { playerTurn(index) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AnimatedVisibility(
+                            visible = value.isNotEmpty(),
+                            enter = scaleIn(),
+                            exit = scaleOut()
+                        ) {
+                            Text(
+                                text = value,
+                                fontSize = 48.sp,
+                                color = if (value == "X")
+                                    MaterialTheme.colorScheme.primary
+                                else Color.Red
+                            )
                         }
                     }
                 }
             }
         }
     }
-}
+            }
