@@ -1,8 +1,8 @@
 package com.kakdela.p2p.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -26,53 +26,11 @@ fun TicTacToeScreen() {
 
     var board by remember { mutableStateOf(List(9) { "" }) }
     var winner by remember { mutableStateOf("") }
-    var playerTurn by remember { mutableStateOf(true) }
-
     var difficulty by remember { mutableStateOf(Difficulty.MEDIUM) }
 
     var scoreX by remember { mutableStateOf(0) }
     var scoreO by remember { mutableStateOf(0) }
     var draws by remember { mutableStateOf(0) }
-
-    fun checkWinner(): String? {
-        val lines = listOf(
-            listOf(0, 1, 2), listOf(3, 4, 5), listOf(6, 7, 8),
-            listOf(0, 3, 6), listOf(1, 4, 7), listOf(2, 5, 8),
-            listOf(0, 4, 8), listOf(2, 4, 6)
-        )
-        for (line in lines) {
-            if (board[line[0]].isNotEmpty() &&
-                board[line[0]] == board[line[1]] &&
-                board[line[1]] == board[line[2]]
-            ) {
-                return board[line[0]]
-            }
-        }
-        return if (board.all { it.isNotEmpty() }) "draw" else null
-    }
-
-    fun aiMoveEasy(): Int? =
-        board.indices.filter { board[it].isEmpty() }.randomOrNull()
-
-    fun aiMoveMedium(): Int? {
-        // попытка найти победный ход
-        for (i in 0 until 9) {
-            if (board[i].isEmpty()) {
-                val testBoard = board.toMutableList()
-                testBoard[i] = "O"
-                if (checkWinnerForBoard(testBoard) == "O") return i
-            }
-        }
-        // блокировка игрока
-        for (i in 0 until 9) {
-            if (board[i].isEmpty()) {
-                val testBoard = board.toMutableList()
-                testBoard[i] = "X"
-                if (checkWinnerForBoard(testBoard) == "X") return i
-            }
-        }
-        return aiMoveEasy()
-    }
 
     fun checkWinnerForBoard(b: List<String>): String? {
         val lines = listOf(
@@ -81,37 +39,63 @@ fun TicTacToeScreen() {
             listOf(0, 4, 8), listOf(2, 4, 6)
         )
         for (line in lines) {
-            if (b[line[0]].isNotEmpty() && b[line[0]] == b[line[1]] && b[line[1]] == b[line[2]]) {
+            if (b[line[0]].isNotEmpty() &&
+                b[line[0]] == b[line[1]] &&
+                b[line[1]] == b[line[2]]
+            ) {
                 return b[line[0]]
             }
         }
         return if (b.all { it.isNotEmpty() }) "draw" else null
     }
 
+    fun checkWinner(): String? = checkWinnerForBoard(board)
+
+    fun aiMoveEasy(): Int? =
+        board.indices.filter { board[it].isEmpty() }.randomOrNull()
+
+    fun aiMoveMedium(): Int? {
+        // победный ход
+        for (i in 0 until 9) {
+            if (board[i].isEmpty()) {
+                val t = board.toMutableList()
+                t[i] = "O"
+                if (checkWinnerForBoard(t) == "O") return i
+            }
+        }
+        // блокировка игрока
+        for (i in 0 until 9) {
+            if (board[i].isEmpty()) {
+                val t = board.toMutableList()
+                t[i] = "X"
+                if (checkWinnerForBoard(t) == "X") return i
+            }
+        }
+        return aiMoveEasy()
+    }
+
     fun aiMoveHard(): Int? {
-        fun minimax(b: List<String>, isMaximizing: Boolean): Int {
+        fun minimax(b: List<String>, isMax: Boolean): Int {
             val result = checkWinnerForBoard(b)
             if (result == "O") return 10
             if (result == "X") return -10
             if (result == "draw") return 0
 
             val empty = b.indices.filter { b[it].isEmpty() }
-            if (isMaximizing) {
+            if (isMax) {
                 var best = -1000
                 for (cell in empty) {
-                    val boardCopy = b.toMutableList()
-                    boardCopy[cell] = "O"
-                    val score = minimax(boardCopy, false)
-                    best = maxOf(best, score)
+                    val t = b.toMutableList()
+                    t[cell] = "O"
+                    best = maxOf(best, minimax(t, false))
                 }
                 return best
             } else {
                 var best = 1000
                 for (cell in empty) {
-                    val boardCopy = b.toMutableList()
-                    boardCopy[cell] = "X"
-                    val score = minimax(boardCopy, true)
-                    best = minOf(best, score)
+                    val t = b.toMutableList()
+                    t[cell] = "X"
+                    best = minOf(best, minimax(t, true))
                 }
                 return best
             }
@@ -121,13 +105,13 @@ fun TicTacToeScreen() {
         var bestMove: Int? = null
         var bestScore = -1000
 
-        for (cell in empty) {
-            val boardCopy = board.toMutableList()
-            boardCopy[cell] = "O"
-            val score = minimax(boardCopy, false)
+        for (c in empty) {
+            val t = board.toMutableList()
+            t[c] = "O"
+            val score = minimax(t, false)
             if (score > bestScore) {
                 bestScore = score
-                bestMove = cell
+                bestMove = c
             }
         }
         return bestMove ?: aiMoveEasy()
@@ -144,24 +128,21 @@ fun TicTacToeScreen() {
             board = board.toMutableList().apply { this[it] = "O" }
         }
 
-        val w = checkWinner()
-        winner = w ?: ""
-        if (winner == "X") scoreX++
-        if (winner == "O") scoreO++
-        if (winner == "draw") draws++
+        when (val w = checkWinner()) {
+            "X" -> { scoreX++; winner = "X" }
+            "O" -> { scoreO++; winner = "O" }
+            "draw" -> { draws++; winner = "draw" }
+        }
     }
 
-    fun playerMove(index: Int) {
+    fun playerTurn(index: Int) {
         if (board[index].isNotEmpty() || winner.isNotEmpty()) return
-        board = board.toMutableList().apply { this[index] = "X" }
 
-        val w = checkWinner()
-        if (w != null) {
-            winner = w
-            if (winner == "X") scoreX++
-            if (winner == "O") scoreO++
-            if (winner == "draw") draws++
-            return
+        board = board.toMutableList().apply { this[index] = "X" }
+        when (val w = checkWinner()) {
+            "X" -> { scoreX++; winner = "X"; return }
+            "O" -> { scoreO++; winner = "O"; return }
+            "draw" -> { draws++; winner = "draw"; return }
         }
         aiTurn()
     }
@@ -174,43 +155,38 @@ fun TicTacToeScreen() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text("Крестики-нолики", fontWeight = FontWeight.Bold)
-                },
+                title = { Text("Крестики-нолики", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Black,
                     titleContentColor = MaterialTheme.colorScheme.primary
                 )
             )
         }
-    ) { padding ->
-
+    ) { pad ->
         Column(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
                 .background(Color.Black)
-                .padding(padding),
+                .padding(pad),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Spacer(Modifier.height(10.dp))
+
+            Text(
+                "X: $scoreX  |  O: $scoreO  |  Ничья: $draws",
+                fontSize = 18.sp,
+                color = Color.White
+            )
 
             Spacer(Modifier.height(10.dp))
 
-            // --- Score ---
-            Text(
-                "X: $scoreX   |   O: $scoreO   |   Ничья: $draws",
-                color = Color.White,
-                fontSize = 18.sp,
-                modifier = Modifier.padding(8.dp)
-            )
-
-            // --- Difficulty Buttons ---
             Row {
                 Difficulty.values().forEach {
                     Button(
                         onClick = { difficulty = it },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (difficulty == it)
-                                MaterialTheme.colorScheme.primary else Color.DarkGray
+                            if (difficulty == it) MaterialTheme.colorScheme.primary
+                            else Color.DarkGray
                         ),
                         modifier = Modifier.padding(4.dp)
                     ) { Text(it.name) }
@@ -221,25 +197,24 @@ fun TicTacToeScreen() {
 
             if (winner.isNotEmpty()) {
                 Text(
-                    text = when (winner) {
+                    when (winner) {
                         "X" -> "🎉 Ты выиграл!"
                         "O" -> "🤖 Робот победил!"
                         "draw" -> "😐 Ничья!"
                         else -> ""
                     },
                     color = Color.White,
-                    fontSize = 28.sp,
-                    modifier = Modifier.padding(16.dp)
+                    fontSize = 28.sp
                 )
+                Spacer(Modifier.height(10.dp))
                 Button(onClick = { restart() }) {
                     Text("Играть снова")
                 }
             }
 
-            Spacer(Modifier.height(30.dp))
+            Spacer(Modifier.height(20.dp))
 
-            // --- Game Grid ---
-            Box(modifier = Modifier.size(330.dp)) {
+            Box(Modifier.size(330.dp)) {
                 Column(Modifier.fillMaxSize()) {
                     for (i in 0..2) {
                         Row(Modifier.weight(1f)) {
@@ -248,11 +223,11 @@ fun TicTacToeScreen() {
                                 val value = board[index]
 
                                 Box(
-                                    modifier = Modifier
+                                    Modifier
                                         .weight(1f)
                                         .aspectRatio(1f)
                                         .background(Color(0xFF191919))
-                                        .clickable { playerMove(index) },
+                                        .clickable { playerTurn(index) },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     AnimatedVisibility(
@@ -261,10 +236,11 @@ fun TicTacToeScreen() {
                                         exit = scaleOut()
                                     ) {
                                         Text(
-                                            text = value,
+                                            value,
                                             fontSize = 48.sp,
                                             color = if (value == "X")
-                                                MaterialTheme.colorScheme.primary else Color.Red
+                                                MaterialTheme.colorScheme.primary
+                                            else Color.Red
                                         )
                                     }
                                 }
