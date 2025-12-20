@@ -88,10 +88,8 @@ fun NavGraph(navController: NavHostController) {
             composable(Routes.CALCULATOR) { CalculatorScreen() }
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
-
-            // Добавленные маршруты для игр (соответствуют вызовам из EntertainmentScreen)
-            composable("pacman") { PacmanScreen(onBack = { navController.popBackStack() }) }
-            composable("jewels_blast") { JewelsBlastScreen(onBack = { navController.popBackStack() }) }
+            composable(Routes.PACMAN) { PacmanScreen() }
+            composable(Routes.JEWELS) { JewelsBlastScreen() }
 
             // Вызов твоего WebViewScreen
             composable(
@@ -114,4 +112,3 @@ fun NavGraph(navController: NavHostController) {
         }
     }
 }
-
