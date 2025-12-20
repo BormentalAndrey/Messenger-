@@ -16,13 +16,11 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.delay
 import kotlin.math.abs
-import kotlin.random.Random
+import kotlinx.coroutines.delay
 
-// Классический лабиринт Pac-Man (1 = стена, 0 = путь, 2 = точка, 3 = power pellet)
-private val classicMaze = arrayOf(
+// 0 — путь, 1 — стена, 2 — точка, 3 — power точка
+private val maze = arrayOf(
     intArrayOf(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1),
     intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1),
     intArrayOf(1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1),
@@ -49,135 +47,119 @@ private val classicMaze = arrayOf(
     intArrayOf(1,2,1,1,1,1,1,1,1,1,1,2,1,1,2,1,1,1,1,1,1,1,1,1,1,1,2,1),
     intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1),
     intArrayOf(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1)
-    // Добавьте недостающие строки до 31, если нужно (это упрощённая версия для примера)
 )
 
-enum class Direction { UP, DOWN, LEFT, RIGHT, NONE }
-
-data class Entity(var x: Float, var y: Float, var dir: Direction = Direction.NONE)
+enum class Dir { UP, DOWN, LEFT, RIGHT, NONE }
+data class Entity(var x: Float, var y: Float, var dir: Dir = Dir.NONE)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PacmanScreen() {
     var level by remember { mutableStateOf(1) }
-    var score by remember { mutableStateOf(0) }
     var lives by remember { mutableStateOf(3) }
+    var score by remember { mutableStateOf(0) }
+
+    val pac = remember { mutableStateOf(Entity(14f, 23f, Dir.LEFT)) }
+    val ghosts = remember {
+        mutableStateListOf(
+            Entity(14f, 11f), Entity(12f, 14f), Entity(14f, 14f), Entity(16f, 14f)
+        )
+    }
+
+    val mazeWidth = maze[0].size
+    val mazeHeight = maze.size
+    val cellSize = 20f
+
     var dotsLeft by remember { mutableStateOf(0) }
-    var isPowerMode by remember { mutableStateOf(false) }
+    var powerMode by remember { mutableStateOf(false) }
     var powerTimer by remember { mutableStateOf(0) }
 
-    val cellSize = 20f
-    val mazeWidth = 28
-    val mazeHeight = 31
+    val wallColor = Color(0xFF00FFAA)
+    val pacColor = Color.Yellow
+    val ghostColors = listOf(
+        Color.Red,
+        Color.Magenta,
+        Color.Cyan,
+        Color(0xFFFF9800) // вместо Color.Orange
+    ).map { c -> c.copy(alpha = if (powerMode) 0.4f else 1f) }
 
-    val pacman = remember { mutableStateOf(Entity(14f, 23f, Direction.LEFT)) }
-    val ghosts = remember { mutableStateListOf(
-        Entity(14f, 11f), Entity(12f, 14f), Entity(14f, 14f), Entity(16f, 14f)
-    ) }
-
-    // Неоновые цвета (меняются по уровню)
-    val neonHue = (level * 30) % 360f
-    val wallColor = Color.hsl(neonHue, 0.8f, 0.6f)
-    val pacmanColor = Color.Yellow
-    val dotColor = Color.White
-    val powerColor = Color.Cyan
-    val ghostColors = listOf(Color.Red, Color.Magenta, Color.Cyan, Color.Orange).map { it.copy(alpha = if (isPowerMode) 0.5f else 1f) }
-
-    // Инициализация точек
     LaunchedEffect(level) {
         dotsLeft = 0
-        classicMaze.forEachIndexed { y, row ->
-            row.forEachIndexed { x, cell ->
+        maze.forEach { row ->
+            row.forEach { cell ->
                 if (cell == 2 || cell == 3) dotsLeft++
             }
         }
-        pacman.value = Entity(14f, 23f, Direction.LEFT)
-        ghosts.clear()
-        ghosts.addAll(listOf(Entity(14f, 11f), Entity(12f, 14f), Entity(14f, 14f), Entity(16f, 14f)))
+        pac.value = Entity(14f, 23f, Dir.LEFT)
     }
 
-    // Игровой цикл
     LaunchedEffect(Unit) {
         while (true) {
-            delay(150L - level.coerceAtMost(50)) // Ускорение с уровнем
+            delay(140L)
 
-            // Движение Pacman
-            val p = pacman.value
+            val p = pac.value
             var nx = p.x
             var ny = p.y
             when (p.dir) {
-                Direction.UP -> ny -= 1
-                Direction.DOWN -> ny += 1
-                Direction.LEFT -> nx -= 1
-                Direction.RIGHT -> nx += 1
+                Dir.UP -> ny--
+                Dir.DOWN -> ny++
+                Dir.LEFT -> nx--
+                Dir.RIGHT -> nx++
                 else -> {}
             }
             if (nx < 0) nx = mazeWidth - 1f
             if (nx >= mazeWidth) nx = 0f
-            if (classicMaze[ny.toInt()][nx.toInt()] != 1) {
-                p.x = nx
-                p.y = ny
+
+            if (maze[ny.toInt()][nx.toInt()] != 1) {
+                p.x = nx; p.y = ny
             }
 
-            // Сбор точек
-            val cell = classicMaze[p.y.toInt()][p.x.toInt()]
+            val cell = maze[p.y.toInt()][p.x.toInt()]
             if (cell == 2) {
-                score += 10
-                dotsLeft--
+                score += 10; dotsLeft--
             } else if (cell == 3) {
                 score += 50
-                isPowerMode = true
-                powerTimer = 100
+                powerMode = true
+                powerTimer = 80
+            }
+
+            if (powerMode) {
+                powerTimer--
+                if (powerTimer <= 0) powerMode = false
             }
 
             if (dotsLeft == 0) {
-                level = (level % 200) + 1 // 200 уровней с циклом
-                score += 1000
+                level++
+                score += 500
             }
 
-            // Power mode timer
-            if (isPowerMode) {
-                powerTimer--
-                if (powerTimer <= 0) isPowerMode = false
-            }
-
-            // Движение призраков (простой ИИ)
             ghosts.forEachIndexed { i, g ->
-                val dirs = listOf(Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT).shuffled()
-                for (d in dirs) {
+                val d = listOf(Dir.UP, Dir.DOWN, Dir.LEFT, Dir.RIGHT).shuffled()
+                for (dir in d) {
                     var gx = g.x
                     var gy = g.y
-                    when (d) {
-                        Direction.UP -> gy -= 1
-                        Direction.DOWN -> gy += 1
-                        Direction.LEFT -> gx -= 1
-                        Direction.RIGHT -> gx += 1
+                    when (dir) {
+                        Dir.UP -> gy--
+                        Dir.DOWN -> gy++
+                        Dir.LEFT -> gx--
+                        Dir.RIGHT -> gx++
                         else -> {}
                     }
-                    if (gx < 0) gx = mazeWidth - 1f
-                    if (gx >= mazeWidth) gx = 0f
-                    if (classicMaze[gy.toInt()][gx.toInt()] != 1) {
-                        g.x = gx
-                        g.y = gy
-                        g.dir = d
+                    if (maze[gy.toInt()][gx.toInt()] != 1) {
+                        g.x = gx; g.y = gy; g.dir = dir
                         break
                     }
                 }
-
-                // Коллизия с Pacman
-                if (abs(g.x - p.x) < 0.5f && abs(g.y - p.y) < 0.5f) {
-                    if (isPowerMode) {
+                if (abs(g.x - p.x) < 0.6f && abs(g.y - p.y) < 0.6f) {
+                    if (powerMode) {
                         score += 200
-                        g.x = 14f; g.y = 14f // Возврат в центр
+                        g.x = 14f; g.y = 14f
                     } else {
                         lives--
                         if (lives <= 0) {
-                            // Game Over — сброс
-                            level = 1
-                            score = 0
-                            lives = 3
+                            level = 1; lives = 3; score = 0
                         }
-                        pacman.value = Entity(14f, 23f, Direction.LEFT)
+                        pac.value = Entity(14f, 23f, Dir.LEFT)
                     }
                 }
             }
@@ -187,83 +169,79 @@ fun PacmanScreen() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Neon Pac-Man • Уровень $level • Счёт: $score • Жизни: $lives", color = Color.White, fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
+                title = {
+                    Text(
+                        "Pac-Man | Level $level | Score $score | Lives $lives",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(Color.Black)
             )
         }
-    ) { padding ->
+    ) { pad ->
         Box(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
                 .background(Color.Black)
-                .padding(padding)
+                .padding(pad)
                 .pointerInput(Unit) {
-                    detectHorizontalDragGestures { _, dragAmount ->
-                        if (abs(dragAmount) > 50) {
-                            pacman.value.dir = if (dragAmount > 0) Direction.RIGHT else Direction.LEFT
+                    detectHorizontalDragGestures { _, drag ->
+                        if (abs(drag) > 40) {
+                            pac.value.dir = if (drag > 0) Dir.RIGHT else Dir.LEFT
                         }
                     }
                 }
                 .pointerInput(Unit) {
-                    detectVerticalDragGestures { _, dragAmount ->
-                        if (abs(dragAmount) > 50) {
-                            pacman.value.dir = if (dragAmount > 0) Direction.DOWN else Direction.UP
+                    detectVerticalDragGestures { _, drag ->
+                        if (abs(drag) > 40) {
+                            pac.value.dir = if (drag > 0) Dir.DOWN else Dir.UP
                         }
                     }
                 }
         ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val offsetX = (size.width - mazeWidth * cellSize) / 2
-                val offsetY = (size.height - mazeHeight * cellSize) / 2
+            Canvas(Modifier.fillMaxSize()) {
+                val ox = (size.width - mazeWidth * cellSize) / 2
+                val oy = (size.height - mazeHeight * cellSize) / 2
 
-                // Стены с неоновым glow
-                classicMaze.forEachIndexed { y, row ->
-                    row.forEachIndexed { x, cell ->
-                        val rect = Offset(offsetX + x * cellSize, offsetY + y * cellSize)
-                        if (cell == 1) {
-                            drawRect(
+                maze.forEachIndexed { y, row ->
+                    row.forEachIndexed { x, c ->
+                        val pos = Offset(ox + x * cellSize, oy + y * cellSize)
+                        when (c) {
+                            1 -> drawRect(
                                 color = wallColor,
-                                topLeft = rect,
+                                topLeft = pos,
                                 size = Size(cellSize, cellSize),
                                 style = Stroke(width = 4f)
                             )
-                            drawRect(
-                                color = wallColor.copy(alpha = 0.3f),
-                                topLeft = rect - Offset(4f, 4f),
-                                size = Size(cellSize + 8f, cellSize + 8f)
-                            ) // Glow
-                        } else if (cell == 2) {
-                            drawCircle(color = dotColor, radius = 4f, center = rect + Offset(cellSize / 2, cellSize / 2))
-                        } else if (cell == 3) {
-                            drawCircle(color = powerColor, radius = 8f, center = rect + Offset(cellSize / 2, cellSize / 2))
+                            2 -> drawCircle(
+                                Color.White, 4f,
+                                pos + Offset(cellSize / 2, cellSize / 2)
+                            )
+                            3 -> drawCircle(
+                                Color.Cyan, 7f,
+                                pos + Offset(cellSize / 2, cellSize / 2)
+                            )
                         }
                     }
                 }
 
-                // Pacman с анимацией рта
-                val mouthAngle = if (pacman.value.dir != Direction.NONE) 0.2f + 0.2f * (System.currentTimeMillis() % 400 / 200f) else 0f
-                val startAngle = when (pacman.value.dir) {
-                    Direction.RIGHT -> 30f
-                    Direction.LEFT -> 210f
-                    Direction.UP -> 300f
-                    Direction.DOWN -> 120f
-                    else -> 30f
-                }
-                val pacPos = Offset(offsetX + pacman.value.x * cellSize + cellSize / 2, offsetY + pacman.value.y * cellSize + cellSize / 2)
-                drawCircle(color = pacmanColor, radius = cellSize / 2 * 0.9f, center = pacPos)
-                drawArc(
-                    color = Color.Black,
-                    startAngle = startAngle,
-                    sweepAngle = 300f * mouthAngle,
-                    useCenter = true,
-                    topLeft = pacPos - Offset(cellSize / 2, cellSize / 2),
-                    size = Size(cellSize, cellSize)
+                val pacPos = Offset(
+                    ox + pac.value.x * cellSize + cellSize / 2,
+                    oy + pac.value.y * cellSize + cellSize / 2
                 )
+                drawCircle(pacColor, cellSize / 2 - 2, pacPos)
 
-                // Призраки
                 ghosts.forEachIndexed { i, g ->
-                    val ghostPos = Offset(offsetX + g.x * cellSize + cellSize / 2, offsetY + g.y * cellSize + cellSize / 2)
-                    drawCircle(color = ghostColors[i % ghostColors.size], radius = cellSize / 2 * 0.8f, center = ghostPos)
+                    val pos = Offset(
+                        ox + g.x * cellSize + cellSize / 2,
+                        oy + g.y * cellSize + cellSize / 2
+                    )
+                    drawCircle(
+                        ghostColors[i % ghostColors.size],
+                        cellSize / 2 - 3,
+                        pos
+                    )
                 }
             }
         }
