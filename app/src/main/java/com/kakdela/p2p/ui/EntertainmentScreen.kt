@@ -43,6 +43,10 @@ data class EntertainmentItem(
 private val entertainmentItems = listOf(
     EntertainmentItem("global_chat", "ЧёКаВо?", "Общий чат", EntertainmentType.INTERNAL_CHAT, "chat/global"),
     EntertainmentItem("tictactoe", "Крестики-нолики", "Игра против ИИ", EntertainmentType.GAME, Routes.TIC_TAC_TOE),
+    // Новые игры
+    EntertainmentItem("pacman", "Pacman", "Классическая аркада", EntertainmentType.GAME, "pacman"),
+    EntertainmentItem("jewels", "Jewels Blast", "Три в ряд (200 уровней)", EntertainmentType.GAME, "jewels_blast"),
+    // Веб-сервисы
     EntertainmentItem("tiktok", "TikTok", "Смотреть (ПК режим)", EntertainmentType.WEB, url = "https://www.tiktok.com"),
     EntertainmentItem("pikabu", "Пикабу", "Юмор", EntertainmentType.WEB, url = "https://pikabu.ru"),
     EntertainmentItem("crazygames", "CrazyGames", "Игры онлайн", EntertainmentType.WEB, url = "https://www.crazygames.com")
