@@ -13,17 +13,26 @@ import com.kakdela.p2p.MainActivity
 import com.kakdela.p2p.R
 import com.kakdela.p2p.vpn.core.VpnBackend
 import com.kakdela.p2p.vpn.core.WgKeyStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class VpnService : VpnService() {
 
+    companion object {
+        const val ACTION_CONNECT = "com.kakdela.p2p.vpn.CONNECT"
+        const val ACTION_DISCONNECT = "com.kakdela.p2p.vpn.DISCONNECT"
+    }
+
     private val backend by lazy { VpnBackend(this) }
     private val keyStore by lazy { WgKeyStore(this) }
+    private val scope = CoroutineScope(Dispatchers.IO)
 
     private val NOTIFICATION_ID = 1001
     private val CHANNEL_ID = "warp_channel"
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // ИСПРАВЛЕНО: Тип изменен на SPECIAL_USE для прохождения компиляции AAPT
+        // Запуск Foreground (обязательно для VPN)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
                 NOTIFICATION_ID, 
@@ -34,24 +43,57 @@ class VpnService : VpnService() {
             startForeground(NOTIFICATION_ID, createNotification())
         }
 
-        // Запуск туннеля
-        try {
-            val config = backend.buildWarpConfig(keyStore.getPrivateKey())
-            backend.up(config)
-        } catch (e: Exception) {
-            e.printStackTrace()
+        if (intent?.action == ACTION_DISCONNECT) {
+            stopVpn()
+            return START_NOT_STICKY
+        }
+
+        // Запуск подключения в фоновом потоке
+        scope.launch {
+            try {
+                // Генерируем конфиг и поднимаем туннель
+                val config = backend.buildWarpConfig(keyStore.getPrivateKey())
+                backend.up(config)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                stopSelf() // Остановить сервис, если ошибка
+            }
         }
 
         return START_STICKY
     }
 
+    private fun stopVpn() {
+        try {
+            backend.down()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
     override fun onDestroy() {
-        backend.down()
+        stopVpn()
         super.onDestroy()
+    }
+
+    override fun onRevoke() {
+        // Вызывается, если пользователь отключил VPN через настройки системы
+        stopVpn()
+        super.onRevoke()
     }
 
     private fun createNotification(): Notification {
         createChannel()
+        
+        // Кнопка "Отключить" в уведомлении (опционально)
+        val disconnectIntent = Intent(this, VpnService::class.java).apply {
+            action = ACTION_DISCONNECT
+        }
+        val disconnectPendingIntent = PendingIntent.getService(
+            this, 1, disconnectIntent, PendingIntent.FLAG_IMMUTABLE
+        )
 
         val pendingIntent = PendingIntent.getActivity(
             this, 0, Intent(this, MainActivity::class.java),
@@ -59,13 +101,13 @@ class VpnService : VpnService() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("WARP активен")
-            .setContentText("Защищённое соединение через Cloudflare")
+            .setContentTitle("WARP Protection")
+            .setContentText("Соединение зашифровано")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Отключить", disconnectPendingIntent)
             .setOngoing(true)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
 
@@ -73,11 +115,9 @@ class VpnService : VpnService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "WARP VPN",
+                "WARP VPN Status",
                 NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Информирует о работе защищенного соединения"
-            }
+            )
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
     }
