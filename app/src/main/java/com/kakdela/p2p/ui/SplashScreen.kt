@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.delay
-import com.kakdela.p2p.vpn.service.WarpVpnService
+import com.kakdela.p2p.vpn.service.VpnService as WarpCoreService // ⬅ другое имя, чтобы не путать
 
 @Composable
 fun SplashScreen(navController: NavHostController) {
@@ -30,15 +30,18 @@ fun SplashScreen(navController: NavHostController) {
     LaunchedEffect(Unit) {
         delay(900)
         val intent = VpnService.prepare(ctx)
-        if (intent != null) vpnLauncher.launch(intent)
-        else {
+        if (intent != null) {
+            vpnLauncher.launch(intent)
+        } else {
             startVpn(ctx)
             goNext(navController)
         }
     }
 
     Box(
-        modifier = Modifier.fillMaxSize().background(Color.Black),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
         contentAlignment = androidx.compose.ui.Alignment.Center
     ) {
         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -46,7 +49,7 @@ fun SplashScreen(navController: NavHostController) {
 }
 
 private fun startVpn(ctx: Context) {
-    ctx.startForegroundService(Intent(ctx, WarpVpnService::class.java))
+    ctx.startForegroundService(Intent(ctx, WarpCoreService::class.java))
 }
 
 private fun goNext(nav: NavHostController) {
