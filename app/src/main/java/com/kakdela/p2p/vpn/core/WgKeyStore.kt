@@ -1,24 +1,34 @@
 package com.kakdela.p2p.vpn.core
 
 import android.content.Context
+import android.util.Base64
 import com.wireguard.crypto.KeyPair
-import com.wireguard.crypto.Key
 
 class WgKeyStore(context: Context) {
-
-    private val prefs = context.getSharedPreferences("wg_keys", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences("vpn_keys", Context.MODE_PRIVATE)
 
     fun getPrivateKey(): String {
-        prefs.getString("priv", null)?.let { return it }
-
-        val keyPair = KeyPair()
-        val priv = keyPair.privateKey.toBase64()
-        prefs.edit().putString("priv", priv).apply()
-        return priv
+        var key = prefs.getString("private_key", null)
+        if (key == null) {
+            // Генерируем новую пару ключей через библиотеку WireGuard
+            val keyPair = KeyPair()
+            key = keyPair.privateKey.toBase64()
+            val pub = keyPair.publicKey.toBase64()
+            
+            prefs.edit()
+                .putString("private_key", key)
+                .putString("public_key", pub)
+                .apply()
+        }
+        return key!!
     }
 
     fun getPublicKey(): String {
-        val priv = getPrivateKey()
-        return KeyPair(Key.fromBase64(priv)).publicKey.toBase64()
+        // Убеждаемся, что ключи созданы
+        if (!prefs.contains("public_key")) {
+            getPrivateKey()
+        }
+        return prefs.getString("public_key", "") ?: ""
     }
 }
+
