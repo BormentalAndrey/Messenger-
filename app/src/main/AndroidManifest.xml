@@ -1,18 +1,14 @@
-
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.kakdela.p2p">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
-        android:name=".App"
-        android:allowBackup="true"
-        android:label="Как дела?"
+        android:allowBackup="false"
+        android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:supportsRtl="true"
         android:theme="@style/Theme.Kakdela">
 
         <activity
@@ -24,14 +20,11 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".messenger.ChatActivity"
-            android:exported="false" />
-
         <service
-            android:name=".vpn.service.KakdelaVpnService"
+            android:name=".vpn.KakdelaVpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="vpn" />
 
     </application>
 
