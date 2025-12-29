@@ -2,13 +2,10 @@ package com.kakdela.p2p
 
 import android.content.Intent
 import android.net.VpnService
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.LaunchedEffect
-import androidx.core.view.WindowCompat
-import com.kakdela.p2p.ui.theme.Theme
 import com.kakdela.p2p.vpn.service.KakdelaVpnService
 
 class MainActivity : ComponentActivity() {
@@ -20,19 +17,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        WindowCompat.setDecorFitsSystemWindows(window, false)
-
-        setContent {
-            Theme {
-                LaunchedEffect(Unit) {
-                    checkAndStartVpn()
-                }
-            }
-        }
+        checkVpnPermission()
     }
 
-    private fun checkAndStartVpn() {
+    private fun checkVpnPermission() {
         val intent = VpnService.prepare(this)
         if (intent != null) {
             vpnPermissionLauncher.launch(intent)
@@ -43,8 +31,11 @@ class MainActivity : ComponentActivity() {
 
     private fun startVpn() {
         val intent = Intent(this, KakdelaVpnService::class.java)
-        intent.action = KakdelaVpnService.ACTION_CONNECT
 
-        startForegroundService(intent)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
     }
 }
