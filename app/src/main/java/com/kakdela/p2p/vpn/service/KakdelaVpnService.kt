@@ -7,43 +7,47 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
 import com.kakdela.p2p.R
-import kotlinx.coroutines.*
-import java.net.InetSocketAddress
 
 class KakdelaVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    override fun onCreate() {
-        super.onCreate()
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(1, createNotification())
-        startVpn()
+        startDnsVpn()
+        return START_STICKY
     }
 
-    private fun startVpn() {
-        scope.launch {
-            try {
-                val builder = Builder()
-                builder.setSession("Kakdela VPN")
-                builder.addAddress("10.0.0.2", 32)
-                builder.addDnsServer("1.1.1.1")
-                builder.addRoute("0.0.0.0", 0)
+    private fun startDnsVpn() {
+        if (vpnInterface != null) return
 
-                vpnInterface = builder.establish()
-            } catch (e: Exception) {
-                e.printStackTrace()
-                stopSelf()
-            }
-        }
+        val builder = Builder()
+        builder.setSession("Kakdela DNS VPN")
+
+        // фиктивный адрес
+        builder.addAddress("10.0.0.2", 32)
+
+        // DNS (Cloudflare + Google)
+        builder.addDnsServer("1.1.1.1")
+        builder.addDnsServer("8.8.8.8")
+
+        // весь трафик через VPN
+        builder.addRoute("0.0.0.0", 0)
+
+        // важно!
+        builder.allowFamily(android.system.OsConstants.AF_INET)
+        builder.allowFamily(android.system.OsConstants.AF_INET6)
+
+        vpnInterface = builder.establish()
     }
 
     private fun createNotification(): Notification {
         val channelId = "vpn_channel"
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
-                "VPN",
+                "Kakdela VPN",
                 NotificationManager.IMPORTANCE_LOW
             )
             getSystemService(NotificationManager::class.java)
@@ -52,14 +56,14 @@ class KakdelaVpnService : VpnService() {
 
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle("Как дела? VPN")
-            .setContentText("VPN активен")
+            .setContentText("DNS защита активна")
             .setSmallIcon(R.drawable.ic_vpn)
             .build()
     }
 
     override fun onDestroy() {
         vpnInterface?.close()
-        scope.cancel()
+        vpnInterface = null
         super.onDestroy()
     }
 }
