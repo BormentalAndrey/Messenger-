@@ -36,24 +36,31 @@ class KakdelaVpnService : AndroidVpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notification = notification("Подключение…")
-        
-        when {
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
-                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-            }
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> {
-                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_VPN)
-            }
-            else -> startForeground(NOTIF_ID, notification)
-        }
-
         if (intent?.action == ACTION_DISCONNECT) {
             stopVpn()
-        } else {
-            if (tunnel == null) connectVpn()
+            return START_NOT_STICKY
         }
 
+        val notification = notification("Подключение…")
+        
+        // Безопасный запуск Foreground Service в зависимости от версии Android
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // Android 14+
+                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // Android 10 - 13
+                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_VPN)
+            } else {
+                // Ниже Android 10
+                startForeground(NOTIF_ID, notification)
+            }
+        } catch (e: Exception) {
+            // Фолбэк для предотвращения крэша при старте
+            startForeground(NOTIF_ID, notification)
+        }
+
+        if (tunnel == null) connectVpn()
         return START_STICKY
     }
 
@@ -65,19 +72,23 @@ class KakdelaVpnService : AndroidVpnService() {
                 val resp = registrar.register(keyStore.getPublicKey()) ?: error("WARP error")
                 val configData = resp.config ?: error("Config is null")
                 
+                val v4Address = configData.interfaceData?.addresses?.v4 ?: "172.16.0.2/32"
+                val peerPubKey = configData.peers?.firstOrNull()?.public_key ?: ""
+                val endpoint = configData.peers?.firstOrNull()?.endpoint?.host ?: "engage.cloudflareclient.com:2408"
+
                 val config = Config.Builder()
                     .setInterface(
                         Interface.Builder()
                             .parsePrivateKey(keyStore.getPrivateKey())
-                            .addAddress(InetNetwork.parse(configData.interfaceData?.addresses?.v4!!))
+                            .addAddress(InetNetwork.parse(v4Address))
                             .addDnsServer(InetAddress.getByName("1.1.1.1"))
                             .setMtu(1280)
                             .build()
                     )
                     .addPeer(
                         Peer.Builder()
-                            .parsePublicKey(configData.peers?.first()?.public_key!!)
-                            .setEndpoint(InetEndpoint.parse(configData.peers?.first()?.endpoint?.host!!))
+                            .parsePublicKey(peerPubKey)
+                            .setEndpoint(InetEndpoint.parse(endpoint))
                             .addAllowedIp(InetNetwork.parse("0.0.0.0/0"))
                             .build()
                     )
@@ -100,7 +111,11 @@ class KakdelaVpnService : AndroidVpnService() {
     private fun stopVpn() {
         scope.launch {
             try { tunnel?.let { backend.setState(it, Tunnel.State.DOWN, null) } } catch (e: Exception) {}
-            stopForeground(true)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                stopForeground(true)
+            }
             stopSelf()
             tunnel = null
         }
@@ -114,6 +129,7 @@ class KakdelaVpnService : AndroidVpnService() {
             .setContentText(text)
             .setOngoing(true)
             .setContentIntent(pi)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
 
