@@ -1,34 +1,46 @@
+package com.kakdela.p2p.vpn.service
+
+import android.app.*
+import android.content.Intent
+import android.net.VpnService
+import android.os.Build
+import android.os.ParcelFileDescriptor
+import androidx.core.app.NotificationCompat
+import com.kakdela.p2p.R
+import kotlinx.coroutines.*
+import java.net.InetSocketAddress
+
 class KakdelaVpnService : VpnService() {
 
-    companion object {
-        const val ACTION_CONNECT = "ACTION_CONNECT"
-    }
+    private var vpnInterface: ParcelFileDescriptor? = null
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onCreate() {
+        super.onCreate()
+        startForeground(1, createNotification())
         startVpn()
-        return START_STICKY
     }
 
     private fun startVpn() {
-        val notification = createNotification()
+        scope.launch {
+            try {
+                val builder = Builder()
+                builder.setSession("Kakdela VPN")
+                builder.addAddress("10.0.0.2", 32)
+                builder.addDnsServer("1.1.1.1")
+                builder.addRoute("0.0.0.0", 0)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                1,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_VPN
-            )
-        } else {
-            startForeground(1, notification)
+                vpnInterface = builder.establish()
+            } catch (e: Exception) {
+                e.printStackTrace()
+                stopSelf()
+            }
         }
-
-        // TODO: тут твой WireGuard / tun setup
     }
 
     private fun createNotification(): Notification {
-        val channelId = "vpn"
-
-        if (Build.VERSION.SDK_INT >= 26) {
+        val channelId = "vpn_channel"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 channelId,
                 "VPN",
@@ -39,10 +51,15 @@ class KakdelaVpnService : VpnService() {
         }
 
         return NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle("Kakdela VPN")
+            .setContentTitle("Как дела? VPN")
             .setContentText("VPN активен")
-            .setOngoing(true)
+            .setSmallIcon(R.drawable.ic_vpn)
             .build()
+    }
+
+    override fun onDestroy() {
+        vpnInterface?.close()
+        scope.cancel()
+        super.onDestroy()
     }
 }
