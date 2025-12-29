@@ -16,7 +16,7 @@ import com.wireguard.config.*
 import kotlinx.coroutines.*
 import java.net.InetAddress
 
-class MyVpnService : VpnService() {
+class VpnService : VpnService() {
 
     companion object {
         const val ACTION_CONNECT = "vpn_connect"
@@ -36,15 +36,23 @@ class MyVpnService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-
-        if (Build.VERSION.SDK_INT >= 34) {
+        // Логика отображения Foreground Service для разных версий Android
+        val notification = notification("Подключение…")
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // Android 14+
             startForeground(
                 NOTIF_ID,
-                notification("Подключение…"),
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { // Android 10+
+            startForeground(
+                NOTIF_ID,
+                notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_VPN
             )
         } else {
-            startForeground(NOTIF_ID, notification("Подключение…"))
+            startForeground(NOTIF_ID, notification)
         }
 
         if (intent?.action == ACTION_DISCONNECT) {
@@ -60,20 +68,23 @@ class MyVpnService : VpnService() {
     private fun connectVpn() {
         scope.launch {
             try {
-                val keyStore = WgKeyStore(this@MyVpnService)
+                val keyStore = WgKeyStore(this@VpnService)
                 val registrar = WarpRegistrar()
 
                 val resp = registrar.register(keyStore.getPublicKey())
                     ?: error("WARP error")
 
-                val ip = resp.config!!.interfaceData!!.addresses!!.v4!!
-                val peer = resp.config.peers!!.first()
+                val configData = resp.config ?: error("Config is null")
+                val interfaceData = configData.interfaceData ?: error("Interface data is null")
+                val addressv4 = interfaceData.addresses?.v4 ?: error("No IPv4 address")
+                
+                val peerData = configData.peers?.firstOrNull() ?: error("No peers found")
 
                 val config = Config.Builder()
                     .setInterface(
                         Interface.Builder()
                             .parsePrivateKey(keyStore.getPrivateKey())
-                            .addAddress(InetNetwork.parse(ip))
+                            .addAddress(InetNetwork.parse(addressv4))
                             .addDnsServer(InetAddress.getByName("1.1.1.1"))
                             .addDnsServer(InetAddress.getByName("8.8.8.8"))
                             .setMtu(1280)
@@ -81,8 +92,8 @@ class MyVpnService : VpnService() {
                     )
                     .addPeer(
                         Peer.Builder()
-                            .parsePublicKey(peer.public_key!!)
-                            .setEndpoint(InetEndpoint.parse(peer.endpoint!!.host!!))
+                            .parsePublicKey(peerData.public_key!!)
+                            .setEndpoint(InetEndpoint.parse(peerData.endpoint!!.host!!))
                             .addAllowedIp(InetNetwork.parse("0.0.0.0/0"))
                             .addAllowedIp(InetNetwork.parse("::/0"))
                             .setPersistentKeepalive(25)
@@ -99,6 +110,7 @@ class MyVpnService : VpnService() {
                 update("VPN активен")
 
             } catch (e: Exception) {
+                e.printStackTrace()
                 update("Ошибка VPN")
                 stopSelf()
             }
@@ -110,7 +122,11 @@ class MyVpnService : VpnService() {
             try {
                 tunnel?.let { backend.setState(it, Tunnel.State.DOWN, null) }
             } catch (_: Exception) {}
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                stopForeground(true)
+            }
             stopSelf()
             tunnel = null
         }
@@ -129,24 +145,30 @@ class MyVpnService : VpnService() {
             .setContentText(text)
             .setOngoing(true)
             .setContentIntent(pi)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
 
     private fun update(text: String) {
-        getSystemService(NotificationManager::class.java)
-            .notify(NOTIF_ID, notification(text))
+        val nm = getSystemService(NotificationManager::class.java)
+        nm?.notify(NOTIF_ID, notification(text))
     }
 
     private fun createChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            getSystemService(NotificationManager::class.java)
-                .createNotificationChannel(
-                    NotificationChannel(
-                        CHANNEL_ID,
-                        "VPN",
-                        NotificationManager.IMPORTANCE_LOW
-                    )
-                )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "VPN Service Channel",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            val nm = getSystemService(NotificationManager::class.java)
+            nm?.createNotificationChannel(channel)
         }
     }
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
+    }
 }
+
