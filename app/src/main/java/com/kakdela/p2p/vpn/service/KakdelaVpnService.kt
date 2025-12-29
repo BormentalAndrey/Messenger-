@@ -2,7 +2,6 @@ package com.kakdela.p2p.vpn.service
 
 import android.app.*
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.net.VpnService as AndroidVpnService
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -23,6 +22,10 @@ class KakdelaVpnService : AndroidVpnService() {
         const val ACTION_DISCONNECT = "vpn_disconnect"
         const val CHANNEL_ID = "vpn_channel"
         const val NOTIF_ID = 1001
+        
+        // Системные значения констант (чтобы не зависеть от версии SDK при компиляции)
+        private const val TYPE_VPN = 0x00000001 // ServiceInfo.FOREGROUND_SERVICE_TYPE_VPN
+        private const val TYPE_SPECIAL = 0x40000000 // ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -43,20 +46,19 @@ class KakdelaVpnService : AndroidVpnService() {
 
         val notification = notification("Подключение…")
         
-        // Безопасный запуск Foreground Service в зависимости от версии Android
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                // Android 14+
-                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Android 10 - 13
-                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_VPN)
-            } else {
-                // Ниже Android 10
-                startForeground(NOTIF_ID, notification)
+            when {
+                Build.VERSION.SDK_INT >= 34 -> { // Android 14+
+                    startForeground(NOTIF_ID, notification, TYPE_SPECIAL)
+                }
+                Build.VERSION.SDK_INT >= 29 -> { // Android 10+
+                    startForeground(NOTIF_ID, notification, TYPE_VPN)
+                }
+                else -> {
+                    startForeground(NOTIF_ID, notification)
+                }
             }
         } catch (e: Exception) {
-            // Фолбэк для предотвращения крэша при старте
             startForeground(NOTIF_ID, notification)
         }
 
