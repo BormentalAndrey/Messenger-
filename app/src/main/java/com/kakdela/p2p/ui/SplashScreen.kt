@@ -2,7 +2,8 @@ package com.kakdela.p2p.ui
 
 import android.content.Context
 import android.content.Intent
-import android.net.VpnService
+import android.net.VpnService as AndroidVpnService
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
@@ -14,7 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.delay
-import com.kakdela.p2p.vpn.service.VpnService as WarpCoreService // ⬅ другое имя, чтобы не путать
+import com.kakdela.p2p.vpn.service.KakdelaVpnService
 
 @Composable
 fun SplashScreen(navController: NavHostController) {
@@ -29,7 +30,7 @@ fun SplashScreen(navController: NavHostController) {
 
     LaunchedEffect(Unit) {
         delay(900)
-        val intent = VpnService.prepare(ctx)
+        val intent = AndroidVpnService.prepare(ctx)
         if (intent != null) {
             vpnLauncher.launch(intent)
         } else {
@@ -49,9 +50,15 @@ fun SplashScreen(navController: NavHostController) {
 }
 
 private fun startVpn(ctx: Context) {
-    ctx.startForegroundService(Intent(ctx, WarpCoreService::class.java))
+    val intent = Intent(ctx, KakdelaVpnService::class.java)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        ctx.startForegroundService(intent)
+    } else {
+        ctx.startService(intent)
+    }
 }
 
 private fun goNext(nav: NavHostController) {
     nav.navigate("choice") { popUpTo(0) }
 }
+
