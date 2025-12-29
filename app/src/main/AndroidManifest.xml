@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- ОБЯЗАТЕЛЬНЫЕ -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
@@ -22,30 +21,13 @@
             </intent-filter>
         </activity>
 
-        <!-- VPN SERVICE -->
+        <!-- ✅ VPN SERVICE -->
         <service
             android:name=".vpn.service.KakdelaVpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:exported="false"
-            android:foregroundServiceType="specialUse">
-
-            <intent-filter>
-                <action android:name="android.net.VpnService"/>
-            </intent-filter>
-
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="vpn_connection"/>
+            android:foregroundServiceType="vpn">
         </service>
-
-        <!-- АВТОСТАРТ ПОСЛЕ ПЕРЕЗАГРУЗКИ -->
-        <receiver
-            android:name=".vpn.service.VpnBootReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED"/>
-            </intent-filter>
-        </receiver>
 
     </application>
 </manifest>
