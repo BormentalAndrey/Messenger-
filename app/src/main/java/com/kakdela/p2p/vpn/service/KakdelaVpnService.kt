@@ -1,155 +1,71 @@
 package com.kakdela.p2p.vpn.service
 
-import android.app.*
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
 import android.content.Intent
-import android.net.VpnService as AndroidVpnService
+import android.net.VpnService
 import android.os.Build
+import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
-import com.kakdela.p2p.MainActivity
 import com.kakdela.p2p.R
-import com.kakdela.p2p.vpn.core.WarpRegistrar
-import com.kakdela.p2p.vpn.core.WgKeyStore
-import com.wireguard.android.backend.GoBackend
-import com.wireguard.android.backend.Tunnel
-import com.wireguard.config.*
-import kotlinx.coroutines.*
-import java.net.InetAddress
 
-class KakdelaVpnService : AndroidVpnService() {
+class KakdelaVpnService : VpnService() {
 
     companion object {
-        const val ACTION_CONNECT = "vpn_connect"
-        const val ACTION_DISCONNECT = "vpn_disconnect"
-        const val CHANNEL_ID = "vpn_channel"
-        const val NOTIF_ID = 1001
-        
-        // Системные значения констант (чтобы не зависеть от версии SDK при компиляции)
-        private const val TYPE_VPN = 0x00000001 // ServiceInfo.FOREGROUND_SERVICE_TYPE_VPN
-        private const val TYPE_SPECIAL = 0x40000000 // ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        const val ACTION_CONNECT = "ACTION_CONNECT"
+        private const val CHANNEL_ID = "vpn_channel"
+        private const val NOTIF_ID = 1
     }
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private lateinit var backend: GoBackend
-    private var tunnel: Tunnel? = null
-
-    override fun onCreate() {
-        super.onCreate()
-        backend = GoBackend(this)
-        createChannel()
-    }
+    private var vpnInterface: ParcelFileDescriptor? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_DISCONNECT) {
-            stopVpn()
-            return START_NOT_STICKY
+        if (intent?.action == ACTION_CONNECT) {
+            startVpn()
         }
-
-        val notification = notification("Подключение…")
-        
-        try {
-            when {
-                Build.VERSION.SDK_INT >= 34 -> { // Android 14+
-                    startForeground(NOTIF_ID, notification, TYPE_SPECIAL)
-                }
-                Build.VERSION.SDK_INT >= 29 -> { // Android 10+
-                    startForeground(NOTIF_ID, notification, TYPE_VPN)
-                }
-                else -> {
-                    startForeground(NOTIF_ID, notification)
-                }
-            }
-        } catch (e: Exception) {
-            startForeground(NOTIF_ID, notification)
-        }
-
-        if (tunnel == null) connectVpn()
-        return START_STICKY
+        return Service.START_STICKY
     }
 
-    private fun connectVpn() {
-        scope.launch {
-            try {
-                val keyStore = WgKeyStore(this@KakdelaVpnService)
-                val registrar = WarpRegistrar()
-                val resp = registrar.register(keyStore.getPublicKey()) ?: error("WARP error")
-                val configData = resp.config ?: error("Config is null")
-                
-                val v4Address = configData.interfaceData?.addresses?.v4 ?: "172.16.0.2/32"
-                val peerPubKey = configData.peers?.firstOrNull()?.public_key ?: ""
-                val endpoint = configData.peers?.firstOrNull()?.endpoint?.host ?: "engage.cloudflareclient.com:2408"
+    private fun startVpn() {
+        createNotification()
 
-                val config = Config.Builder()
-                    .setInterface(
-                        Interface.Builder()
-                            .parsePrivateKey(keyStore.getPrivateKey())
-                            .addAddress(InetNetwork.parse(v4Address))
-                            .addDnsServer(InetAddress.getByName("1.1.1.1"))
-                            .setMtu(1280)
-                            .build()
-                    )
-                    .addPeer(
-                        Peer.Builder()
-                            .parsePublicKey(peerPubKey)
-                            .setEndpoint(InetEndpoint.parse(endpoint))
-                            .addAllowedIp(InetNetwork.parse("0.0.0.0/0"))
-                            .build()
-                    )
-                    .build()
+        val builder = Builder()
+            .setSession("Kakdela VPN")
+            .addAddress("10.0.0.2", 32)
+            .addDnsServer("1.1.1.1")
+            .addDnsServer("8.8.8.8")
+            .addRoute("0.0.0.0", 0)
 
-                tunnel = object : Tunnel {
-                    override fun getName() = "KakdelaVPN"
-                    override fun onStateChange(state: Tunnel.State) {}
-                }
-
-                backend.setState(tunnel!!, Tunnel.State.UP, config)
-                update("VPN активен")
-            } catch (e: Exception) {
-                update("Ошибка подключения")
-                stopSelf()
-            }
-        }
+        vpnInterface = builder.establish()
     }
 
-    private fun stopVpn() {
-        scope.launch {
-            try { tunnel?.let { backend.setState(it, Tunnel.State.DOWN, null) } } catch (e: Exception) {}
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                stopForeground(STOP_FOREGROUND_REMOVE)
-            } else {
-                stopForeground(true)
-            }
-            stopSelf()
-            tunnel = null
-        }
-    }
+    private fun createNotification() {
+        val manager = getSystemService(NotificationManager::class.java)
 
-    private fun notification(text: String): Notification {
-        val pi = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+        if (Build.VERSION.SDK_INT >= 26) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "VPN",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            manager.createNotificationChannel(channel)
+        }
+
+        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Kakdela VPN")
-            .setContentText(text)
+            .setContentText("VPN активен")
+            .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
-            .setContentIntent(pi)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
-    }
 
-    private fun update(text: String) {
-        val nm = getSystemService(NotificationManager::class.java)
-        nm?.notify(NOTIF_ID, notification(text))
-    }
-
-    private fun createChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val nm = getSystemService(NotificationManager::class.java)
-            nm?.createNotificationChannel(NotificationChannel(CHANNEL_ID, "VPN Service", NotificationManager.IMPORTANCE_LOW))
-        }
+        startForeground(NOTIF_ID, notification)
     }
 
     override fun onDestroy() {
-        scope.cancel()
+        vpnInterface?.close()
+        vpnInterface = null
         super.onDestroy()
     }
 }
-
