@@ -14,19 +14,27 @@ import com.kakdela.p2p.R
 class KakdelaVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
+    
+    // Константа для FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+    // Мы используем её, так как в Манифесте указали specialUse
+    private val TYPE_SPECIAL_USE = 1073741824
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // ❗ ИСПРАВЛЕНИЕ ОШИБКИ КРАША ❗
-        // Для Android 14 (SDK 34) и выше ОБЯЗАТЕЛЬНО передавать тип сервиса
+        val notification = createNotification()
+
+        // Для Android 14 (SDK 34+) обязательно указывать тип при запуске
         if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(
-                1, 
-                createNotification(), 
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_VPN
-            )
+            try {
+                // Передаем тип SPECIAL_USE, чтобы он совпал с Манифестом
+                startForeground(1, notification, TYPE_SPECIAL_USE)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                // Фолбэк на случай ошибки (хотя с правильным манифестом её не будет)
+                startForeground(1, notification)
+            }
         } else {
-            // Для старых версий (Android 13 и ниже)
-            startForeground(1, createNotification())
+            // Для Android 13 и ниже
+            startForeground(1, notification)
         }
 
         startDnsVpn()
@@ -39,35 +47,20 @@ class KakdelaVpnService : VpnService() {
         try {
             val builder = Builder()
             builder.setSession("Kakdela DNS VPN")
-
-            // Фиктивный адрес локальной сети VPN
             builder.addAddress("10.0.0.2", 32)
-
-            // DNS серверы (Cloudflare + Google)
             builder.addDnsServer("1.1.1.1")
             builder.addDnsServer("8.8.8.8")
-
-            // Маршрутизация всего трафика через VPN
             builder.addRoute("0.0.0.0", 0)
+            
+            builder.setMtu(1280)
 
-            // IPv4 обязателен. IPv6 в try-catch, так как на некоторых эмуляторах/устройствах он вызывает сбой
             try {
                 builder.allowFamily(android.system.OsConstants.AF_INET)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-            
-            // IPv6 (опционально, лучше обернуть в try/catch)
-            try {
-                builder.allowFamily(android.system.OsConstants.AF_INET6)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            } catch (e: Exception) { e.printStackTrace() }
 
             vpnInterface = builder.establish()
         } catch (e: Exception) {
             e.printStackTrace()
-            // Если не удалось создать интерфейс, останавливаем сервис, чтобы не висело уведомление
             stopSelf()
         }
     }
@@ -85,12 +78,11 @@ class KakdelaVpnService : VpnService() {
                 ?.createNotificationChannel(channel)
         }
 
-        // Используем mipmap иконку, так как она точно есть (R.drawable.ic_vpn может отсутствовать)
         return NotificationCompat.Builder(this, channelId)
             .setContentTitle("Как дела? VPN")
             .setContentText("DNS защита активна")
-            .setSmallIcon(R.mipmap.ic_launcher) 
-            .setOngoing(true) // Уведомление нельзя смахнуть
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setOngoing(true)
             .build()
     }
 
