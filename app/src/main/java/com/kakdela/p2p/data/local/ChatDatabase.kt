@@ -19,26 +19,30 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE chatId = :chatId ORDER BY timestamp ASC")
     fun getMessagesForChat(chatId: String): Flow<List<MessageEntity>>
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(message: MessageEntity)
 }
 
-@Database(entities = [MessageEntity::class], version = 1)
+@Database(entities = [MessageEntity::class], version = 1, exportSchema = false)
 abstract class ChatDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
 
     companion object {
         @Volatile private var INSTANCE: ChatDatabase? = null
+
         fun getDatabase(context: Context): ChatDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     ChatDatabase::class.java,
                     "chat_db"
-                ).build()
+                )
+                .fallbackToDestructiveMigration() // ВАЖНО: Предотвращает краш при изменении схемы
+                .build()
                 INSTANCE = instance
                 instance
             }
         }
     }
 }
+
