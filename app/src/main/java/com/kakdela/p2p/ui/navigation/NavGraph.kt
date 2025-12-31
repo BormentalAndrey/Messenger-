@@ -23,31 +23,15 @@ import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.model.ChatMessage
 import com.google.firebase.auth.FirebaseAuth
 
-object Routes {
-    const val SPLASH = "splash"
-    const val CHOICE = "choice"
-    const val AUTH_EMAIL = "auth_email"
-    const val AUTH_PHONE = "auth_phone"
-    const val CHATS = "chats"
-    const val DEALS = "deals"
-    const val ENTERTAINMENT = "entertainment"
-    const val SETTINGS = "settings"
-    const val CONTACTS = "contacts"
-    const val CALCULATOR = "calculator"
-    const val TIC_TAC_TOE = "tic_tac_toe"
-    const val CHESS = "chess"
-    const val PACMAN = "pacman"
-    const val JEWELS = "jewels"
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NavGraph(navController: NavHostController) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    // Скрываем BottomBar на экране Splash и экранах входа
-    val showBottomBar = currentRoute !in listOf(Routes.SPLASH, Routes.CHOICE, Routes.AUTH_EMAIL, Routes.AUTH_PHONE)
+    val showBottomBar = currentRoute in listOf(
+        Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
+    )
 
     Scaffold(
         bottomBar = {
@@ -90,25 +74,18 @@ fun NavGraph(navController: NavHostController) {
             startDestination = Routes.SPLASH,
             modifier = Modifier.padding(padding).background(Color.Black)
         ) {
-            // Исправленный Splash с логикой проверки
             composable(Routes.SPLASH) { 
-                SplashScreen {
-                    val user = FirebaseAuth.getInstance().currentUser
-                    if (user != null) {
-                        navController.navigate(Routes.CHATS) {
-                            popUpTo(Routes.SPLASH) { inclusive = true }
-                        }
-                    } else {
-                        navController.navigate(Routes.CHOICE) {
-                            popUpTo(Routes.SPLASH) { inclusive = true }
-                        }
+                SplashScreen(onTimeout = { // Исправлено: передаем лямбду
+                    val nextRoute = if (FirebaseAuth.getInstance().currentUser != null) Routes.CHATS else Routes.CHOICE
+                    navController.navigate(nextRoute) {
+                        popUpTo(Routes.SPLASH) { inclusive = true }
                     }
-                }
+                })
             }
-
+            
             composable(Routes.CHOICE) { RegistrationChoiceScreen({ navController.navigate(Routes.AUTH_EMAIL) }, { navController.navigate(Routes.AUTH_PHONE) }) }
-            composable(Routes.AUTH_EMAIL) { EmailAuthScreen(navController) { navController.navigate(Routes.CHATS) { popUpTo(Routes.CHOICE) { inclusive = true } } } }
-            composable(Routes.AUTH_PHONE) { PhoneAuthScreen { navController.navigate(Routes.CHATS) { popUpTo(Routes.CHOICE) { inclusive = true } } } }
+            composable(Routes.AUTH_EMAIL) { EmailAuthScreen(navController) { navController.navigate(Routes.CHATS) } }
+            composable(Routes.AUTH_PHONE) { PhoneAuthScreen { navController.navigate(Routes.CHATS) } }
             
             composable(Routes.CHATS) { ChatsListScreen(navController) }
             composable(Routes.CONTACTS) { ContactsScreen { userId -> navController.navigate("chat/$userId") } }
