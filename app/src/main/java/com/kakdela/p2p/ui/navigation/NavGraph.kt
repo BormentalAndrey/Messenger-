@@ -18,9 +18,27 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
-import com.kakdela.p2p.ui.* // Импортирует WebViewScreen, DealsScreen, EntertainmentScreen
+import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.model.ChatMessage
+import com.google.firebase.auth.FirebaseAuth
+
+object Routes {
+    const val SPLASH = "splash"
+    const val CHOICE = "choice"
+    const val AUTH_EMAIL = "auth_email"
+    const val AUTH_PHONE = "auth_phone"
+    const val CHATS = "chats"
+    const val DEALS = "deals"
+    const val ENTERTAINMENT = "entertainment"
+    const val SETTINGS = "settings"
+    const val CONTACTS = "contacts"
+    const val CALCULATOR = "calculator"
+    const val TIC_TAC_TOE = "tic_tac_toe"
+    const val CHESS = "chess"
+    const val PACMAN = "pacman"
+    const val JEWELS = "jewels"
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -28,10 +46,8 @@ fun NavGraph(navController: NavHostController) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
-    // Показываем нижнюю панель даже в WebView, чтобы вкладки оставались снизу
-    val showBottomBar = currentRoute in listOf(
-        Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
-    ) || currentRoute?.startsWith("webview") == true
+    // Скрываем BottomBar на экране Splash и экранах входа
+    val showBottomBar = currentRoute !in listOf(Routes.SPLASH, Routes.CHOICE, Routes.AUTH_EMAIL, Routes.AUTH_PHONE)
 
     Scaffold(
         bottomBar = {
@@ -74,10 +90,25 @@ fun NavGraph(navController: NavHostController) {
             startDestination = Routes.SPLASH,
             modifier = Modifier.padding(padding).background(Color.Black)
         ) {
-            composable(Routes.SPLASH) { SplashScreen(navController) }
+            // Исправленный Splash с логикой проверки
+            composable(Routes.SPLASH) { 
+                SplashScreen {
+                    val user = FirebaseAuth.getInstance().currentUser
+                    if (user != null) {
+                        navController.navigate(Routes.CHATS) {
+                            popUpTo(Routes.SPLASH) { inclusive = true }
+                        }
+                    } else {
+                        navController.navigate(Routes.CHOICE) {
+                            popUpTo(Routes.SPLASH) { inclusive = true }
+                        }
+                    }
+                }
+            }
+
             composable(Routes.CHOICE) { RegistrationChoiceScreen({ navController.navigate(Routes.AUTH_EMAIL) }, { navController.navigate(Routes.AUTH_PHONE) }) }
-            composable(Routes.AUTH_EMAIL) { EmailAuthScreen(navController) { navController.navigate(Routes.CHATS) } }
-            composable(Routes.AUTH_PHONE) { PhoneAuthScreen { navController.navigate(Routes.CHATS) } }
+            composable(Routes.AUTH_EMAIL) { EmailAuthScreen(navController) { navController.navigate(Routes.CHATS) { popUpTo(Routes.CHOICE) { inclusive = true } } } }
+            composable(Routes.AUTH_PHONE) { PhoneAuthScreen { navController.navigate(Routes.CHATS) { popUpTo(Routes.CHOICE) { inclusive = true } } } }
             
             composable(Routes.CHATS) { ChatsListScreen(navController) }
             composable(Routes.CONTACTS) { ContactsScreen { userId -> navController.navigate("chat/$userId") } }
@@ -91,7 +122,6 @@ fun NavGraph(navController: NavHostController) {
             composable(Routes.PACMAN) { PacmanScreen() }
             composable(Routes.JEWELS) { JewelsBlastScreen() }
 
-            // Вызов твоего WebViewScreen
             composable(
                 route = "webview/{url}/{title}",
                 arguments = listOf(navArgument("url") { type = NavType.StringType }, navArgument("title") { type = NavType.StringType })
@@ -104,7 +134,7 @@ fun NavGraph(navController: NavHostController) {
             composable("chat/{chatId}") { backStackEntry ->
                 val chatId = backStackEntry.arguments?.getString("chatId") ?: "global"
                 val vm: ChatViewModel = viewModel()
-                val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: ""
+                val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
                 LaunchedEffect(chatId) { vm.initChat(chatId, uid) }
                 val msgs by vm.messages.collectAsState()
                 ChatScreen(chatId, msgs.map { ChatMessage(it.id.toString(), it.text, it.senderId, it.timestamp, it.senderId == uid) }, { vm.sendMessage(it) }, { t, d -> vm.scheduleMessage(t, d) })
@@ -112,3 +142,4 @@ fun NavGraph(navController: NavHostController) {
         }
     }
 }
+
