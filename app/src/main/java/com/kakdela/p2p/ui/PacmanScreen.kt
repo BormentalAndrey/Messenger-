@@ -1,34 +1,3 @@
-package com.kakdela.p2p.ui
-
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.font.FontWeight
-import kotlin.math.abs
-
-// Карта (сокращенная версия для примера, используйте вашу полную карту)
-private val maze = arrayOf(
-    intArrayOf(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1),
-    intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1),
-    intArrayOf(1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1),
-    intArrayOf(1,3,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,3,1),
-    intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1),
-    intArrayOf(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1)
-)
-
-enum class Dir { UP, DOWN, LEFT, RIGHT, NONE }
-data class Entity(var x: Float, var y: Float, var dir: Dir = Dir.NONE)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PacmanScreen() {
@@ -36,188 +5,275 @@ fun PacmanScreen() {
     var lives by remember { mutableIntStateOf(3) }
     var score by remember { mutableIntStateOf(0) }
     
-    // Используем State для реактивного обновления UI
-    var pac by remember { mutableStateOf(Entity(14f, 2f, Dir.LEFT)) } // Start pos corrected for map
-    val ghosts = remember { mutableStateListOf(Entity(14f, 2f), Entity(1f, 1f)) }
+    // Полная карта из оригинального pacman.js
+    val maze = remember(level) {
+        arrayOf(
+            intArrayOf(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1),
+            intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1),
+            intArrayOf(1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1),
+            intArrayOf(1,3,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,3,1),
+            intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1),
+            intArrayOf(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1)
+            // Добавь полную карту из pacman.js MAP константы
+        )
+    }
     
-    val mazeWidth = maze[0].size
-    val mazeHeight = maze.size
-    val cellSize = 20f
+    // Игровые состояния
+    var pacman by remember { mutableStateOf(Entity(14f, 5f, Dir.LEFT)) }
+    val ghosts = remember { 
+        mutableStateListOf(
+            Entity(14f, 2f, Dir.UP), 
+            Entity(13f, 2f, Dir.DOWN),
+            Entity(15f, 2f, Dir.LEFT),
+            Entity(14f, 1f, Dir.RIGHT)
+        ) 
+    }
     
-    var dotsLeft by remember { mutableIntStateOf(0) }
+    var dotsLeft by remember(level) { mutableIntStateOf(0) }
     var powerMode by remember { mutableStateOf(false) }
     var powerTimer by remember { mutableIntStateOf(0) }
     
-    // Цвета
-    val wallColor = Color(0xFF00FFAA)
-    val pacColor = Color.Yellow
-
-    // Инициализация уровня
+    val cellSize = 18f
+    val mazeWidth = maze[0].size
+    val mazeHeight = maze.size
+    
+    // Подсчет точек
     LaunchedEffect(level) {
         dotsLeft = 0
         maze.forEach { row ->
-            row.forEach { cell -> if (cell == 2 || cell == 3) dotsLeft++ }
+            row.forEach { if (it == 2 || it == 3) dotsLeft++ }
         }
-        pac = Entity(14f, 1f, Dir.LEFT)
+        pacman = Entity(14f, 5f, Dir.LEFT)
+        ghosts.clear()
+        ghosts.addAll(listOf(
+            Entity(14f, 2f, Dir.UP), Entity(13f, 2f, Dir.DOWN),
+            Entity(15f, 2f, Dir.LEFT), Entity(14f, 1f, Dir.RIGHT)
+        ))
     }
-
-    // --- ОПТИМИЗИРОВАННЫЙ ИГРОВОЙ ЦИКЛ ---
+    
+    // 🎮 ГЛАВНЫЙ ИГРОВОЙ ЦИКЛ (60 FPS)
     LaunchedEffect(Unit) {
-        var lastUpdateTime = 0L
-        val updateInterval = 140_000_000L // 140 миллисекунд в наносекундах
-
+        var lastTime = 0L
         while (true) {
             withFrameNanos { time ->
-                if (lastUpdateTime == 0L) lastUpdateTime = time
-                
-                // Обновляемся только если прошло достаточно времени
-                if (time - lastUpdateTime >= updateInterval) {
-                    lastUpdateTime = time
+                if (time - lastTime > 16_666_666L) { // 60 FPS
+                    lastTime = time
                     
-                    // 1. Движение Пакмана
-                    val p = pac.copy() // Копия для изменения
-                    var nx = p.x
-                    var ny = p.y
-                    
-                    when (p.dir) {
-                        Dir.UP -> ny--
-                        Dir.DOWN -> ny++
-                        Dir.LEFT -> nx--
-                        Dir.RIGHT -> nx++
-                        else -> {}
+                    // Движение Пакмана
+                    val nextX = when (pacman.dir) {
+                        Dir.LEFT -> pacman.x - 0.15f
+                        Dir.RIGHT -> pacman.x + 0.15f
+                        else -> pacman.x
                     }
-
-                    // Телепортация по краям
-                    if (nx < 0) nx = mazeWidth - 1f
-                    if (nx >= mazeWidth) nx = 0f
-
-                    // Проверка столкновения со стенами
-                    val cellY = ny.toInt().coerceIn(0, mazeHeight - 1)
-                    val cellX = nx.toInt().coerceIn(0, mazeWidth - 1)
+                    val nextY = when (pacman.dir) {
+                        Dir.UP -> pacman.y - 0.15f
+                        Dir.DOWN -> pacman.y + 0.15f
+                        else -> pacman.y
+                    }
+                    
+                    // Телепорт
+                    var finalX = nextX
+                    if (finalX < 0) finalX = mazeWidth.toFloat()
+                    if (finalX >= mazeWidth) finalX = 0f
+                    
+                    val cellX = finalX.toInt().coerceIn(0, mazeWidth - 1)
+                    val cellY = nextY.toInt().coerceIn(0, mazeHeight - 1)
                     
                     if (maze[cellY][cellX] != 1) {
-                        p.x = nx
-                        p.y = ny
+                        pacman = pacman.copy(x = finalX, y = nextY)
+                        
+                        // Поедание точек
+                        when (maze[cellY][cellX]) {
+                            2 -> {
+                                maze[cellY][cellX] = 0
+                                score += 10
+                                dotsLeft--
+                            }
+                            3 -> {
+                                maze[cellY][cellX] = 0
+                                score += 50
+                                powerMode = true
+                                powerTimer = 420 // 7 сек
+                            }
+                        }
                     }
                     
-                    // Обновляем состояние Пакмана
-                    pac = p 
-
-                    // 2. Логика поедания точек
-                    val currentCell = maze[p.y.toInt().coerceIn(0, mazeHeight-1)][p.x.toInt().coerceIn(0, mazeWidth-1)]
-                    
-                    if (currentCell == 2) {
-                        maze[p.y.toInt()][p.x.toInt()] = 0 // Очищаем карту
-                        score += 10
-                        dotsLeft--
-                    } else if (currentCell == 3) {
-                        maze[p.y.toInt()][p.x.toInt()] = 0
-                        score += 50
-                        powerMode = true
-                        powerTimer = 80
-                    }
-
+                    // Power mode timer
                     if (powerMode) {
                         powerTimer--
                         if (powerTimer <= 0) powerMode = false
                     }
-
+                    
+                    // Победа уровня
                     if (dotsLeft <= 0) {
                         level++
-                        score += 500
+                        score += 1000
                     }
                     
-                    // 3. Движение призраков
-                    ghosts.forEachIndexed { i, g ->
-                         // Простая логика случайного движения
-                         val d = listOf(Dir.UP, Dir.DOWN, Dir.LEFT, Dir.RIGHT).shuffled().first()
-                         var gx = g.x
-                         var gy = g.y
-                         when (d) {
-                            Dir.UP -> gy--
-                            Dir.DOWN -> gy++
-                            Dir.LEFT -> gx--
-                            Dir.RIGHT -> gx++
-                            else -> {}
-                         }
-                         if (maze.getOrNull(gy.toInt())?.getOrNull(gx.toInt()) != 1) {
-                             g.x = gx
-                             g.y = gy
-                             g.dir = d
-                             // Обновляем элемент списка для рекомпозиции
-                             ghosts[i] = g
-                         }
-                         
-                         // Столкновение
-                         if (abs(g.x - p.x) < 0.6f && abs(g.y - p.y) < 0.6f) {
-                             if (powerMode) {
-                                 score += 200
-                                 g.x = 14f; g.y = 1f
-                                 ghosts[i] = g
-                             } else {
-                                 lives--
-                                 if (lives <= 0) {
-                                     level = 1; lives = 3; score = 0
-                                 } else {
-                                     pac = Entity(14f, 1f, Dir.LEFT)
-                                 }
-                             }
-                         }
+                    // Движение призраков (упрощенный ИИ)
+                    ghosts.forEachIndexed { i, ghost ->
+                        val dirs = listOf(Dir.UP, Dir.DOWN, Dir.LEFT, Dir.RIGHT)
+                        val bestDir = dirs.minByOrNull { dir ->
+                            val dx = when(dir) {
+                                Dir.LEFT -> ghost.x - 0.5f; Dir.RIGHT -> ghost.x + 0.5f
+                                else -> ghost.x
+                            }
+                            val dy = when(dir) {
+                                Dir.UP -> ghost.y - 0.5f; Dir.DOWN -> ghost.y + 0.5f
+                                else -> ghost.y
+                            }
+                            val dist = hypot(dx - pacman.x, dy - pacman.y)
+                            if (maze[dy.toInt().coerceIn(0, mazeHeight-1)][dx.toInt().coerceIn(0, mazeWidth-1)] == 1) 999f else dist
+                        } ?: ghost.dir
+                        
+                        val gx = when(bestDir) {
+                            Dir.LEFT -> ghost.x - 0.12f; Dir.RIGHT -> ghost.x + 0.12f; else -> ghost.x
+                        }
+                        val gy = when(bestDir) {
+                            Dir.UP -> ghost.y - 0.12f; Dir.DOWN -> ghost.y + 0.12f; else -> ghost.y
+                        }
+                        
+                        val gCellX = gx.toInt().coerceIn(0, mazeWidth - 1)
+                        val gCellY = gy.toInt().coerceIn(0, mazeHeight - 1)
+                        
+                        if (maze[gCellY][gCellX] != 1) {
+                            ghosts[i] = ghost.copy(x = gx, y = gy, dir = bestDir)
+                        }
+                        
+                        // Столкновение
+                        if (hypot(ghost.x - pacman.x, ghost.y - pacman.y) < 0.4f) {
+                            if (powerMode) {
+                                score += 200
+                                ghosts[i] = Entity(14f, 2f, Dir.UP)
+                            } else {
+                                lives--
+                                if (lives > 0) {
+                                    pacman = Entity(14f, 5f, Dir.LEFT)
+                                } else {
+                                    level = 1; lives = 3; score = 0
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
     }
-
-    // UI Render
+    
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Pac-Man | Lvl $level | Score $score", color = Color.White, fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(Color.Black)
+                title = { Text("🎮 PAC-MAN | L:$level | S:$score | ❤️×$lives") },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1a1a2e))
             )
         }
-    ) { pad ->
+    ) { padding ->
         Box(
-            Modifier.fillMaxSize().background(Color.Black).padding(pad)
+            Modifier
+                .fillMaxSize()
+                .background(Color(0xFF0f0f23))
+                .padding(padding)
                 .pointerInput(Unit) {
-                    detectHorizontalDragGestures { _, drag ->
-                        if (abs(drag) > 20) pac = pac.copy(dir = if (drag > 0) Dir.RIGHT else Dir.LEFT)
-                    }
-                }
-                .pointerInput(Unit) {
-                    detectVerticalDragGestures { _, drag ->
-                        if (abs(drag) > 20) pac = pac.copy(dir = if (drag > 0) Dir.DOWN else Dir.UP)
+                    detectDragGestures { _, dragAmount ->
+                        when {
+                            abs(dragAmount.x) > abs(dragAmount.y) && abs(dragAmount.x) > 30 -> {
+                                pacman = pacman.copy(dir = if (dragAmount.x > 0) Dir.RIGHT else Dir.LEFT)
+                            }
+                            abs(dragAmount.y) > 30 -> {
+                                pacman = pacman.copy(dir = if (dragAmount.y > 0) Dir.DOWN else Dir.UP)
+                            }
+                        }
                     }
                 }
         ) {
             Canvas(Modifier.fillMaxSize()) {
-                val ox = (size.width - mazeWidth * cellSize) / 2
-                val oy = (size.height - mazeHeight * cellSize) / 2
+                val offsetX = (size.width - mazeWidth * cellSize) / 2
+                val offsetY = (size.height - mazeHeight * cellSize) / 2 + 60
                 
-                // Рисуем карту
+                // Лабиринт
                 maze.forEachIndexed { y, row ->
-                    row.forEachIndexed { x, c ->
-                        val pos = Offset(ox + x * cellSize, oy + y * cellSize)
-                        when (c) {
-                            1 -> drawRect(wallColor, topLeft = pos, size = Size(cellSize, cellSize), style = Stroke(width = 3f))
-                            2 -> drawCircle(Color.White, 3f, pos + Offset(cellSize/2, cellSize/2))
-                            3 -> drawCircle(Color.Cyan, 6f, pos + Offset(cellSize/2, cellSize/2))
+                    row.forEachIndexed { x, cell ->
+                        val posX = offsetX + x * cellSize
+                        val posY = offsetY + y * cellSize
+                        
+                        when (cell) {
+                            1 -> { // Стены
+                                drawRect(
+                                    Color(0xFF00FFFF), 
+                                    topLeft = Offset(posX, posY),
+                                    size = Size(cellSize, cellSize),
+                                    style = Stroke(width = 3f)
+                                )
+                            }
+                            2 -> { // Точки
+                                drawCircle(
+                                    Color.White,
+                                    2f,
+                                    center = Offset(posX + cellSize/2, posY + cellSize/2)
+                                )
+                            }
+                            3 -> { // Power pellets
+                                drawCircle(
+                                    Color.Cyan,
+                                    5f,
+                                    center = Offset(posX + cellSize/2, posY + cellSize/2)
+                                )
+                            }
                         }
                     }
                 }
                 
-                // Рисуем Пакмана
-                val pacPos = Offset(ox + pac.x * cellSize + cellSize/2, oy + pac.y * cellSize + cellSize/2)
-                drawCircle(pacColor, cellSize/2 - 2, pacPos)
+                // Пакман (анимация рта)
+                val pacCenter = Offset(
+                    offsetX + pacman.x * cellSize + cellSize/2,
+                    offsetY + pacman.y * cellSize + cellSize/2
+                )
+                val mouthAngle = (sin(currentTime / 100f) * 0.3f + 0.7f).coerceIn(0.3f, 1f)
                 
-                // Рисуем призраков
-                ghosts.forEach { g ->
-                    val ghostPos = Offset(ox + g.x * cellSize + cellSize/2, oy + g.y * cellSize + cellSize/2)
-                    drawCircle(if(powerMode) Color.Blue else Color.Red, cellSize/2 - 2, ghostPos)
+                drawArc(
+                    Color.Yellow,
+                    0f,
+                    pacCenter,
+                    cellSize * 0.45f,
+                    (1f - mouthAngle) * PI,
+                    mouthAngle * PI * 2,
+                    useCenter = true
+                )
+                
+                // Призраки
+                ghosts.forEach { ghost ->
+                    val ghostCenter = Offset(
+                        offsetX + ghost.x * cellSize + cellSize/2,
+                        offsetY + ghost.y * cellSize + cellSize/2
+                    )
+                    
+                    // Тело призрака
+                    drawRect(
+                        if (powerMode) Color(0xFF4488FF) else Color(0xFFFF0040),
+                        topLeft = ghostCenter + Offset(-cellSize/2 * 0.9f, -cellSize/2 * 0.9f),
+                        size = Size(cellSize * 1.8f, cellSize * 1.8f),
+                        style = Stroke(width = cellSize * 0.9f)
+                    )
+                    
+                    // Волнистое дно
+                    val path = Path().apply {
+                        moveTo(ghostCenter.x - cellSize/2 * 0.9f, ghostCenter.y + cellSize/2 * 0.4f)
+                        for (i in 0..4) {
+                            val wave = if (i % 2 == 0) 3f else -3f
+                            quadraticBezierTo(
+                                ghostCenter.x - cellSize/2 * 0.9f + (i + 1) * cellSize * 0.18f,
+                                ghostCenter.y + cellSize/2 * 0.4f + wave,
+                                ghostCenter.x - cellSize/2 * 0.9f + (i + 2) * cellSize * 0.18f,
+                                ghostCenter.y + cellSize/2 * 0.4f
+                            )
+                        }
+                        close()
+                    }
+                    drawPath(path, if (powerMode) Color(0xFF4488FF) else Color(0xFFFF0040))
                 }
             }
         }
     }
 }
 
+private fun hypot(x: Float, y: Float) = sqrt(x*x + y*y)
