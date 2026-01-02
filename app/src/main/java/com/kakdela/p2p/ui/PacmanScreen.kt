@@ -507,4 +507,13 @@ private fun DrawScope.drawGhost(g: Ghost, index: Int, cell: Float, offset: Offse
 
     // Глаза
     val eyeOffsetX = cell * 0.15f
-    val eyeOffsetY = cel
+    val eyeOffsetY = cell * 0.1f
+    drawCircle(Color.White, cell * 0.14f, center + Offset(-eyeOffsetX, -eyeOffsetY))
+    drawCircle(Color.White, cell * 0.14f, center + Offset(eyeOffsetX, -eyeOffsetY))
+
+    // Зрачки
+    val pupilOffset = cell * 0.06f
+    val pupilX = g.dir.dx() * cell * 0.08f
+    drawCircle(Color.Black, pupilOffset, center + Offset(-eyeOffsetX + pupilX, -eyeOffsetY))
+    drawCircle(Color.Black, pupilOffset, center + Offset(eyeOffsetX + pupilX, -eyeOffsetY))
+}
