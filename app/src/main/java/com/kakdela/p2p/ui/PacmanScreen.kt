@@ -5,9 +5,14 @@ import android.media.SoundPool
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,15 +21,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke  // <-- Добавлен импорт!
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlin.math.*
-import kotlin.random.Random
 
 // ===================== ENUMS =====================
 enum class Direction { UP, DOWN, LEFT, RIGHT, NONE }
@@ -32,45 +35,36 @@ enum class PacmanGameState { READY, PLAYING, DYING, GAME_OVER }
 enum class GhostMode { SCATTER, CHASE, FRIGHTENED }
 
 // ===================== DATA =====================
-data class Pacman(
-    var x: Float = 14f,
-    var y: Float = 23f,
-    var dir: Direction = Direction.LEFT,
-    var nextDir: Direction = Direction.LEFT
-)
+data class Position(var x: Int, var y: Int)
+data class Pacman(var pos: Position = Position(13, 23), var dir: Direction = Direction.LEFT, var nextDir: Direction = Direction.LEFT, var pixelX: Float = 13f, var pixelY: Float = 23f)
+data class Ghost(var pos: Position, var dir: Direction, val type: Int, var pixelX: Float, var pixelY: Float)
 
-data class Ghost(
-    var x: Float,
-    var y: Float,
-    var dir: Direction,
-    val type: Int // 0=Blinky, 1=Pinky, 2=Inky, 3=Clyde
-)
-
-// ===================== ORIGINAL MAP =====================
-private val ORIGINAL_MAP = arrayOf(
+// ===================== ПРАВИЛЬНАЯ КАРТА PACMAN =====================
+private val PACMAN_MAP = arrayOf(
     intArrayOf(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1),
     intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1),
-    intArrayOf(1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1),
-    intArrayOf(1,3,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,3,1),
+    intArrayOf(1,2,1,1,1,1,1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1),
+    intArrayOf(1,3,1,1,1,1,1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,3,1),
     intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1),
-    intArrayOf(1,2,1,1,1,1,2,1,2,1,1,1,1,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1),
-    intArrayOf(1,2,2,2,2,2,2,1,2,1,1,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,1),
-    intArrayOf(1,1,1,1,1,1,2,1,2,1,1,0,0,0,0,0,0,1,1,2,1,1,1,1,1,1,1,1),
-    intArrayOf(0,0,0,0,0,1,2,1,0,0,0,0,0,0,0,0,0,0,0,0,1,2,1,0,0,0,0,0),
-    intArrayOf(0,0,0,0,0,1,2,1,0,1,1,1,1,1,1,1,1,1,1,0,1,2,1,0,0,0,0,0),
-    intArrayOf(0,0,0,0,0,1,2,1,0,1,0,0,0,0,0,0,0,0,0,1,0,1,2,1,0,0,0,0),
-    intArrayOf(1,1,1,1,1,1,2,1,0,1,0,0,0,0,0,0,0,0,0,1,0,1,2,1,1,1,1,1),
-    intArrayOf(0,0,0,0,0,0,2,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,2,0,0,0,0,0),
-    intArrayOf(1,1,1,1,1,1,2,1,0,1,0,0,0,0,0,0,0,0,0,1,0,1,2,1,1,1,1,1),
-    intArrayOf(0,0,0,0,0,1,2,1,0,1,1,1,1,1,1,1,1,1,1,0,1,2,1,0,0,0,0,0),
-    intArrayOf(0,0,0,0,0,1,2,1,0,0,0,0,0,0,0,0,0,0,0,0,1,2,1,0,0,0,0,0),
-    intArrayOf(1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1),
-    intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1),
-    intArrayOf(1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1),
-    intArrayOf(1,2,2,2,2,2,2,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,2,2,2,2,1),
-    intArrayOf(1,1,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,1,1),
+    intArrayOf(1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1),
+    intArrayOf(1,2,2,2,2,1,1,2,2,2,1,1,2,0,0,2,1,1,2,2,2,1,1,2,2,2,2,1),
+    intArrayOf(1,1,1,1,2,1,1,2,0,0,0,0,2,0,0,2,0,0,0,0,2,1,1,2,1,1,1,1),
+    intArrayOf(2,2,2,2,2,1,1,2,0,0,0,0,2,0,0,2,0,0,0,0,2,1,1,2,2,2,2,2),
+    intArrayOf(1,1,1,1,2,1,1,2,0,1,1,1,4,4,4,4,1,1,1,0,2,1,1,2,1,1,1,1),
+    intArrayOf(2,2,2,2,2,2,2,2,0,1,0,0,0,0,0,0,0,0,1,0,2,2,2,2,2,2,2,2),
+    intArrayOf(1,1,1,1,2,1,1,2,0,1,1,0,0,0,0,0,0,0,1,0,2,1,1,2,1,1,1,1),
+    intArrayOf(1,1,1,1,2,1,1,2,0,0,0,0,0,4,4,0,0,0,0,0,2,1,1,2,1,1,1,1),
+    intArrayOf(1,1,1,1,2,1,1,2,0,1,1,0,0,0,0,0,0,0,1,0,2,1,1,2,1,1,1,1),
+    intArrayOf(2,2,2,2,2,2,2,2,0,1,0,0,0,0,0,0,0,0,1,0,2,2,2,2,2,2,2,2),
+    intArrayOf(1,1,1,1,2,1,1,2,0,1,1,1,4,4,4,4,1,1,1,0,2,1,1,2,1,1,1,1),
+    intArrayOf(2,2,2,2,2,1,1,2,0,0,0,0,2,0,0,2,0,0,0,0,2,1,1,2,2,2,2,2),
+    intArrayOf(1,1,1,1,1,1,1,2,1,1,1,1,2,0,0,2,1,1,1,1,1,2,1,1,1,1,1,1),
     intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1),
-    intArrayOf(1,2,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,2,1),
+    intArrayOf(1,2,1,1,1,1,2,1,1,4,4,1,2,1,1,2,1,4,4,1,1,2,1,1,1,1,2,1),
+    intArrayOf(1,2,2,2,1,1,2,2,2,1,1,1,2,1,1,2,1,1,1,2,2,2,1,1,2,2,2,1),
+    intArrayOf(1,1,1,2,1,1,2,1,2,1,1,1,2,1,1,2,1,1,1,2,1,1,2,1,1,1,1,1),
+    intArrayOf(1,2,2,2,2,2,2,1,2,2,2,2,2,0,0,2,2,2,2,2,1,2,2,2,2,2,2,1),
+    intArrayOf(1,2,1,1,1,1,1,1,1,1,1,1,0,0,0,0,1,1,1,1,1,1,1,1,1,1,2,1),
     intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1),
     intArrayOf(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1)
 )
@@ -92,32 +86,29 @@ fun PacmanScreen() {
             )
             .build()
     }
-
-    // Звук отключён (можно добавить свой raw-ресурс)
-    val chompSound = remember { 0 }
+    val chompSound = remember { 0 } // Добавь свой звук в res/raw
 
     var gameState by remember { mutableStateOf(PacmanGameState.READY) }
     var level by remember { mutableIntStateOf(1) }
     var score by remember { mutableIntStateOf(0) }
     var lives by remember { mutableIntStateOf(3) }
     var dotsEaten by remember(level) { mutableIntStateOf(0) }
-    var turbo by remember { mutableStateOf(false) }
 
     var pacman by remember { mutableStateOf(Pacman()) }
     val ghosts = remember {
         mutableStateListOf(
-            Ghost(14f, 11f, Direction.LEFT, 0),
-            Ghost(14f, 14f, Direction.UP, 1),
-            Ghost(12f, 14f, Direction.UP, 2),
-            Ghost(16f, 14f, Direction.UP, 3)
+            Ghost(Position(14, 11), Direction.LEFT, 0, 14f, 11f),  // Blinky
+            Ghost(Position(14, 14), Direction.UP, 1, 14f, 14f),    // Pinky
+            Ghost(Position(12, 14), Direction.UP, 2, 12f, 14f),    // Inky
+            Ghost(Position(16, 14), Direction.UP, 3, 16f, 14f)     // Clyde
         )
     }
 
     var frightenedTimer by remember { mutableIntStateOf(0) }
     var globalModeTimer by remember { mutableIntStateOf(0) }
 
-    val maze = remember(level) { ORIGINAL_MAP.map { it.copyOf() }.toTypedArray() }
-    val totalDots = remember { ORIGINAL_MAP.sumOf { row -> row.count { it == 2 || it == 3 } } }
+    val maze = remember(level) { PACMAN_MAP.map { it.copyOf() }.toTypedArray() }
+    val totalDots = remember { PACMAN_MAP.sumOf { row -> row.count { it == 2 || it == 3 } } }
 
     val mouthAnim by animateFloatAsState(
         targetValue = if (gameState == PacmanGameState.PLAYING) 1f else 0f,
@@ -131,6 +122,7 @@ fun PacmanScreen() {
         }
     }
 
+    // 🎮 ОСНОВНОЙ ИГРОВОЙ ЦИКЛ
     LaunchedEffect(gameState, level) {
         while (gameState == PacmanGameState.PLAYING) {
             globalModeTimer++
@@ -143,11 +135,12 @@ fun PacmanScreen() {
                 else -> { globalModeTimer = 0; GhostMode.SCATTER }
             }
 
-            if (canMove(pacman, pacman.nextDir, maze)) pacman.dir = pacman.nextDir
-            movePacman(pacman, maze, level, turbo)
-
-            val px = pacman.x.roundToInt().coerceIn(0, 27)
-            val py = pacman.y.roundToInt().coerceIn(0, 30)
+            // Pacman движение по сетке
+            updatePacman(pacman, maze)
+            
+            // Поедание точек
+            val px = pacman.pos.x
+            val py = pacman.pos.y
             when (maze[py][px]) {
                 2 -> {
                     maze[py][px] = 0
@@ -163,48 +156,28 @@ fun PacmanScreen() {
                 }
             }
 
+            // Призраки
             val blinky = ghosts[0]
-            ghosts.forEach { ghost ->
-                val target = getTargetTile(ghost, pacman, blinky, currentMode, frightenedTimer > 0)
-                val possibleDirs = Direction.entries.filter {
-                    it != ghost.dir.opposite() && canMoveGhost(ghost, it, maze)
-                }
-
-                val bestDir = if (frightenedTimer > 0) {
-                    possibleDirs.randomOrNull() ?: ghost.dir
-                } else {
-                    possibleDirs.minByOrNull { dir ->
-                        val nx = ghost.x + dir.dx()
-                        val ny = ghost.y + dir.dy()
-                        hypot(nx - target.x, ny - target.y)
-                    } ?: ghost.dir
-                }
-
-                ghost.dir = bestDir
-                val speed = ghostSpeed(frightenedTimer > 0, level)
-                ghost.x += bestDir.dx() * speed
-                ghost.y += bestDir.dy() * speed
-
-                if (ghost.x < 0) ghost.x = 27.9f
-                if (ghost.x > 28) ghost.x = 0.1f
+            ghosts.forEachIndexed { i, ghost ->
+                updateGhost(ghost, pacman, blinky, maze, currentMode, frightenedTimer > 0)
             }
 
+            // Столкновения
             ghosts.forEach { ghost ->
-                if (hypot(ghost.x - pacman.x, ghost.y - pacman.y) < 0.8f) {
+                if (abs(ghost.pixelX - pacman.pixelX) < 0.4f && abs(ghost.pixelY - pacman.pixelY) < 0.4f) {
                     if (frightenedTimer > 0) {
                         score += 200
-                        ghost.x = 14f
-                        ghost.y = 14f
+                        ghost.pos = Position(14, 14)
+                        ghost.pixelX = 14f
+                        ghost.pixelY = 14f
                         frightenedTimer -= 60
                     } else {
                         lives--
                         if (lives <= 0) {
                             gameState = PacmanGameState.GAME_OVER
                         } else {
-                            gameState = PacmanGameState.DYING
-                            delay(2000)
-                            resetPositions(pacman, ghosts)
-                            gameState = PacmanGameState.PLAYING
+                            delay(1500)
+                            resetLevel(pacman, ghosts, maze)
                         }
                     }
                 }
@@ -215,10 +188,10 @@ fun PacmanScreen() {
             if (dotsEaten >= totalDots) {
                 level++
                 dotsEaten = 0
-                resetPositions(pacman, ghosts)
+                resetLevel(pacman, ghosts, maze)
             }
 
-            delay(16)
+            delay(120) // Игровой тик ~8 FPS (как оригинал)
         }
     }
 
@@ -227,7 +200,7 @@ fun PacmanScreen() {
             TopAppBar(
                 title = { Text("PAC-MAN", color = Color.Yellow, fontSize = 24.sp) },
                 actions = {
-                    Text("Score: $score  Lives: $lives  Level: $level", color = Color.White, fontSize = 16.sp)
+                    Text("Score: $score  ❤️x$lives  Lvl: $level", color = Color.White, fontSize = 16.sp)
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF000020))
             )
@@ -251,192 +224,287 @@ fun PacmanScreen() {
                 }
             }
 
-            AnalogJoystick(
-                modifier = Modifier.align(Alignment.BottomStart).padding(32.dp)
-            ) { dir, isTurbo ->
-                pacman.nextDir = dir
-                turbo = isTurbo
+            // 🎮 УПРАВЛЕНИЕ СТРЕЛКАМИ
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(32.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Лево
+                IconButton(
+                    onClick = { pacman.nextDir = Direction.LEFT },
+                    modifier = Modifier.size(60.dp)
+                ) {
+                    Icon(Icons.Default.KeyboardArrowLeft, "Left", tint = Color.Yellow, modifier = Modifier.size(40.dp))
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    // Вверх
+                    IconButton(
+                        onClick = { pacman.nextDir = Direction.UP },
+                        modifier = Modifier.size(60.dp)
+                    ) {
+                        Icon(Icons.Default.KeyboardArrowUp, "Up", tint = Color.Yellow, modifier = Modifier.size(40.dp))
+                    }
+                    // Вниз
+                    IconButton(
+                        onClick = { pacman.nextDir = Direction.DOWN },
+                        modifier = Modifier.size(60.dp)
+                    ) {
+                        Icon(Icons.Default.KeyboardArrowDown, "Down", tint = Color.Yellow, modifier = Modifier.size(40.dp))
+                    }
+                }
+
+                // Право
+                IconButton(
+                    onClick = { pacman.nextDir = Direction.RIGHT },
+                    modifier = Modifier.size(60.dp)
+                ) {
+                    Icon(Icons.Default.KeyboardArrowRight, "Right", tint = Color.Yellow, modifier = Modifier.size(40.dp))
+                }
             }
 
             if (gameState == PacmanGameState.READY) {
-                Text("READY!", color = Color.Yellow, fontSize = 48.sp, modifier = Modifier.align(Alignment.Center))
+                Text("READY!", color = Color.Yellow, fontSize = 64.sp, modifier = Modifier.align(Alignment.Center))
             }
             if (gameState == PacmanGameState.GAME_OVER) {
-                Text("GAME OVER", color = Color.Red, fontSize = 64.sp, modifier = Modifier.align(Alignment.Center))
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("GAME OVER", color = Color.Red, fontSize = 64.sp)
+                    Spacer(modifier = Modifier.height(32.dp))
+                    Button(onClick = {
+                        gameState = PacmanGameState.READY
+                        score = 0
+                        lives = 3
+                        level = 1
+                    }) {
+                        Text("PLAY AGAIN")
+                    }
+                }
             }
         }
     }
 }
 
-// ===================== DRAW =====================
-private fun drawMaze(scope: DrawScope, maze: Array<IntArray>, cell: Float, offset: Offset) = with(scope) {
+// ===================== ЛОГИКА ДВИЖЕНИЯ ПО СЕТКЕ =====================
+private fun updatePacman(pacman: Pacman, maze: Array<IntArray>) {
+    // Проверяем возможность поворота
+    val nextPos = pacman.pos.copy().apply {
+        when (pacman.nextDir) {
+            Direction.UP -> y--
+            Direction.DOWN -> y++
+            Direction.LEFT -> x--
+            Direction.RIGHT -> x++
+            else -> {}
+        }
+    }
+    if (isValidMove(nextPos, maze)) {
+        pacman.dir = pacman.nextDir
+    }
+
+    // Движение в текущем направлении
+    val currentPos = pacman.pos.copy().apply {
+        when (pacman.dir) {
+            Direction.UP -> y--
+            Direction.DOWN -> y++
+            Direction.LEFT -> x--
+            Direction.RIGHT -> x++
+            else -> {}
+        }
+    }
+    
+    if (isValidMove(currentPos, maze)) {
+        pacman.pos = currentPos
+    }
+
+    // Телепорт по туннелю
+    if (pacman.pos.x < 0) pacman.pos.x = 27
+    if (pacman.pos.x > 27) pacman.pos.x = 0
+
+    // Плавная анимация пикселей
+    pacman.pixelX += (pacman.pos.x - pacman.pixelX) * 0.3f
+    pacman.pixelY += (pacman.pos.y - pacman.pixelY) * 0.3f
+}
+
+private fun updateGhost(ghost: Ghost, pacman: Pacman, blinky: Ghost, maze: Array<IntArray>, mode: GhostMode, frightened: Boolean) {
+    // Выбор направления
+    val target = if (frightened) {
+        Position(Random.nextInt(1, 27), Random.nextInt(1, 30))
+    } else if (mode == GhostMode.SCATTER) {
+        when (ghost.type) {
+            0 -> Position(25, 0)   // Blinky
+            1 -> Position(2, 0)    // Pinky
+            2 -> Position(27, 30)  // Inky
+            else -> Position(0, 30) // Clyde
+        }
+    } else {
+        // Chase mode
+        when (ghost.type) {
+            0 -> pacman.pos                    // Blinky
+            1 -> Position(  // Pinky
+                (pacman.pos.x + pacman.dir.dx() * 4).coerceIn(0, 27),
+                (pacman.pos.y + pacman.dir.dy() * 4).coerceIn(0, 30)
+            )
+            2 -> {  // Inky
+                val ahead = Position(
+                    (pacman.pos.x + pacman.dir.dx() * 2).coerceIn(0, 27),
+                    (pacman.pos.y + pacman.dir.dy() * 2).coerceIn(0, 30)
+                )
+                Position(
+                    (ahead.x * 2 - blinky.pos.x).coerceIn(0, 27),
+                    (ahead.y * 2 - blinky.pos.y).coerceIn(0, 30)
+                )
+            }
+            else -> {  // Clyde
+                if (manhattanDistance(ghost.pos, pacman.pos) > 8) pacman.pos
+                else Position(0, 30)
+            }
+        }
+    }
+
+    val possibleDirs = Direction.entries.filter { dir ->
+        dir != ghost.dir.opposite() && isValidMove(
+            Position((ghost.pos.x + dir.dx()).coerceIn(0, 27), (ghost.pos.y + dir.dy()).coerceIn(0, 30)),
+            maze
+        )
+    }
+
+    val bestDir = if (frightened) {
+        possibleDirs.randomOrNull() ?: ghost.dir
+    } else {
+        possibleDirs.minByOrNull { dir ->
+            manhattanDistance(
+                Position((ghost.pos.x + dir.dx()).coerceIn(0, 27), (ghost.pos.y + dir.dy()).coerceIn(0, 30)),
+                target
+            )
+        } ?: ghost.dir
+    }
+
+    // Движение призрака
+    val newPos = Position(
+        (ghost.pos.x + bestDir.dx()).coerceIn(0, 27),
+        (ghost.pos.y + bestDir.dy()).coerceIn(0, 30)
+    )
+    
+    if (isValidMove(newPos, maze)) {
+        ghost.dir = bestDir
+        ghost.pos = newPos
+    }
+
+    // Телепорт
+    if (ghost.pos.x < 0) ghost.pos.x = 27
+    if (ghost.pos.x > 27) ghost.pos.x = 0
+
+    // Плавная анимация
+    ghost.pixelX += (ghost.pos.x - ghost.pixelX) * 0.3f
+    ghost.pixelY += (ghost.pos.y - ghost.pixelY) * 0.3f
+}
+
+private fun isValidMove(pos: Position, maze: Array<IntArray>): Boolean {
+    return pos.x in 0..27 && pos.y in 0..30 && maze[pos.y][pos.x] != 1
+}
+
+private fun manhattanDistance(p1: Position, p2: Position): Int = abs(p1.x - p2.x) + abs(p1.y - p2.y)
+
+private fun Direction.dx() = when (this) { Direction.LEFT -> -1; Direction.RIGHT -> 1; else -> 0 }
+private fun Direction.dy() = when (this) { Direction.UP -> -1; Direction.DOWN -> 1; else -> 0 }
+private fun Direction.opposite() = when (this) {
+    Direction.UP -> Direction.DOWN; Direction.DOWN -> Direction.UP
+    Direction.LEFT -> Direction.RIGHT; Direction.RIGHT -> Direction.LEFT
+    else -> Direction.NONE
+}
+
+private fun resetLevel(pacman: Pacman, ghosts: List<Ghost>, maze: Array<IntArray>) {
+    pacman.pos = Position(13, 23)
+    pacman.pixelX = 13f
+    pacman.pixelY = 23f
+    pacman.dir = Direction.LEFT
+    pacman.nextDir = Direction.LEFT
+
+    ghosts[0].apply { pos = Position(14, 11); pixelX = 14f; pixelY = 11f }
+    ghosts[1].apply { pos = Position(14, 14); pixelX = 14f; pixelY = 14f }
+    ghosts[2].apply { pos = Position(12, 14); pixelX = 12f; pixelY = 14f }
+    ghosts[3].apply { pos = Position(16, 14); pixelX = 16f; pixelY = 14f }
+}
+
+// ===================== ОТРИСОВКА =====================
+private fun DrawScope.drawMaze(maze: Array<IntArray>, cell: Float, offset: Offset) {
     maze.forEachIndexed { y, row ->
         row.forEachIndexed { x, v ->
             val pos = offset + Offset(x * cell, y * cell)
             when (v) {
-                1 -> drawRect(Color(0xFF00FFFF), pos, Size(cell, cell), style = Stroke(4f))
-                2 -> drawCircle(Color.White, cell * 0.12f, pos + Offset(cell / 2, cell / 2))
-                3 -> drawCircle(Color.White, cell * 0.35f, pos + Offset(cell / 2, cell / 2))
+                1 -> {
+                    // Стены с градиентом
+                    drawRect(Color(0xFF4488FF), pos, Size(cell, cell))
+                    drawRect(Color(0xFF0000AA), pos + Offset(2f, 2f), Size(cell - 4f, cell - 4f))
+                }
+                2 -> drawCircle(Color.White, cell * 0.08f, pos + Offset(cell / 2, cell / 2))
+                3 -> drawCircle(Color.Cyan, cell * 0.25f, pos + Offset(cell / 2, cell / 2))
             }
         }
     }
 }
 
-private fun drawPacman(scope: DrawScope, p: Pacman, cell: Float, offset: Offset, mouth: Float) = with(scope) {
-    val center = offset + Offset(p.x * cell + cell / 2, p.y * cell + cell / 2)
-    val mouthAngle = 0.2f + mouth * 0.7f
+private fun DrawScope.drawPacman(p: Pacman, cell: Float, offset: Offset, mouth: Float) {
+    val center = offset + Offset(p.pixelX * cell + cell / 2, p.pixelY * cell + cell / 2)
+    val mouthAngle = 0.15f + mouth * 0.65f
+    
     val startAngle = when (p.dir) {
         Direction.RIGHT -> 0f
         Direction.DOWN -> 90f
         Direction.LEFT -> 180f
         Direction.UP -> 270f
         else -> 0f
-    } - mouthAngle * 45f
+    }
+    
     drawArc(
         color = Color.Yellow,
-        startAngle = startAngle,
-        sweepAngle = 360f - mouthAngle * 90f,
+        startAngle = startAngle - mouthAngle * 90f,
+        sweepAngle = 360f - mouthAngle * 180f,
         useCenter = true,
         topLeft = center - Offset(cell * 0.45f, cell * 0.45f),
         size = Size(cell * 0.9f, cell * 0.9f)
     )
 }
 
-private fun drawGhost(scope: DrawScope, g: Ghost, index: Int, cell: Float, offset: Offset, frightened: Boolean, flashing: Boolean) = with(scope) {
-    val center = offset + Offset(g.x * cell + cell / 2, g.y * cell + cell / 2)
+private fun DrawScope.drawGhost(g: Ghost, index: Int, cell: Float, offset: Offset, frightened: Boolean, flashing: Boolean) {
+    val center = offset + Offset(g.pixelX * cell + cell / 2, g.pixelY * cell + cell / 2)
     val color = if (frightened) {
-        if (flashing) Color.White else Color(0xFF0000AA)
+        if (flashing) Color.White else Color(0xFF4488FF)
     } else {
         listOf(Color.Red, Color(0xFFFFB8FF), Color.Cyan, Color(0xFFFF9800))[index]
     }
 
-    drawCircle(color, cell * 0.45f, center)
+    // Тело призрака
+    drawRect(
+        color = color,
+        topLeft = center + Offset(-cell * 0.45f, -cell * 0.45f),
+        size = Size(cell * 0.9f, cell * 0.7f)
+    )
 
-    val eyeOffset = cell * 0.15f
-    drawCircle(Color.White, cell * 0.15f, center + Offset(-eyeOffset, -cell * 0.1f))
-    drawCircle(Color.White, cell * 0.15f, center + Offset(eyeOffset, -cell * 0.1f))
-
-    val pupil = cell * 0.07f
-    val pupilX = g.dir.dx() * cell * 0.1f
-    val pupilY = g.dir.dy() * cell * 0.05f
-    drawCircle(Color.Black, pupil, center + Offset(-eyeOffset + pupilX, -cell * 0.1f + pupilY))
-    drawCircle(Color.Black, pupil, center + Offset(eyeOffset + pupilX, -cell * 0.1f + pupilY))
-}
-
-// ===================== Остальные функции =====================
-private fun movePacman(p: Pacman, maze: Array<IntArray>, level: Int, turbo: Boolean) {
-    val baseSpeed = 0.18f + level * 0.02f
-    val speed = if (turbo) baseSpeed * 1.8f else baseSpeed
-    p.x += p.dir.dx() * speed
-    p.y += p.dir.dy() * speed
-
-    if (p.x < 0) p.x = 27.9f
-    if (p.x > 28) p.x = 0.1f
-}
-
-private fun canMove(p: Pacman, dir: Direction, maze: Array<IntArray>): Boolean {
-    if (dir == Direction.NONE) return true
-    val nx = (p.x + dir.dx()).coerceIn(0f, 27.9f)
-    val ny = (p.y + dir.dy()).coerceIn(0f, 30f)
-    val ix = nx.roundToInt()
-    val iy = ny.roundToInt()
-    return maze[iy][ix] != 1
-}
-
-private fun canMoveGhost(g: Ghost, dir: Direction, maze: Array<IntArray>): Boolean {
-    val nx = g.x + dir.dx()
-    val ny = g.y + dir.dy()
-    val ix = nx.roundToInt().coerceIn(0, 27)
-    val iy = ny.roundToInt().coerceIn(0, 30)
-    return maze[iy][ix] != 1
-}
-
-private fun getTargetTile(g: Ghost, p: Pacman, blinky: Ghost, mode: GhostMode, frightened: Boolean): Offset {
-    if (frightened) return Offset(Random.nextFloat() * 28f, Random.nextFloat() * 31f)
-    if (mode == GhostMode.SCATTER) return when (g.type) {
-        0 -> Offset(25f, 0f)
-        1 -> Offset(2f, 0f)
-        2 -> Offset(27f, 30f)
-        else -> Offset(0f, 30f)
-    }
-    return when (g.type) {
-        0 -> Offset(p.x, p.y)
-        1 -> Offset(p.x + p.dir.dx() * 4, p.y + p.dir.dy() * 4)
-        2 -> {
-            val front = Offset(p.x + p.dir.dx() * 2, p.y + p.dir.dy() * 2)
-            Offset(2 * front.x - blinky.x, 2 * front.y - blinky.y)
+    // Волнистое дно
+    val path = Path().apply {
+        val bottomY = center.y + cell * 0.25f
+        moveTo(center.x - cell * 0.45f, bottomY)
+        repeat(5) { i ->
+            val wave = if (i % 2 == 0) cell * 0.08f else -cell * 0.08f
+            quadraticBezierTo(
+                center.x - cell * 0.45f + (i + 1) * cell * 0.18f,
+                bottomY + wave,
+                center.x - cell * 0.45f + (i + 2) * cell * 0.18f,
+                bottomY
+            )
         }
-        else -> if (hypot(g.x - p.x, g.y - p.y) > 8) Offset(p.x, p.y) else Offset(0f, 30f)
+        lineTo(center.x + cell * 0.45f, bottomY)
+        lineTo(center.x + cell * 0.45f, center.y - cell * 0.45f)
+        close()
     }
-}
+    drawPath(path, color)
 
-private fun ghostSpeed(frightened: Boolean, level: Int): Float =
-    if (frightened) 0.08f else 0.15f + level * 0.01f
-
-private fun Direction.dx(): Float = when (this) { Direction.RIGHT -> 1f; Direction.LEFT -> -1f; else -> 0f }
-private fun Direction.dy(): Float = when (this) { Direction.DOWN -> 1f; Direction.UP -> -1f; else -> 0f }
-private fun Direction.opposite(): Direction = when (this) {
-    Direction.UP -> Direction.DOWN
-    Direction.DOWN -> Direction.UP
-    Direction.LEFT -> Direction.RIGHT
-    Direction.RIGHT -> Direction.LEFT
-    else -> Direction.NONE
-}
-
-private fun resetPositions(p: Pacman, ghosts: List<Ghost>) {
-    p.x = 14f; p.y = 23f; p.dir = Direction.LEFT; p.nextDir = Direction.LEFT
-    ghosts[0].apply { x = 14f; y = 11f }
-    ghosts[1].apply { x = 14f; y = 14f }
-    ghosts[2].apply { x = 12f; y = 14f }
-    ghosts[3].apply { x = 16f; y = 14f }
-}
-
-// ===================== JOYSTICK =====================
-@Composable
-fun AnalogJoystick(
-    modifier: Modifier = Modifier,
-    onDirection: (Direction, Boolean) -> Unit
-) {
-    var dragOffset by remember { mutableStateOf(Offset.Zero) }
-
-    Box(
-        modifier = modifier
-            .size(160.dp)
-            .background(Color(0x60000000), CircleShape)
-            .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragEnd = {
-                        dragOffset = Offset.Zero
-                        onDirection(Direction.NONE, false)
-                    },
-                    onDrag = { _, dragAmount ->
-                        dragOffset += dragAmount
-                        val distance = dragOffset.getDistance()
-                        val angle = atan2(dragOffset.y, dragOffset.x) * 180f / PI.toFloat()
-
-                        val dir = when {
-                            distance < 30 -> Direction.NONE
-                            angle in -45f..45f -> Direction.RIGHT
-                            angle in 45f..135f -> Direction.DOWN
-                            angle in -135f..-45f -> Direction.UP
-                            else -> Direction.LEFT
-                        }
-                        onDirection(dir, distance > 80)
-                    }
-                )
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        Box(
-            modifier = Modifier
-                .offset {
-                    IntOffset(
-                        dragOffset.x.coerceIn(-50f, 50f).toInt(),
-                        dragOffset.y.coerceIn(-50f, 50f).toInt()
-                    )
-                }
-                .size(80.dp)
-                .background(Color.White.copy(alpha = 0.4f), CircleShape)
-        )
-    }
-}
+    // Глаза
+    val eyeOffsetX = cell * 0.15f
+    val eyeOffsetY = cel
