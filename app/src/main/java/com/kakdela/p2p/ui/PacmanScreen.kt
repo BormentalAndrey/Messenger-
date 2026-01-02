@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
@@ -22,10 +23,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlin.math.*
+import kotlin.random.Random  // <-- Добавлен импорт!
 
 // ===================== ENUMS =====================
 enum class Direction { UP, DOWN, LEFT, RIGHT, NONE }
-enum class GameState { READY, PLAYING, DYING, GAME_OVER }
+enum class PacmanGameState { READY, PLAYING, DYING, GAME_OVER }  // <-- Переименован, чтобы не конфликтовать
 enum class GhostMode { SCATTER, CHASE, FRIGHTENED }
 
 // ===================== DATA =====================
@@ -89,9 +91,14 @@ fun PacmanScreen() {
             )
             .build()
     }
-    val chompSound = remember { soundPool.load(context, android.R.raw.notification, 1) } // Можно заменить на свой звук
+    // Заглушка: используем встроенный звук или 0, если не важен
+    val chompSound = remember {
+        // android.R.raw.notification может не существовать в твоём проекте
+        // Замени на свой raw-ресурс или оставь 0 для тишины
+        0
+    }
 
-    var gameState by remember { mutableStateOf(GameState.READY) }
+    var gameState by remember { mutableStateOf(PacmanGameState.READY) }
     var level by remember { mutableIntStateOf(1) }
     var score by remember { mutableIntStateOf(0) }
     var lives by remember { mutableIntStateOf(3) }
@@ -115,19 +122,19 @@ fun PacmanScreen() {
     val totalDots = remember { ORIGINAL_MAP.sumOf { row -> row.count { it == 2 || it == 3 } } }
 
     val mouthAnim by animateFloatAsState(
-        targetValue = if (gameState == GameState.PLAYING) 1f else 0f,
+        targetValue = if (gameState == PacmanGameState.PLAYING) 1f else 0f,
         animationSpec = infiniteRepeatable(tween(150), RepeatMode.Reverse)
     )
 
     LaunchedEffect(gameState) {
-        if (gameState == GameState.READY) {
+        if (gameState == PacmanGameState.READY) {
             delay(2000)
-            gameState = GameState.PLAYING
+            gameState = PacmanGameState.PLAYING
         }
     }
 
     LaunchedEffect(gameState, level) {
-        while (gameState == GameState.PLAYING) {
+        while (gameState == PacmanGameState.PLAYING) {
             globalModeTimer++
 
             val currentMode = when {
@@ -138,11 +145,9 @@ fun PacmanScreen() {
                 else -> { globalModeTimer = 0; GhostMode.SCATTER }
             }
 
-            // Pacman
             if (canMove(pacman, pacman.nextDir, maze)) pacman.dir = pacman.nextDir
             movePacman(pacman, maze, level, turbo)
 
-            // Eat dots
             val px = pacman.x.roundToInt().coerceIn(0, 27)
             val py = pacman.y.roundToInt().coerceIn(0, 30)
             when (maze[py][px]) {
@@ -150,7 +155,7 @@ fun PacmanScreen() {
                     maze[py][px] = 0
                     score += 10
                     dotsEaten++
-                    soundPool.play(chompSound, 0.5f, 0.5f, 1, 0, 1f)
+                    if (chompSound != 0) soundPool.play(chompSound, 0.5f, 0.5f, 1, 0, 1f)
                 }
                 3 -> {
                     maze[py][px] = 0
@@ -160,12 +165,12 @@ fun PacmanScreen() {
                 }
             }
 
-            // Ghosts
             val blinky = ghosts[0]
             ghosts.forEach { ghost ->
                 val target = getTargetTile(ghost, pacman, blinky, currentMode, frightenedTimer > 0)
-                val possibleDirs = Direction.values()
-                    .filter { it != ghost.dir.opposite() && canMoveGhost(ghost, it, maze) }
+                val possibleDirs = Direction.entries.filter {
+                    it != ghost.dir.opposite() && canMoveGhost(ghost, it, maze)
+                }
 
                 val bestDir = if (frightenedTimer > 0) {
                     possibleDirs.randomOrNull() ?: ghost.dir
@@ -182,12 +187,10 @@ fun PacmanScreen() {
                 ghost.x += bestDir.dx() * speed
                 ghost.y += bestDir.dy() * speed
 
-                // Телепорт для призраков
                 if (ghost.x < 0) ghost.x = 27.9f
                 if (ghost.x > 28) ghost.x = 0.1f
             }
 
-            // Collision
             ghosts.forEach { ghost ->
                 if (hypot(ghost.x - pacman.x, ghost.y - pacman.y) < 0.8f) {
                     if (frightenedTimer > 0) {
@@ -198,12 +201,12 @@ fun PacmanScreen() {
                     } else {
                         lives--
                         if (lives <= 0) {
-                            gameState = GameState.GAME_OVER
+                            gameState = PacmanGameState.GAME_OVER
                         } else {
-                            gameState = GameState.DYING
+                            gameState = PacmanGameState.DYING
                             delay(2000)
                             resetPositions(pacman, ghosts)
-                            gameState = GameState.PLAYING
+                            gameState = PacmanGameState.PLAYING
                         }
                     }
                 }
@@ -243,43 +246,86 @@ fun PacmanScreen() {
                 val offsetX = (size.width - 28 * cellSize) / 2
                 val offsetY = (size.height - 31 * cellSize) / 2
 
-                drawMaze(maze, cellSize, Offset(offsetX, offsetY))
-                drawPacman(pacman, cellSize, Offset(offsetX, offsetY), mouthAnim)
+                drawMaze(this, maze, cellSize, Offset(offsetX, offsetY))
+                drawPacman(this, pacman, cellSize, Offset(offsetX, offsetY), mouthAnim)
                 ghosts.forEachIndexed { i, g ->
-                    drawGhost(g, i, cellSize, Offset(offsetX, offsetY), frightenedTimer > 0, frightenedTimer < 120)
+                    drawGhost(this, g, i, cellSize, Offset(offsetX, offsetY), frightenedTimer > 0, frightenedTimer < 120)
                 }
             }
 
             AnalogJoystick(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(32.dp)
+                modifier = Modifier.align(Alignment.BottomStart).padding(32.dp)
             ) { dir, isTurbo ->
                 pacman.nextDir = dir
                 turbo = isTurbo
             }
 
-            if (gameState == GameState.READY) {
-                Text(
-                    "READY!",
-                    color = Color.Yellow,
-                    fontSize = 48.sp,
-                    modifier = Modifier.align(Alignment.Center)
-                )
+            if (gameState == PacmanGameState.READY) {
+                Text("READY!", color = Color.Yellow, fontSize = 48.sp, modifier = Modifier.align(Alignment.Center))
             }
-            if (gameState == GameState.GAME_OVER) {
-                Text(
-                    "GAME OVER",
-                    color = Color.Red,
-                    fontSize = 64.sp,
-                    modifier = Modifier.align(Alignment.Center)
-                )
+            if (gameState == PacmanGameState.GAME_OVER) {
+                Text("GAME OVER", color = Color.Red, fontSize = 64.sp, modifier = Modifier.align(Alignment.Center))
             }
         }
     }
 }
 
-// ===================== LOGIC =====================
+// ===================== ОТРИСОВКА =====================
+private fun drawMaze(scope: DrawScope, maze: Array<IntArray>, cell: Float, offset: Offset) = with(scope) {
+    maze.forEachIndexed { y, row ->
+        row.forEachIndexed { x, v ->
+            val pos = offset + Offset(x * cell, y * cell)
+            when (v) {
+                1 -> drawRect(Color(0xFF00FFFF), pos, Size(cell, cell), style = Stroke(4f))
+                2 -> drawCircle(Color.White, cell * 0.12f, pos + Offset(cell / 2, cell / 2))
+                3 -> drawCircle(Color.White, cell * 0.35f, pos + Offset(cell / 2, cell / 2))
+            }
+        }
+    }
+}
+
+private fun drawPacman(scope: DrawScope, p: Pacman, cell: Float, offset: Offset, mouth: Float) = with(scope) {
+    val center = offset + Offset(p.x * cell + cell / 2, p.y * cell + cell / 2)
+    val mouthAngle = 0.2f + mouth * 0.7f
+    val startAngle = when (p.dir) {
+        Direction.RIGHT -> 0f
+        Direction.DOWN -> 90f
+        Direction.LEFT -> 180f
+        Direction.UP -> 270f
+        else -> 0f
+    } - mouthAngle * 45f
+    drawArc(
+        color = Color.Yellow,
+        startAngle = startAngle,
+        sweepAngle = 360f - mouthAngle * 90f,
+        useCenter = true,
+        topLeft = center - Offset(cell * 0.45f, cell * 0.45f),
+        size = Size(cell * 0.9f, cell * 0.9f)
+    )
+}
+
+private fun drawGhost(scope: DrawScope, g: Ghost, index: Int, cell: Float, offset: Offset, frightened: Boolean, flashing: Boolean) = with(scope) {
+    val center = offset + Offset(g.x * cell + cell / 2, g.y * cell + cell / 2)
+    val color = if (frightened) {
+        if (flashing) Color.White else Color(0xFF0000AA)
+    } else {
+        listOf(Color.Red, Color(0xFFFFB8FF), Color.Cyan, Color(0xFFFF9800))[index]
+    }
+
+    drawCircle(color, cell * 0.45f, center)
+
+    val eyeOffset = cell * 0.15f
+    drawCircle(Color.White, cell * 0.15f, center + Offset(-eyeOffset, -cell * 0.1f))
+    drawCircle(Color.White, cell * 0.15f, center + Offset(eyeOffset, -cell * 0.1f))
+
+    val pupil = cell * 0.07f
+    val pupilX = g.dir.dx() * cell * 0.1f
+    val pupilY = g.dir.dy() * cell * 0.05f
+    drawCircle(Color.Black, pupil, center + Offset(-eyeOffset + pupilX, -cell * 0.1f + pupilY))
+    drawCircle(Color.Black, pupil, center + Offset(eyeOffset + pupilX, -cell * 0.1f + pupilY))
+}
+
+// ===================== Остальные функции (без изменений) =====================
 private fun movePacman(p: Pacman, maze: Array<IntArray>, level: Int, turbo: Boolean) {
     val baseSpeed = 0.18f + level * 0.02f
     val speed = if (turbo) baseSpeed * 1.8f else baseSpeed
@@ -329,14 +375,8 @@ private fun getTargetTile(g: Ghost, p: Pacman, blinky: Ghost, mode: GhostMode, f
 private fun ghostSpeed(frightened: Boolean, level: Int): Float =
     if (frightened) 0.08f else 0.15f + level * 0.01f
 
-private fun Direction.dx(): Float = when (this) {
-    Direction.RIGHT -> 1f; Direction.LEFT -> -1f; else -> 0f
-}
-
-private fun Direction.dy(): Float = when (this) {
-    Direction.DOWN -> 1f; Direction.UP -> -1f; else -> 0f
-}
-
+private fun Direction.dx(): Float = when (this) { Direction.RIGHT -> 1f; Direction.LEFT -> -1f; else -> 0f }
+private fun Direction.dy(): Float = when (this) { Direction.DOWN -> 1f; Direction.UP -> -1f; else -> 0f }
 private fun Direction.opposite(): Direction = when (this) {
     Direction.UP -> Direction.DOWN
     Direction.DOWN -> Direction.UP
@@ -345,62 +385,12 @@ private fun Direction.opposite(): Direction = when (this) {
     else -> Direction.NONE
 }
 
-// ===================== DRAW =====================
-private fun DrawScope.drawMaze(maze: Array<IntArray>, cell: Float, offset: Offset) {
-    maze.forEachIndexed { y, row ->
-        row.forEachIndexed { x, v ->
-            val pos = offset + Offset(x * cell, y * cell)
-            when (v) {
-                1 -> drawRect(Color(0xFF00FFFF), pos, Size(cell, cell), style = Stroke(4f))
-                2 -> drawCircle(Color.White, cell * 0.12f, pos + Offset(cell / 2, cell / 2))
-                3 -> drawCircle(Color.White, cell * 0.35f, pos + Offset(cell / 2, cell / 2))
-            }
-        }
-    }
-}
-
-private fun DrawScope.drawPacman(p: Pacman, cell: Float, offset: Offset, mouth: Float) {
-    val center = offset + Offset(p.x * cell + cell / 2, p.y * cell + cell / 2)
-    val mouthAngle = 0.2f + mouth * 0.7f
-    val startAngle = when (p.dir) {
-        Direction.RIGHT -> 0f
-        Direction.DOWN -> 90f
-        Direction.LEFT -> 180f
-        Direction.UP -> 270f
-        else -> 0f
-    } - mouthAngle * 45f
-    drawArc(
-        color = Color.Yellow,
-        startAngle = startAngle,
-        sweepAngle = 360f - mouthAngle * 90f,
-        useCenter = true,
-        topLeft = center - Offset(cell * 0.45f, cell * 0.45f),
-        size = Size(cell * 0.9f, cell * 0.9f)
-    )
-}
-
-private fun DrawScope.drawGhost(g: Ghost, index: Int, cell: Float, offset: Offset, frightened: Boolean, flashing: Boolean) {
-    val center = offset + Offset(g.x * cell + cell / 2, g.y * cell + cell / 2)
-    val color = if (frightened) {
-        if (flashing) Color.White else Color(0xFF0000AA)
-    } else {
-        listOf(Color.Red, Color(0xFFFFB8FF), Color.Cyan, Color(0xFFFF9800))[index]
-    }
-
-    // Тело
-    drawCircle(color, cell * 0.45f, center)
-
-    // Глаза
-    val eyeOffset = cell * 0.15f
-    drawCircle(Color.White, cell * 0.15f, center + Offset(-eyeOffset, -cell * 0.1f))
-    drawCircle(Color.White, cell * 0.15f, center + Offset(eyeOffset, -cell * 0.1f))
-
-    // Зрачки
-    val pupil = cell * 0.07f
-    val pupilX = g.dir.dx() * cell * 0.1f
-    val pupilY = g.dir.dy() * cell * 0.05f
-    drawCircle(Color.Black, pupil, center + Offset(-eyeOffset + pupilX, -cell * 0.1f + pupilY))
-    drawCircle(Color.Black, pupil, center + Offset(eyeOffset + pupilX, -cell * 0.1f + pupilY))
+private fun resetPositions(p: Pacman, ghosts: List<Ghost>) {
+    p.x = 14f; p.y = 23f; p.dir = Direction.LEFT; p.nextDir = Direction.LEFT
+    ghosts[0].apply { x = 14f; y = 11f }
+    ghosts[1].apply { x = 14f; y = 14f }
+    ghosts[2].apply { x = 12f; y = 14f }
+    ghosts[3].apply { x = 16f; y = 14f }
 }
 
 // ===================== JOYSTICK =====================
@@ -451,12 +441,4 @@ fun AnalogJoystick(
                 .background(Color.White.copy(alpha = 0.4f), CircleShape)
         )
     }
-}
-
-private fun resetPositions(p: Pacman, ghosts: List<Ghost>) {
-    p.x = 14f; p.y = 23f; p.dir = Direction.LEFT; p.nextDir = Direction.LEFT
-    ghosts[0].apply { x = 14f; y = 11f }
-    ghosts[1].apply { x = 14f; y = 14f }
-    ghosts[2].apply { x = 12f; y = 14f }
-    ghosts[3].apply { x = 16f; y = 14f }
 }
