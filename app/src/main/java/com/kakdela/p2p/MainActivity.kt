@@ -1,27 +1,22 @@
 package com.kakdela.p2p
 
-import android.content.Intent
-import android.net.VpnService
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.result.contract.ActivityResultContracts
-import com.kakdela.p2p.vpn.service.KakdelaVpnService
+import androidx.activity.compose.setContent
+import androidx.navigation.compose.rememberNavController
+import com.kakdela.p2p.ui.navigation.NavGraph
+import com.kakdela.p2p.ui.theme.KakdelaTheme
 
 class MainActivity : ComponentActivity() {
-
-    private val launcher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            startService(Intent(this, KakdelaVpnService::class.java))
-        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val intent = VpnService.prepare(this)
-        if (intent != null) {
-            launcher.launch(intent)
-        } else {
-            startService(Intent(this, KakdelaVpnService::class.java))
+        setContent {
+            KakdelaTheme {
+                val navController = rememberNavController()
+                NavGraph(navController)
+            }
         }
     }
 }
