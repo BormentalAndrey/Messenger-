@@ -30,17 +30,15 @@ private val DarkColorScheme = darkColorScheme(
 )
 
 @Composable
-fun Theme(content: @Composable () -> Unit) {
+fun KakdelaTheme(content: @Composable () -> Unit) {
     val view = LocalView.current
-    
+
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            // Делаем фон системных панелей чисто черным
             window.statusBarColor = BackgroundBlack.toArgb()
             window.navigationBarColor = BackgroundBlack.toArgb()
 
-            // Указываем, что иконки в статус-баре должны быть светлыми
             val controller = WindowCompat.getInsetsController(window, view)
             controller.isAppearanceLightStatusBars = false
             controller.isAppearanceLightNavigationBars = false
@@ -52,4 +50,3 @@ fun Theme(content: @Composable () -> Unit) {
         content = content
     )
 }
-
