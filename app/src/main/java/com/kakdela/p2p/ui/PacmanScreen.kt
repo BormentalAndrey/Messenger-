@@ -16,6 +16,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke  // <-- Добавлен импорт!
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntOffset
@@ -23,11 +24,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlin.math.*
-import kotlin.random.Random  // <-- Добавлен импорт!
+import kotlin.random.Random
 
 // ===================== ENUMS =====================
 enum class Direction { UP, DOWN, LEFT, RIGHT, NONE }
-enum class PacmanGameState { READY, PLAYING, DYING, GAME_OVER }  // <-- Переименован, чтобы не конфликтовать
+enum class PacmanGameState { READY, PLAYING, DYING, GAME_OVER }
 enum class GhostMode { SCATTER, CHASE, FRIGHTENED }
 
 // ===================== DATA =====================
@@ -91,12 +92,9 @@ fun PacmanScreen() {
             )
             .build()
     }
-    // Заглушка: используем встроенный звук или 0, если не важен
-    val chompSound = remember {
-        // android.R.raw.notification может не существовать в твоём проекте
-        // Замени на свой raw-ресурс или оставь 0 для тишины
-        0
-    }
+
+    // Звук отключён (можно добавить свой raw-ресурс)
+    val chompSound = remember { 0 }
 
     var gameState by remember { mutableStateOf(PacmanGameState.READY) }
     var level by remember { mutableIntStateOf(1) }
@@ -270,7 +268,7 @@ fun PacmanScreen() {
     }
 }
 
-// ===================== ОТРИСОВКА =====================
+// ===================== DRAW =====================
 private fun drawMaze(scope: DrawScope, maze: Array<IntArray>, cell: Float, offset: Offset) = with(scope) {
     maze.forEachIndexed { y, row ->
         row.forEachIndexed { x, v ->
@@ -325,7 +323,7 @@ private fun drawGhost(scope: DrawScope, g: Ghost, index: Int, cell: Float, offse
     drawCircle(Color.Black, pupil, center + Offset(eyeOffset + pupilX, -cell * 0.1f + pupilY))
 }
 
-// ===================== Остальные функции (без изменений) =====================
+// ===================== Остальные функции =====================
 private fun movePacman(p: Pacman, maze: Array<IntArray>, level: Int, turbo: Boolean) {
     val baseSpeed = 0.18f + level * 0.02f
     val speed = if (turbo) baseSpeed * 1.8f else baseSpeed
