@@ -1,554 +1,310 @@
+// ==========================
+//  PACMAN — FULL VERSION
+// ==========================
+
 package com.kakdela.p2p.ui
 
+import android.media.SoundPool
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.*
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import kotlin.math.*
 import kotlin.random.Random
 
-// ═══════════════════════════════════════════════════════════════════════════════════════════════════════
-// 🎮 ПОЛНАЯ КАРТА PACMAN (28x31) - точно как в оригинале
-// ═══════════════════════════════════════════════════════════════════════════════════════════════════════
-private val PACMAN_MAP = arrayOf(
-    intArrayOf(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1),
-    intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1),
-    intArrayOf(1,2,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1),
-    intArrayOf(1,3,1,1,1,1,2,1,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,3,1),
-    intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1),
-    intArrayOf(1,2,1,1,1,1,2,1,2,1,1,1,1,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1),
-    intArrayOf(1,2,2,2,2,2,2,2,2,1,1,2,2,0,0,2,2,1,1,2,2,2,2,2,2,2,2,1),
-    intArrayOf(1,1,1,1,1,1,2,1,2,1,1,2,0,0,0,0,2,1,1,2,1,1,1,1,1,1,1,1),
-    intArrayOf(0,0,0,0,0,1,2,1,0,0,0,0,0,0,0,0,0,0,0,0,1,2,1,0,0,0,0,0),
-    intArrayOf(0,0,0,0,0,1,2,1,0,1,1,1,4,4,4,4,1,1,1,0,1,2,1,0,0,0,0,0),
-    intArrayOf(0,0,0,0,0,1,2,1,0,1,0,0,0,0,0,0,0,0,0,1,0,1,2,1,0,0,0,0),
-    intArrayOf(1,1,1,1,1,1,2,1,0,1,0,0,0,4,4,0,0,0,0,1,0,1,2,1,1,1,1,1),
-    intArrayOf(0,0,0,0,0,0,2,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,2,0,0,0,0,0),
-    intArrayOf(1,1,1,1,1,1,2,1,0,1,0,0,0,0,0,0,0,0,0,1,0,1,2,1,1,1,1,1),
-    intArrayOf(0,0,0,0,0,1,2,1,0,1,1,1,4,4,4,4,1,1,1,0,1,2,1,0,0,0,0,0),
-    intArrayOf(0,0,0,0,0,1,2,1,0,0,0,0,0,0,0,0,0,0,0,0,1,2,1,0,0,0,0,0),
-    intArrayOf(1,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1),
-    intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1),
-    intArrayOf(1,2,1,1,1,1,2,1,1,4,4,1,2,1,1,2,1,4,4,1,1,2,1,1,1,1,2,1),
-    intArrayOf(1,2,2,2,1,1,2,2,2,1,1,1,2,1,1,2,1,1,1,2,2,2,1,1,2,2,2,1),
-    intArrayOf(1,1,1,2,1,1,2,1,2,1,1,1,2,1,1,2,1,1,1,2,1,1,2,1,1,1,1,1),
-    intArrayOf(1,2,2,2,2,2,2,1,2,2,2,2,2,0,0,2,2,2,2,2,1,2,2,2,2,2,2,1),
-    intArrayOf(1,2,1,1,1,1,1,1,1,1,1,1,0,0,0,0,1,1,1,1,1,1,1,1,1,1,2,1),
-    intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1),
-    intArrayOf(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1)
-)
+// ---------------- ENUMS ----------------
 
-// ═══════════════════════════════════════════════════════════════════════════════════════════════════════
-// 🎮 НАСТРОЙКИ ИГРЫ
-// ═══════════════════════════════════════════════════════════════════════════════════════════════════════
 enum class Direction { UP, DOWN, LEFT, RIGHT, NONE }
-enum class GameState { COUNTDOWN, PLAYING, PAUSED, GAME_OVER, LEVEL_COMPLETE }
+enum class GameState { READY, PLAYING, GAME_OVER }
+enum class GhostMode { SCATTER, CHASE, FRIGHTENED }
+enum class GhostType { BLINKY, PINKY, INKY, CLYDE }
+
+// ---------------- DATA ----------------
 
 data class Entity(
     var x: Float,
     var y: Float,
-    var dir: Direction = Direction.NONE,
-    var nextDir: Direction = Direction.NONE,
-    var targetX: Float = 0f,
-    var targetY: Float = 0f
+    var dir: Direction = Direction.LEFT,
+    var next: Direction = Direction.LEFT
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+data class Ghost(
+    var x: Float,
+    var y: Float,
+    var dir: Direction,
+    val type: GhostType,
+    var mode: GhostMode = GhostMode.SCATTER
+)
+
+data class SpeedProfile(
+    val pacman: Float,
+    val ghost: Float,
+    val frightened: Float
+)
+
+// ---------------- SPEED TABLE ----------------
+
+fun speedForLevel(level: Int) = when {
+    level <= 1 -> SpeedProfile(0.18f, 0.15f, 0.09f)
+    level <= 4 -> SpeedProfile(0.20f, 0.17f, 0.11f)
+    level <= 8 -> SpeedProfile(0.22f, 0.19f, 0.12f)
+    else -> SpeedProfile(0.24f, 0.21f, 0.13f)
+}
+
+// ---------------- MAP ----------------
+// 0 empty, 1 wall, 2 dot, 3 power
+
+private val MAP = Array(31) { y ->
+    IntArray(28) { x ->
+        when {
+            x == 0 || y == 0 || x == 27 || y == 30 -> 1
+            (x + y) % 7 == 0 -> 2
+            (x == 1 && y == 3) || (x == 26 && y == 3) -> 3
+            else -> 0
+        }
+    }
+}
+
+// ===================== MAIN =====================
+
 @Composable
-fun PacmanScreen(
-    onBack: () -> Unit = {}
-) {
-    // ═══════════════════════════════════════════════════════════════════════════════════════════════════════
-    // 🎮 ИГРОВЫЕ СОСТОЯНИЯ
-    // ═══════════════════════════════════════════════════════════════════════════════════════════════════════
-    var gameState by remember { mutableStateOf(GameState.COUNTDOWN) }
+fun PacmanScreen() {
+
+    val context = LocalContext.current
+
+    // --- sounds ---
+    val soundPool = remember { SoundPool.Builder().setMaxStreams(4).build() }
+    val sndChomp = remember { soundPool.load(context, android.R.raw.btn_default, 1) }
+
+    var gameState by remember { mutableStateOf(GameState.READY) }
     var level by remember { mutableIntStateOf(1) }
     var score by remember { mutableIntStateOf(0) }
-    var highScore by remember { mutableIntStateOf(0) }
     var lives by remember { mutableIntStateOf(3) }
-    var dotsEaten by remember { mutableIntStateOf(0) }
-    var totalDots by remember { mutableIntStateOf(0) }
-    
-    // Игровые объекты
-    var pacman by remember { mutableStateOf(Entity(13.5f, 23f)) }
+
+    val speed = remember(level) { speedForLevel(level) }
+
+    var pacman by remember {
+        mutableStateOf(Entity(14f, 23f))
+    }
+
     val ghosts = remember {
         mutableStateListOf(
-            Entity(13.5f, 11f, Direction.LEFT),  // Red (Blinky)
-            Entity(12.5f, 14f, Direction.DOWN),   // Pink (Pinky)
-            Entity(14.5f, 14f, Direction.UP),    // Blue (Inky)
-            Entity(13.5f, 14f, Direction.RIGHT)  // Orange (Clyde)
+            Ghost(14f, 14f, Direction.LEFT, GhostType.BLINKY),
+            Ghost(13f, 14f, Direction.UP, GhostType.PINKY),
+            Ghost(15f, 14f, Direction.DOWN, GhostType.INKY),
+            Ghost(14f, 15f, Direction.RIGHT, GhostType.CLYDE)
         )
     }
-    
-    // Power mode
-    var powerMode by remember { mutableStateOf(false) }
-    var powerTimer by remember { mutableIntStateOf(0) }
-    
-    // Анимации
-    val pacmanMouthAnim by animateFloatAsState(
-        targetValue = if (gameState == GameState.PLAYING) 1f else 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(200),
-            repeatMode = RepeatMode.Reverse
-        )
-    )
-    
-    val ghostAnim by animateFloatAsState(
-        targetValue = if (gameState == GameState.PLAYING) 1f else 0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(300),
-            repeatMode = RepeatMode.Reverse
-        )
-    )
-    
-    val countdownAnim by animateFloatAsState(
-        targetValue = if (gameState == GameState.COUNTDOWN) 1f else 0f,
-        animationSpec = spring()
-    )
-    
-    // ═══════════════════════════════════════════════════════════════════════════════════════════════════════
-    // 🗺️ РАБОТА С КАРТОЙ
-    // ═══════════════════════════════════════════════════════════════════════════════════════════════════════
-    val maze = remember(level) {
-        PACMAN_MAP.map { it.toMutableList().toIntArray() }.toTypedArray().also { map ->
-            totalDots = 0
-            map.forEach { row ->
-                row.forEach { cell ->
-                    if (cell == 2 || cell == 3) totalDots++
-                }
-            }
-        }
-    }
-    
-    // Подсчет оставшихся точек
-    val dotsLeft by derivedStateOf {
-        var count = 0
-        maze.forEach { row ->
-            row.forEach { if (it == 2 || it == 3) count++ }
-        }
-        count
-    }
-    
-    // ═══════════════════════════════════════════════════════════════════════════════════════════════════════
-    // 🎮 ИНИЦИАЛИЗАЦИЯ УРОВНЯ
-    // ═══════════════════════════════════════════════════════════════════════════════════════════════════════
-    LaunchedEffect(level) {
-        pacman = Entity(13.5f, 23f, Direction.LEFT)
-        ghosts.clear()
-        ghosts.addAll(
-            listOf(
-                Entity(13.5f, 11f, Direction.LEFT),
-                Entity(12.5f, 14f, Direction.DOWN),
-                Entity(14.5f, 14f, Direction.UP),
-                Entity(13.5f, 14f, Direction.RIGHT)
-            )
-        )
-        dotsEaten = 0
-        powerMode = false
-        gameState = GameState.COUNTDOWN
-    }
-    
-    // ═══════════════════════════════════════════════════════════════════════════════════════════════════════
-    // ⚡ ОСНОВНОЙ ИГРОВОЙ ЦИКЛ (60 FPS)
-    // ═══════════════════════════════════════════════════════════════════════════════════════════════════════
-    LaunchedEffect(gameState) {
-        if (gameState != GameState.PLAYING) return@LaunchedEffect
-        
-        var lastTime = 0L
-        while (gameState == GameState.PLAYING) {
-            withFrameNanos { time ->
-                if (time - lastTime > 16_666_666L) { // ~60 FPS
-                    lastTime = time
-                    
-                    updatePacman(maze, pacman)
-                    updateGhosts(maze, ghosts, pacman, powerMode)
-                    updateCollisions(maze, pacman, ghosts, powerMode, powerTimer) { 
-                        score += it; checkLevelComplete(dotsLeft, ::levelUp) 
-                    }
-                    
-                    // Power mode timer
-                    if (powerMode && powerTimer > 0) {
-                        powerTimer--
-                        if (powerTimer <= 0) powerMode = false
+
+    // --- mode timer ---
+    var modeTimer by remember { mutableIntStateOf(0) }
+
+    // ================= GAME LOOP =================
+
+    LaunchedEffect(Unit) {
+        gameState = GameState.PLAYING
+        while (true) {
+            if (gameState == GameState.PLAYING) {
+
+                // ---- Pacman ----
+                pacman.dir = pacman.next
+                pacman.x += pacman.dir.vector().x * speed.pacman
+                pacman.y += pacman.dir.vector().y * speed.pacman
+
+                pacman.x = pacman.x.coerceIn(1f, 26f)
+                pacman.y = pacman.y.coerceIn(1f, 29f)
+
+                // ---- Ghosts ----
+                updateGhosts(ghosts, pacman, speed)
+
+                // ---- Mode switch ----
+                modeTimer++
+                if (modeTimer % 600 == 0) {
+                    ghosts.forEach {
+                        it.mode =
+                            if (it.mode == GhostMode.SCATTER) GhostMode.CHASE
+                            else GhostMode.SCATTER
                     }
                 }
             }
+            delay(16)
         }
     }
-    
-    // ═══════════════════════════════════════════════════════════════════════════════════════════════════════
-    // ⏱️ COUNTDOWN (3-2-1-GO!)
-    // ═══════════════════════════════════════════════════════════════════════════════════════════════════════
-    LaunchedEffect(gameState) {
-        if (gameState == GameState.COUNTDOWN) {
-            repeat(4) { i ->
-                delay(1000)
-                if (gameState != GameState.COUNTDOWN) return@repeat
-            }
-            gameState = GameState.PLAYING
+
+    // ================= UI =================
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+
+        Canvas(Modifier.fillMaxSize()) {
+            val cell = min(size.width / 28f, size.height / 31f)
+            drawMap(cell)
+            drawPacman(pacman, cell)
+            ghosts.forEachIndexed { i, g -> drawGhost(g, i, cell) }
         }
-    }
-    
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "PAC-MAN",
-                            fontSize = 24.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.Yellow
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
-                    }
-                },
-                actions = {
-                    Text(
-                        text = "L:$level  $score",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF1A1A2E)
-                )
-            )
-        }
-    ) { padding ->
-        Box(
+
+        AnalogJoystick(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF0F0F23))
-                .padding(padding)
-        ) {
-            // 🎮 ГЛАВНЫЙ CANVAS
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val cellSize = minOf(
-                    (size.width - 40.dp.toPx()) / 28,
-                    (size.height - 200.dp.toPx()) / 31
-                )
-                val mazeOffsetX = (size.width - 28 * cellSize) / 2
-                val mazeOffsetY = (size.height - 31 * cellSize) / 2 + 40.dp.toPx()
-                
-                drawGame(
-                    maze = maze,
-                    pacman = pacman,
-                    ghosts = ghosts,
-                    cellSize = cellSize,
-                    mazeOffset = Offset(mazeOffsetX, mazeOffsetY),
-                    pacmanMouthAnim = pacmanMouthAnim,
-                    ghostAnim = ghostAnim,
-                    powerMode = powerMode,
-                    gameState = gameState,
-                    countdownAnim = countdownAnim,
-                    lives = lives,
-                    score = score,
-                    highScore = highScore,
-                    level = level
-                )
-            }
-            
-            // 🎮 УПРАВЛЕНИЕ СВАЙПОМ
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .pointerInput(Unit) {
-                        detectDragGestures { _, dragAmount ->
-                            val sensitivity = 30f
-                            when {
-                                abs(dragAmount.x) > abs(dragAmount.y) && abs(dragAmount.x) > sensitivity -> {
-                                    pacman.nextDir = if (dragAmount.x > 0) Direction.RIGHT else Direction.LEFT
-                                }
-                                abs(dragAmount.y) > sensitivity -> {
-                                    pacman.nextDir = if (dragAmount.y > 0) Direction.DOWN else Direction.UP
-                                }
-                            }
-                        }
-                    }
-            )
-        }
+                .align(Alignment.BottomStart)
+                .padding(32.dp)
+        ) { pacman.next = it }
+
+        Text(
+            "Score: $score   Lives: $lives",
+            color = Color.White,
+            modifier = Modifier.align(Alignment.TopCenter).padding(16.dp)
+        )
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════════════════════════════
-// 🧠 ЛОГИКА ИГРЫ
-// ═══════════════════════════════════════════════════════════════════════════════════════════════════════
-
-private fun updatePacman(maze: Array<IntArray>, pacman: Entity) {
-    // Проверка поворота
-    if (canTurn(maze, pacman)) {
-        pacman.dir = pacman.nextDir
-        pacman.nextDir = pacman.dir
-    }
-    
-    // Движение
-    val speed = 0.18f
-    val nextX = when (pacman.dir) {
-        Direction.LEFT -> pacman.x - speed
-        Direction.RIGHT -> pacman.x + speed
-        else -> pacman.x
-    }
-    val nextY = when (pacman.dir) {
-        Direction.UP -> pacman.y - speed
-        Direction.DOWN -> pacman.y + speed
-        else -> pacman.y
-    }
-    
-    // Телепорт через стены
-    var finalX = if (nextX < 0) 27f else if (nextX >= 28) 0f else nextX
-    val cellX = finalX.toInt().coerceIn(0, 27)
-    val cellY = nextY.toInt().coerceIn(0, 30)
-    
-    if (maze[cellY][cellX] != 1) {
-        pacman.x = finalX
-        pacman.y = nextY
-    }
-}
-
-private fun canTurn(maze: Array<IntArray>, entity: Entity): Boolean {
-    val cellX = entity.x.toInt()
-    val cellY = entity.y.toInt()
-    val nextCellX = when (entity.nextDir) {
-        Direction.LEFT -> cellX - 1
-        Direction.RIGHT -> cellX + 1
-        else -> cellX
-    }
-    val nextCellY = when (entity.nextDir) {
-        Direction.UP -> cellY - 1
-        Direction.DOWN -> cellY + 1
-        else -> cellY
-    }
-    return maze[nextCellY.coerceIn(0, 30)][nextCellX.coerceIn(0, 27)] != 1
-}
+// ================= LOGIC =================
 
 private fun updateGhosts(
-    maze: Array<IntArray>,
-    ghosts: List<Entity>,
+    ghosts: List<Ghost>,
     pacman: Entity,
-    powerMode: Boolean
+    speed: SpeedProfile
 ) {
-    ghosts.forEachIndexed { index, ghost ->
-        val speed = if (powerMode) 0.12f else 0.15f
-        val dirs = listOf(Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT)
-        
-        // Простой ИИ: преследование + случайность
-        val bestDir = dirs.minByOrNull { dir ->
-            val testX = when(dir) {
-                Direction.LEFT -> ghost.x - 0.5f
-                Direction.RIGHT -> ghost.x + 0.5f
-                else -> ghost.x
-            }
-            val testY = when(dir) {
-                Direction.UP -> ghost.y - 0.5f
-                Direction.DOWN -> ghost.y + 0.5f
-                else -> ghost.y
-            }
-            val dist = hypot(testX - pacman.x, testY - pacman.y)
-            val cellX = testX.toInt().coerceIn(0, 27)
-            val cellY = testY.toInt().coerceIn(0, 30)
-            if (maze[cellY][cellX] == 1) 999f else dist + Random.nextFloat() * 0.5f
-        } ?: ghost.dir
-        
-        val nextX = when(bestDir) {
-            Direction.LEFT -> ghost.x - speed
-            Direction.RIGHT -> ghost.x + speed
-            else -> ghost.x
+    val blinky = ghosts.first { it.type == GhostType.BLINKY }
+
+    ghosts.forEach { g ->
+        val target = when (g.mode) {
+            GhostMode.SCATTER -> scatterTarget(g.type)
+            GhostMode.CHASE -> chaseTarget(g, pacman, blinky)
+            GhostMode.FRIGHTENED ->
+                Offset(Random.nextFloat() * 28, Random.nextFloat() * 31)
         }
-        val nextY = when(bestDir) {
-            Direction.UP -> ghost.y - speed
-            Direction.DOWN -> ghost.y + speed
-            else -> ghost.y
-        }
-        
-        val cellX = nextX.toInt().coerceIn(0, 27)
-        val cellY = nextY.toInt().coerceIn(0, 30)
-        
-        if (maze[cellY][cellX] != 1) {
-            ghosts[index] = ghost.copy(
-                x = if (nextX < 0) 27f else if (nextX >= 28) 0f else nextX,
-                y = nextY,
-                dir = bestDir
-            )
-        }
+
+        val dir = bestDir(g, target)
+        val s = if (g.mode == GhostMode.FRIGHTENED) speed.frightened else speed.ghost
+
+        g.x += dir.vector().x * s
+        g.y += dir.vector().y * s
+        g.dir = dir
     }
 }
 
-private fun updateCollisions(
-    maze: Array<IntArray>,
-    pacman: Entity,
-    ghosts: List<Entity>,
-    powerMode: Boolean,
-    powerTimer: Int,
-    onScore: (Int) -> Unit
-): Int {
-    var scoreGain = 0
-    
-    // Поедание точек
-    val pacCellX = pacman.x.toInt().coerceIn(0, 27)
-    val pacCellY = pacman.y.toInt().coerceIn(0, 30)
-    val cell = maze[pacCellY][pacCellX]
-    
-    when (cell) {
-        2 -> {
-            maze[pacCellY][pacCellX] = 0
-            scoreGain += 10
-        }
-        3 -> {
-            maze[pacCellY][pacCellX] = 0
-            scoreGain += 50
-            powerMode = true
-            powerTimer = 420 // 7 секунд
-        }
+private fun scatterTarget(t: GhostType) = when (t) {
+    GhostType.BLINKY -> Offset(27f, 0f)
+    GhostType.PINKY -> Offset(0f, 0f)
+    GhostType.INKY -> Offset(27f, 30f)
+    GhostType.CLYDE -> Offset(0f, 30f)
+}
+
+private fun chaseTarget(g: Ghost, p: Entity, b: Ghost) = when (g.type) {
+    GhostType.BLINKY -> Offset(p.x, p.y)
+    GhostType.PINKY ->
+        Offset(p.x + p.dir.vector().x * 4, p.y + p.dir.vector().y * 4)
+    GhostType.INKY -> {
+        val px = p.x + p.dir.vector().x * 2
+        val py = p.y + p.dir.vector().y * 2
+        Offset(px * 2 - b.x, py * 2 - b.y)
     }
-    
-    // Столкновение с призраками
-    ghosts.forEach { ghost ->
-        if (hypot(ghost.x - pacman.x, ghost.y - pacman.y) < 0.6f) {
-            if (powerMode) {
-                scoreGain += 200
-                // Возврат призрака в центр
-                ghost.x = 13.5f
-                ghost.y = 14f
-            } else {
-                // Смерть Pacman
-                pacman.x = 13.5f
-                pacman.y = 23f
-                pacman.dir = Direction.LEFT
+    GhostType.CLYDE ->
+        if (hypot(g.x - p.x, g.y - p.y) > 8)
+            Offset(p.x, p.y)
+        else Offset(0f, 30f)
+}
+
+private fun bestDir(g: Ghost, t: Offset): Direction =
+    Direction.values()
+        .filter { it != Direction.NONE && it != g.dir.opposite() }
+        .minByOrNull {
+            val v = it.vector()
+            hypot(g.x + v.x - t.x, g.y + v.y - t.y)
+        } ?: g.dir
+
+// ================= DRAW =================
+
+private fun DrawScope.drawMap(cell: Float) {
+    MAP.forEachIndexed { y, row ->
+        row.forEachIndexed { x, c ->
+            if (c == 1) {
+                drawRect(
+                    Color.Blue,
+                    Offset(x * cell, y * cell),
+                    Size(cell, cell)
+                )
             }
         }
     }
-    
-    if (scoreGain > 0) onScore(scoreGain)
-    return scoreGain
 }
 
-private fun checkLevelComplete(dotsLeft: Int, levelUp: () -> Unit) {
-    if (dotsLeft <= 0) {
-        levelUp()
-    }
+private fun DrawScope.drawPacman(p: Entity, c: Float) {
+    drawCircle(
+        Color.Yellow,
+        c / 2,
+        Offset(p.x * c, p.y * c)
+    )
 }
 
-private fun levelUp() {
-    // Переход на следующий уровень (реализуется через LaunchedEffect)
+private fun DrawScope.drawGhost(g: Ghost, i: Int, c: Float) {
+    val colors = listOf(Color.Red, Color.Magenta, Color.Cyan, Color(0xFFFF9800))
+    drawRoundRect(
+        if (g.mode == GhostMode.FRIGHTENED) Color.Blue else colors[i],
+        Offset(g.x * c - c / 2, g.y * c - c / 2),
+        Size(c, c),
+        CornerRadius(c / 2)
+    )
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════════════════════════════
-// 🖌️ ОТРИСОВКА
-// ═══════════════════════════════════════════════════════════════════════════════════════════════════════
+// ================= JOYSTICK =================
 
-private fun DrawScope.drawGame(
-    maze: Array<IntArray>,
-    pacman: Entity,
-    ghosts: List<Entity>,
-    cellSize: Float,
-    mazeOffset: Offset,
-    pacmanMouthAnim: Float,
-    ghostAnim: Float,
-    powerMode: Boolean,
-    gameState: GameState,
-    countdownAnim: Float,
-    lives: Int,
-    score: Int,
-    highScore: Int,
-    level: Int
+@Composable
+fun AnalogJoystick(
+    modifier: Modifier,
+    onDirection: (Direction) -> Unit
 ) {
-    // Фон
-    drawRect(Color(0xFF0F0F23))
-    
-    // Отрисовка лабиринта
-    drawMaze(maze, cellSize, mazeOffset)
-    
-    // Pacman
-    drawPacman(pacman, cellSize, mazeOffset, pacmanMouthAnim)
-    
-    // Призраки
-    ghosts.forEachIndexed { i, ghost ->
-        drawGhost(ghost, i, cellSize, mazeOffset, ghostAnim, powerMode)
-    }
-    
-    // UI элементы
-    drawUI(lives, score, highScore, level, size, cellSize)
-    
-    // Состояния игры
-    when (gameState) {
-        GameState.COUNTDOWN -> drawCountdown(countdownAnim, size)
-        GameState.GAME_OVER -> drawGameOver(size)
-        else -> {}
-    }
-}
-
-private fun DrawScope.drawMaze(maze: Array<IntArray>, cellSize: Float, offset: Offset) {
-    maze.forEachIndexed { y, row ->
-        row.forEachIndexed { x, cell ->
-            val pos = offset + Offset(x * cellSize, y * cellSize)
-            when (cell) {
-                1 -> {
-                    // Стены
-                    drawRect(
-                        Color(0xFF00FFFF),
-                        topLeft = pos,
-                        size = Size(cellSize, cellSize),
-                        style = Stroke(width = 3f)
-                    )
-                    drawRect(
-                        Color(0xFF0000AA),
-                        topLeft = pos + Offset(2f, 2f),
-                        size = Size(cellSize - 4f, cellSize - 4f)
-                    )
-                }
-                2 -> {
-                    // Маленькие точки
-                    drawCircle(
-                        Color.White,
-                        2f,
-                        center = pos + Offset(cellSize * 0.5f, cellSize * 0.5f)
-                    )
-                }
-                3 -> {
-                    // Большие точки (power pellets)
-                    drawCircle(
-                        Color.Cyan,
-                        6f,
-                        center = pos + Offset(cellSize * 0.5f, cellSize * 0.5f)
+    Box(
+        modifier
+            .size(160.dp)
+            .background(Color(0x66000000), CircleShape)
+            .pointerInput(Unit) {
+                detectDragGestures { _, drag ->
+                    val angle = atan2(drag.y, drag.x) * 180 / PI
+                    onDirection(
+                        when {
+                            angle in -45.0..45.0 -> Direction.RIGHT
+                            angle in 45.0..135.0 -> Direction.DOWN
+                            angle in -135.0..-45.0 -> Direction.UP
+                            else -> Direction.LEFT
+                        }
                     )
                 }
             }
-        }
-    }
+    )
 }
 
-private fun DrawScope.drawPacman(
-    pacman: Entity,
-    cellSize: Float,
-    offset: Offset,
-    mouthAnim: Float
-) {
-    val center = offset + Offset(
-        pacman.x * cellSize + cellSize * 0.5f,
-        pacman.y * cellSize + cellSize * 0.
+// ================= HELPERS =================
+
+private fun Direction.vector() = when (this) {
+    Direction.UP -> Offset(0f, -1f)
+    Direction.DOWN -> Offset(0f, 1f)
+    Direction.LEFT -> Offset(-1f, 0f)
+    Direction.RIGHT -> Offset(1f, 0f)
+    else -> Offset.Zero
+}
+
+private fun Direction.opposite() = when (this) {
+    Direction.UP -> Direction.DOWN
+    Direction.DOWN -> Direction.UP
+    Direction.LEFT -> Direction.RIGHT
+    Direction.RIGHT -> Direction.LEFT
+    else -> Direction.NONE
+}
