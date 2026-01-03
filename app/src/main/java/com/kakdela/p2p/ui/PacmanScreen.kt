@@ -279,8 +279,8 @@ private fun updatePacman(pacman: Pacman, maze: Array<IntArray>) {
     val targetY = pacman.pos.y.toFloat()
 
     // Pac-Man остаётся быстрым (0.45f)
-    pacman.pixelX += (targetX - pacman.pixelX) * 0.01f
-    pacman.pixelY += (targetY - pacman.pixelY) * 0.01f
+    pacman.pixelX += (targetX - pacman.pixelX) * 0.04f
+    pacman.pixelY += (targetY - pacman.pixelY) * 0.04f
 }
 
 // ===================== GHOST UPDATE (УМЕНЬШЕННАЯ СКОРОСТЬ) =====================
