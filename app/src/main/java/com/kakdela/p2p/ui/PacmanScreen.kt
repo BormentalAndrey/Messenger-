@@ -1,3 +1,4 @@
+
 package com.kakdela.p2p.ui
 
 import androidx.compose.animation.core.*
@@ -16,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -188,10 +190,10 @@ fun PacmanScreen() {
                 val offsetX = (size.width - 28 * cellSize) / 2
                 val offsetY = (size.height - 31 * cellSize) / 2
 
-                drawMaze(maze, cellSize, Offset(offsetX, offsetY))
-                drawPacman(pacman, cellSize, Offset(offsetX, offsetY), mouthAnim)
+                drawMaze(this, maze, cellSize, Offset(offsetX, offsetY))
+                drawPacman(this, pacman, cellSize, Offset(offsetX, offsetY), mouthAnim)
                 ghosts.forEachIndexed { i, g ->
-                    drawGhost(g, i, cellSize, Offset(offsetX, offsetY), frightenedTimer > 0, frightenedTimer < 120)
+                    drawGhost(this, g, i, cellSize, Offset(offsetX, offsetY), frightenedTimer > 0, frightenedTimer < 120)
                 }
             }
 
@@ -336,7 +338,7 @@ private fun resetLevel(pacman: Pacman, ghosts: List<Ghost>) {
 }
 
 // ===================== DRAW =====================
-private fun DrawScope.drawMaze(maze: Array<IntArray>, cell: Float, offset: Offset) {
+private fun drawMaze(scope: DrawScope, maze: Array<IntArray>, cell: Float, offset: Offset) = with(scope) {
     maze.forEachIndexed { y, row ->
         row.forEachIndexed { x, v ->
             val pos = offset + Offset(x * cell, y * cell)
@@ -349,7 +351,7 @@ private fun DrawScope.drawMaze(maze: Array<IntArray>, cell: Float, offset: Offse
     }
 }
 
-private fun DrawScope.drawPacman(p: Pacman, cell: Float, offset: Offset, mouth: Float) {
+private fun drawPacman(scope: DrawScope, p: Pacman, cell: Float, offset: Offset, mouth: Float) = with(scope) {
     val center = offset + Offset(p.pixelX * cell + cell / 2, p.pixelY * cell + cell / 2)
     val mouthAngle = 0.2f + mouth * 0.6f
     val startAngle = when (p.dir) {
@@ -369,7 +371,7 @@ private fun DrawScope.drawPacman(p: Pacman, cell: Float, offset: Offset, mouth: 
     )
 }
 
-private fun DrawScope.drawGhost(g: Ghost, index: Int, cell: Float, offset: Offset, frightened: Boolean, flashing: Boolean) {
+private fun drawGhost(scope: DrawScope, g: Ghost, index: Int, cell: Float, offset: Offset, frightened: Boolean, flashing: Boolean) = with(scope) {
     val center = offset + Offset(g.pixelX * cell + cell / 2, g.pixelY * cell + cell / 2)
     val color = if (frightened) {
         if (flashing) Color.White else Color.Blue
@@ -378,7 +380,7 @@ private fun DrawScope.drawGhost(g: Ghost, index: Int, cell: Float, offset: Offse
             0 -> Color.Red
             1 -> Color.Magenta
             2 -> Color.Cyan
-            else -> Color.Orange  // <-- Теперь используем стандартный Color.Orange
+            else -> Color.Orange
         }
     }
 
