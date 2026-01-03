@@ -1,72 +1,164 @@
 package com.kakdela.p2p.ui.player
 
-import androidx.lifecycle.ViewModel
+import android.annotation.SuppressLint
+import android.app.Application
+import android.content.ContentUris
+import android.net.Uri
+import android.provider.MediaStore
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import com.kakdela.p2p.model.AudioTrack
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
-// Простая модель трека
-data class Track(
-    val id: String,
-    val title: String,
-    val artist: String,
-    val url: String = "" // Для примера
-)
+class PlayerViewModel(application: Application) : AndroidViewModel(application) {
 
-class PlayerViewModel : ViewModel() {
+    private val player: ExoPlayer = ExoPlayer.Builder(getApplication()).build()
 
-    // Список треков (заглушка для демонстрации)
-    val tracks = listOf(
-        Track("1", "Neon Vibes", "Cyber Artist"),
-        Track("2", "Night Drive", "Synthwave Hero"),
-        Track("3", "Coding Flow", "Dev Music"),
-        Track("4", "Relax", "Chill Zone")
-    )
+    private val _tracks = MutableStateFlow<List<AudioTrack>>(emptyList())
+    val tracks: StateFlow<List<AudioTrack>> = _tracks.asStateFlow()
 
-    private val _current = MutableStateFlow<Track?>(null)
-    val current: StateFlow<Track?> = _current.asStateFlow()
+    private val _currentTrack = MutableStateFlow<AudioTrack?>(null)
+    val currentTrack: StateFlow<AudioTrack?> = _currentTrack.asStateFlow()
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
-    // Логика воспроизведения
-    fun play(track: Track) {
-        _current.value = track
-        _isPlaying.value = true
-        // Здесь была бы логика MediaPlayer
-    }
+    private val _currentPosition = MutableStateFlow(0L)
+    val currentPosition: StateFlow<Long> = _currentPosition.asStateFlow()
 
-    fun pause() {
-        _isPlaying.value = false
-        // mediaPlayer.pause()
-    }
+    private val _currentDuration = MutableStateFlow(0L)
+    val currentDuration: StateFlow<Long> = _currentDuration.asStateFlow()
 
-    fun resume() {
-        if (_current.value != null) {
-            _isPlaying.value = true
-            // mediaPlayer.start()
+    private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
+    val repeatMode: StateFlow<Int> = _repeatMode.asStateFlow()
+
+    private val _shuffleEnabled = MutableStateFlow(false)
+    val shuffleEnabled: StateFlow<Boolean> = _shuffleEnabled.asStateFlow()
+
+    init {
+        loadTracks()
+
+        player.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                _isPlaying.value = isPlaying
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                val index = player.currentMediaItemIndex
+                _currentTrack.value = _tracks.value.getOrNull(index)
+            }
+        })
+
+        viewModelScope.launch {
+            while (true) {
+                _currentPosition.value = player.currentPosition
+                _currentDuration.value = player.duration.coerceAtLeast(0L)
+                delay(500)
+            }
         }
     }
 
-    fun next() {
-        val currentTrack = _current.value ?: return
-        val index = tracks.indexOf(currentTrack)
-        if (index != -1 && index < tracks.lastIndex) {
-            play(tracks[index + 1])
-        } else {
-            // Циклически к началу
-            play(tracks[0])
+    @SuppressLint("InlinedApi")
+    private fun loadTracks() {
+        viewModelScope.launch {
+            val tracksList = mutableListOf<AudioTrack>()
+
+            val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+
+            val projection = arrayOf(
+                MediaStore.Audio.Media._ID,
+                MediaStore.Audio.Media.TITLE,
+                MediaStore.Audio.Media.ARTIST,
+                MediaStore.Audio.Media.DURATION,
+                MediaStore.Audio.Media.ALBUM_ID
+            )
+
+            val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
+
+            getApplication<Application>().contentResolver.query(
+                collection, projection, null, null, sortOrder
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+                val titleColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+                val artistColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+                val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+                val albumIdColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+
+                while (cursor.moveToNext()) {
+                    val id = cursor.getLong(idColumn)
+                    val title = cursor.getString(titleColumn) ?: "Unknown"
+                    val artist = cursor.getString(artistColumn) ?: "Unknown"
+                    val duration = cursor.getLong(durationColumn)
+                    if (duration < 10000) continue // пропускаем слишком короткие
+
+                    val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                    val albumId = cursor.getLong(albumIdColumn)
+                    val albumArtUri = ContentUris.withAppendedId(
+                        Uri.parse("content://media/external/audio/albumart"), albumId
+                    )
+
+                    tracksList.add(AudioTrack(id, title, artist, duration, contentUri, albumArtUri))
+                }
+            }
+
+            _tracks.value = tracksList
+
+            if (tracksList.isNotEmpty()) {
+                val mediaItems = tracksList.map { MediaItem.fromUri(it.uri) }
+                player.setMediaItems(mediaItems)
+                player.prepare()
+                player.repeatMode = _repeatMode.value
+                player.shuffleModeEnabled = _shuffleEnabled.value
+                _currentTrack.value = tracksList[0]
+            }
         }
     }
 
-    fun prev() {
-        val currentTrack = _current.value ?: return
-        val index = tracks.indexOf(currentTrack)
-        if (index > 0) {
-            play(tracks[index - 1])
-        } else {
-            play(tracks.last())
+    fun playTrack(track: AudioTrack) {
+        val index = _tracks.value.indexOf(track)
+        if (index != -1) {
+            player.seekTo(index, 0L)
+            player.playWhenReady = true
         }
+    }
+
+    fun togglePlayPause() {
+        player.playWhenReady = !player.isPlaying
+    }
+
+    fun next() = player.seekToNextMediaItem()
+    fun previous() = player.seekToPreviousMediaItem()
+
+    fun seekTo(positionMs: Long) {
+        player.seekTo(positionMs)
+    }
+
+    fun toggleRepeat() {
+        val newMode = when (_repeatMode.value) {
+            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+            Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_OFF
+            else -> Player.REPEAT_MODE_OFF
+        }
+        _repeatMode.value = newMode
+        player.repeatMode = newMode
+    }
+
+    fun toggleShuffle() {
+        val new = !_shuffleEnabled.value
+        _shuffleEnabled.value = new
+        player.shuffleModeEnabled = new
+    }
+
+    override fun onCleared() {
+        player.release()
+        super.onCleared()
     }
 }
-
