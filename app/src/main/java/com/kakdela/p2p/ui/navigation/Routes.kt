@@ -15,5 +15,7 @@ object Routes {
     const val CHESS = "chess"
     const val PACMAN = "pacman"
     const val JEWELS = "jewels"
-}
 
+    // ← ДОБАВЛЕНО: СУДОКУ
+    const val SUDOKU = "sudoku"
+}
