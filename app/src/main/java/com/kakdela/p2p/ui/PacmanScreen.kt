@@ -1,6 +1,5 @@
 package com.kakdela.p2p.ui
 
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -16,43 +15,57 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlin.math.abs
+import kotlin.math.sqrt
 
-// ===================== ENUMS =====================
+/* ===================== ENUMS ===================== */
+
 enum class Direction { UP, DOWN, LEFT, RIGHT, NONE }
-enum class PacmanGameState { READY, PLAYING, DYING, GAME_OVER }
+enum class GameState { READY, PLAYING, DYING, GAME_OVER }
+enum class GhostState { SCATTER, CHASE, FRIGHTENED, EATEN }
 
-// ===================== DATA =====================
-data class GridPos(var x: Int, var y: Int)
+/* ===================== DATA ===================== */
+
+data class GridPos(var x: Int, var y: Int) {
+    operator fun plus(d: Direction) = GridPos(x + d.dx(), y + d.dy())
+}
 
 data class Pacman(
-    var pos: GridPos = GridPos(13, 23),
-    var dir: Direction = Direction.LEFT,
-    var nextDir: Direction = Direction.LEFT,
-    var pixelX: Float = 13f,
-    var pixelY: Float = 23f
+    var pos: GridPos,
+    var pixelX: Float,
+    var pixelY: Float,
+    var dir: Direction,
+    var nextDir: Direction
 )
 
 data class Ghost(
     var pos: GridPos,
-    var dir: Direction,
-    val type: Int, // 0=Blinky, 1=Pinky, 2=Inky, 3=Clyde
     var pixelX: Float,
-    var pixelY: Float
+    var pixelY: Float,
+    var dir: Direction,
+    val type: Int,
+    var state: GhostState = GhostState.SCATTER
 )
 
-// ===================== ORIGINAL PACMAN MAP =====================
-private val PACMAN_MAP = arrayOf(
+/* ===================== CONSTANTS ===================== */
+
+private const val PACMAN_SPEED = 0.045f
+private const val GHOST_SPEED = 0.035f
+private const val FRIGHT_SPEED = 0.02f
+private const val EATEN_SPEED = 0.06f
+
+/* ===================== MAP ===================== */
+
+private val MAP = arrayOf(
     intArrayOf(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1),
     intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1),
     intArrayOf(1,2,1,1,1,1,1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,2,1),
     intArrayOf(1,3,1,1,1,1,1,2,1,1,1,1,2,1,1,2,1,1,1,1,1,2,1,1,1,1,3,1),
     intArrayOf(1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1),
-    intArrayOf(1,2,1,1,1,1,1,2,1,2,1,1,1,1,1,1,1,1,2,1,2,1,1,1,1,1,2,1),
+    intArrayOf(1,2,1,1,1,1,1,2,1,1,1,1,1,1,1,1,1,1,2,1,1,1,1,1,1,1,2,1),
     intArrayOf(1,2,2,2,2,1,1,2,2,2,1,1,2,0,0,2,1,1,2,2,2,1,1,2,2,2,2,1),
     intArrayOf(1,1,1,1,2,1,1,2,0,0,0,0,2,0,0,2,0,0,0,0,2,1,1,2,1,1,1,1),
     intArrayOf(2,2,2,2,2,1,1,2,0,0,0,0,2,0,0,2,0,0,0,0,2,1,1,2,2,2,2,2),
@@ -75,325 +88,199 @@ private val PACMAN_MAP = arrayOf(
     intArrayOf(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1)
 )
 
-// ===================== COMPOSABLE =====================
-@OptIn(ExperimentalMaterial3Api::class)
+/* ===================== COMPOSABLE ===================== */
+
 @Composable
 fun PacmanScreen() {
-    var gameState by remember { mutableStateOf(PacmanGameState.READY) }
-    var level by remember { mutableIntStateOf(1) }
+    var state by remember { mutableStateOf(GameState.READY) }
     var score by remember { mutableIntStateOf(0) }
     var lives by remember { mutableIntStateOf(3) }
-    var dotsEaten by remember(level) { mutableIntStateOf(0) }
 
-    var pacman by remember { mutableStateOf(Pacman()) }
+    val maze = remember { MAP.map { it.copyOf() }.toTypedArray() }
+
+    val pacman = remember {
+        Pacman(GridPos(13, 23), 13f, 23f, Direction.LEFT, Direction.LEFT)
+    }
+
     val ghosts = remember {
         mutableStateListOf(
-            Ghost(GridPos(14, 11), Direction.LEFT, 0, 14f, 11f),
-            Ghost(GridPos(14, 14), Direction.UP, 1, 14f, 14f),
-            Ghost(GridPos(12, 14), Direction.UP, 2, 12f, 14f),
-            Ghost(GridPos(16, 14), Direction.UP, 3, 16f, 14f)
+            Ghost(GridPos(14,11),14f,11f,Direction.LEFT,0),
+            Ghost(GridPos(14,14),14f,14f,Direction.UP,1),
+            Ghost(GridPos(12,14),12f,14f,Direction.UP,2),
+            Ghost(GridPos(16,14),16f,14f,Direction.UP,3)
         )
     }
 
     var frightenedTimer by remember { mutableIntStateOf(0) }
 
-    val maze = remember(level) { PACMAN_MAP.map { it.copyOf() }.toTypedArray() }
-    val totalDots = remember { PACMAN_MAP.sumOf { row -> row.count { it == 2 || it == 3 } } }
-
-    val mouthAnim by animateFloatAsState(
-        targetValue = if (gameState == PacmanGameState.PLAYING) 1f else 0f,
-        animationSpec = infiniteRepeatable(tween(150), RepeatMode.Reverse)
-    )
-
-    LaunchedEffect(gameState) {
-        if (gameState == PacmanGameState.READY) {
-            delay(2000)
-            gameState = PacmanGameState.PLAYING
-        }
+    LaunchedEffect(Unit) {
+        delay(2000)
+        state = GameState.PLAYING
     }
 
-    LaunchedEffect(gameState, level) {
-        while (gameState == PacmanGameState.PLAYING) {
+    LaunchedEffect(state) {
+        while (state == GameState.PLAYING) {
             updatePacman(pacman, maze)
 
-            val px = pacman.pos.x
-            val py = pacman.pos.y
-            when (maze[py][px]) {
-                2 -> {
-                    maze[py][px] = 0
-                    score += 10
-                    dotsEaten++
-                }
-                3 -> {
-                    maze[py][px] = 0
-                    score += 50
-                    frightenedTimer = 480
-                    dotsEaten++
-                }
+            ghosts.forEach {
+                updateGhost(it, pacman, maze)
             }
 
-            ghosts.forEach { ghost ->
-                updateGhostSimple(ghost, pacman, maze, frightenedTimer > 0)
-            }
-
-            ghosts.forEach { ghost ->
-                if (abs(ghost.pixelX - pacman.pixelX) < 0.5f && abs(ghost.pixelY - pacman.pixelY) < 0.5f) {
-                    if (frightenedTimer > 0) {
+            ghosts.forEach {
+                if (collision(pacman, it)) {
+                    if (it.state == GhostState.FRIGHTENED) {
+                        it.state = GhostState.EATEN
                         score += 200
-                        ghost.pos = GridPos(14, 14)
-                        ghost.pixelX = 14f
-                        ghost.pixelY = 14f
-                    } else {
+                    } else if (it.state != GhostState.EATEN) {
                         lives--
-                        if (lives <= 0) {
-                            gameState = PacmanGameState.GAME_OVER
-                        } else {
-                            delay(1500)
-                            resetLevel(pacman, ghosts)
-                        }
+                        state = if (lives <= 0) GameState.GAME_OVER else GameState.READY
                     }
                 }
             }
 
-            frightenedTimer = maxOf(0, frightenedTimer - 1)
+            if (frightenedTimer > 0) frightenedTimer--
 
-            if (dotsEaten >= totalDots) {
-                level++
-                dotsEaten = 0
-                resetLevel(pacman, ghosts)
-            }
-
-            delay(16) // 60 FPS
+            delay(16)
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("PAC-MAN", color = Color.Yellow, fontSize = 24.sp) },
-                actions = {
-                    Text("Score: $score  ❤️x$lives  Level: $level", color = Color.White, fontSize = 16.sp)
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF000020))
-            )
+    /* ==== UI ==== */
+
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        Canvas(Modifier.fillMaxSize()) {
+            val cell = minOf(size.width / 28f, size.height / 31f)
+            drawMaze(this, maze, cell)
+            drawPacman(this, pacman, cell)
+            ghosts.forEach { drawGhost(this, it, cell) }
         }
-    ) { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-                .padding(padding)
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val cellSize = minOf(size.width / 28f, (size.height - 120.dp.toPx()) / 31f)
-                val offsetX = (size.width - 28 * cellSize) / 2
-                val offsetY = (size.height - 31 * cellSize) / 2
 
-                drawMaze(this, maze, cellSize, Offset(offsetX, offsetY))
-                drawPacman(this, pacman, cellSize, Offset(offsetX, offsetY), mouthAnim)
-                ghosts.forEachIndexed { i, g ->
-                    drawGhost(this, g, i, cellSize, Offset(offsetX, offsetY), frightenedTimer > 0, frightenedTimer < 120)
-                }
-            }
-
-            Row(
-                modifier = Modifier.align(Alignment.BottomCenter).padding(32.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                IconButton(onClick = { pacman.nextDir = Direction.LEFT }, modifier = Modifier.size(60.dp)) {
-                    Icon(Icons.Default.KeyboardArrowLeft, "Left", tint = Color.Yellow, modifier = Modifier.size(40.dp))
-                }
-
-                Column {
-                    IconButton(onClick = { pacman.nextDir = Direction.UP }, modifier = Modifier.size(60.dp)) {
-                        Icon(Icons.Default.KeyboardArrowUp, "Up", tint = Color.Yellow, modifier = Modifier.size(40.dp))
-                    }
-                    IconButton(onClick = { pacman.nextDir = Direction.DOWN }, modifier = Modifier.size(60.dp)) {
-                        Icon(Icons.Default.KeyboardArrowDown, "Down", tint = Color.Yellow, modifier = Modifier.size(40.dp))
-                    }
-                }
-
-                IconButton(onClick = { pacman.nextDir = Direction.RIGHT }, modifier = Modifier.size(60.dp)) {
-                    Icon(Icons.Default.KeyboardArrowRight, "Right", tint = Color.Yellow, modifier = Modifier.size(40.dp))
-                }
-            }
-
-            if (gameState == PacmanGameState.READY) {
-                Text("READY!", color = Color.Yellow, fontSize = 64.sp, modifier = Modifier.align(Alignment.Center))
-            }
-            if (gameState == PacmanGameState.GAME_OVER) {
-                Column(modifier = Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("GAME OVER", color = Color.Red, fontSize = 64.sp)
-                    Spacer(Modifier.height(32.dp))
-                    Button(onClick = {
-                        gameState = PacmanGameState.READY
-                        score = 0
-                        lives = 3
-                        level = 1
-                    }) { Text("PLAY AGAIN") }
-                }
-            }
-        }
+        Controls(pacman)
     }
 }
 
-// ===================== PACMAN UPDATE =====================
-private fun updatePacman(pacman: Pacman, maze: Array<IntArray>) {
-    val isCenteredX = abs(pacman.pixelX - pacman.pos.x) < 0.15f
-    val isCenteredY = abs(pacman.pixelY - pacman.pos.y) < 0.15f
-    val isCentered = isCenteredX && isCenteredY
+/* ===================== LOGIC ===================== */
 
-    if (isCentered && pacman.nextDir != Direction.NONE) {
-        val intendedPos = GridPos(pacman.pos.x, pacman.pos.y).apply {
-            when (pacman.nextDir) {
-                Direction.UP -> y--
-                Direction.DOWN -> y++
-                Direction.LEFT -> x--
-                Direction.RIGHT -> x++
-                else -> {}
-            }
-        }
-        if (isValidMove(intendedPos, maze)) {
-            pacman.dir = pacman.nextDir
+private fun updatePacman(p: Pacman, maze: Array<IntArray>) {
+    if (isCentered(p) && isValid(p.pos + p.nextDir, maze)) {
+        p.dir = p.nextDir
+    }
+    if (isValid(p.pos + p.dir, maze)) {
+        p.pos += p.dir
+    }
+    p.pixelX += (p.pos.x - p.pixelX) * PACMAN_SPEED
+    p.pixelY += (p.pos.y - p.pixelY) * PACMAN_SPEED
+}
+
+private fun updateGhost(g: Ghost, p: Pacman, maze: Array<IntArray>) {
+    val target = when (g.state) {
+        GhostState.CHASE -> p.pos
+        GhostState.SCATTER -> scatterCorner(g.type)
+        GhostState.EATEN -> GridPos(14,14)
+        GhostState.FRIGHTENED -> {
+            randomDir(g, maze)?.let { g.dir = it }
+            g.pos += g.dir
+            return
         }
     }
 
-    val movePos = GridPos(pacman.pos.x, pacman.pos.y).apply {
-        when (pacman.dir) {
-            Direction.UP -> y--
-            Direction.DOWN -> y++
-            Direction.LEFT -> x--
-            Direction.RIGHT -> x++
-            else -> {}
-        }
+    val dirs = validDirs(g, maze)
+    g.dir = dirs.minByOrNull { dist(g.pos + it, target) } ?: g.dir
+    g.pos += g.dir
+
+    val speed = when (g.state) {
+        GhostState.FRIGHTENED -> FRIGHT_SPEED
+        GhostState.EATEN -> EATEN_SPEED
+        else -> GHOST_SPEED
     }
 
-    if (isValidMove(movePos, maze)) {
-        pacman.pos = movePos
+    g.pixelX += (g.pos.x - g.pixelX) * speed
+    g.pixelY += (g.pos.y - g.pixelY) * speed
+}
+
+/* ===================== HELPERS ===================== */
+
+private fun isValid(p: GridPos, m: Array<IntArray>) =
+    p.y in m.indices && p.x in m[0].indices && m[p.y][p.x] != 1
+
+private fun isCentered(p: Pacman) =
+    abs(p.pixelX - p.pos.x) < 0.05f && abs(p.pixelY - p.pos.y) < 0.05f
+
+private fun validDirs(g: Ghost, m: Array<IntArray>) =
+    Direction.entries.filter {
+        it != Direction.NONE && it != g.dir.opposite() && isValid(g.pos + it, m)
     }
 
-    if (pacman.pos.x < 0) pacman.pos.x = 27
-    if (pacman.pos.x > 27) pacman.pos.x = 0
+private fun randomDir(g: Ghost, m: Array<IntArray>) =
+    validDirs(g, m).randomOrNull()
 
-    val targetX = pacman.pos.x.toFloat()
-    val targetY = pacman.pos.y.toFloat()
-
-    // Pac-Man остаётся быстрым (0.45f)
-    pacman.pixelX += (targetX - pacman.pixelX) * 0.04f
-    pacman.pixelY += (targetY - pacman.pixelY) * 0.04f
+private fun scatterCorner(type: Int) = when (type) {
+    0 -> GridPos(27,0)
+    1 -> GridPos(0,0)
+    2 -> GridPos(27,30)
+    else -> GridPos(0,30)
 }
 
-// ===================== GHOST UPDATE (УМЕНЬШЕННАЯ СКОРОСТЬ) =====================
-private fun updateGhostSimple(ghost: Ghost, pacman: Pacman, maze: Array<IntArray>, frightened: Boolean) {
-    val dirs = Direction.entries.filter { it != ghost.dir.opposite() }
-    val bestDir = if (frightened) {
-        dirs.random()
-    } else {
-        dirs.minByOrNull {
-            val nx = ghost.pos.x + it.dx()
-            val ny = ghost.pos.y + it.dy()
-            abs(nx - pacman.pos.x) + abs(ny - pacman.pos.y)
-        } ?: ghost.dir
-    }
+private fun collision(p: Pacman, g: Ghost) =
+    abs(p.pixelX - g.pixelX) < 0.5f && abs(p.pixelY - g.pixelY) < 0.5f
 
-    val newPos = GridPos(ghost.pos.x + bestDir.dx(), ghost.pos.y + bestDir.dy())
-    if (isValidMove(newPos, maze)) {
-        ghost.dir = bestDir
-        ghost.pos = newPos
-    }
+private fun dist(a: GridPos, b: GridPos) =
+    sqrt(((a.x-b.x)*(a.x-b.x)+(a.y-b.y)*(a.y-b.y)).toFloat())
 
-    if (ghost.pos.x < 0) ghost.pos.x = 27
-    if (ghost.pos.x > 27) ghost.pos.x = 0
-
-    // ← Призраки теперь медленнее (0.22f вместо 0.4f)
-    ghost.pixelX += (ghost.pos.x - ghost.pixelX) * 0.01f
-    ghost.pixelY += (ghost.pos.y - ghost.pixelY) * 0.01f
+private fun Direction.dx() = when(this){Direction.LEFT->-1;Direction.RIGHT->1;else->0}
+private fun Direction.dy() = when(this){Direction.UP->-1;Direction.DOWN->1;else->0}
+private fun Direction.opposite() = when(this){
+    Direction.UP->Direction.DOWN
+    Direction.DOWN->Direction.UP
+    Direction.LEFT->Direction.RIGHT
+    Direction.RIGHT->Direction.LEFT
+    else->Direction.NONE
 }
 
-// ===================== HELPERS =====================
-private fun isValidMove(pos: GridPos, maze: Array<IntArray>): Boolean {
-    return pos.x in 0..27 && pos.y in 0..30 && maze[pos.y][pos.x] != 1
-}
+/* ===================== DRAW ===================== */
 
-private fun Direction.dx() = when (this) { Direction.LEFT -> -1; Direction.RIGHT -> 1; else -> 0 }
-private fun Direction.dy() = when (this) { Direction.UP -> -1; Direction.DOWN -> 1; else -> 0 }
-private fun Direction.opposite() = when (this) {
-    Direction.UP -> Direction.DOWN
-    Direction.DOWN -> Direction.UP
-    Direction.LEFT -> Direction.RIGHT
-    Direction.RIGHT -> Direction.LEFT
-    else -> Direction.NONE
-}
-
-private fun resetLevel(pacman: Pacman, ghosts: List<Ghost>) {
-    pacman.pos = GridPos(13, 23)
-    pacman.pixelX = 13f
-    pacman.pixelY = 23f
-    pacman.dir = Direction.LEFT
-    pacman.nextDir = Direction.LEFT
-
-    ghosts[0].pos = GridPos(14, 11); ghosts[0].pixelX = 14f; ghosts[0].pixelY = 11f
-    ghosts[1].pos = GridPos(14, 14); ghosts[1].pixelX = 14f; ghosts[1].pixelY = 14f
-    ghosts[2].pos = GridPos(12, 14); ghosts[2].pixelX = 12f; ghosts[2].pixelY = 14f
-    ghosts[3].pos = GridPos(16, 14); ghosts[3].pixelX = 16f; ghosts[3].pixelY = 14f
-}
-
-// ===================== DRAW =====================
-private fun drawMaze(scope: DrawScope, maze: Array<IntArray>, cell: Float, offset: Offset) = with(scope) {
-    maze.forEachIndexed { y, row ->
-        row.forEachIndexed { x, v ->
-            val pos = offset + Offset(x * cell, y * cell)
-            when (v) {
-                1 -> drawRect(Color(0xFF4488FF), pos, Size(cell, cell))
-                2 -> drawCircle(Color.White, cell * 0.12f, pos + Offset(cell / 2, cell / 2))
-                3 -> drawCircle(Color.Cyan, cell * 0.35f, pos + Offset(cell / 2, cell / 2))
+private fun drawMaze(s: androidx.compose.ui.graphics.drawscope.DrawScope, m: Array<IntArray>, c: Float) = with(s) {
+    m.forEachIndexed { y,row ->
+        row.forEachIndexed { x,v ->
+            when(v){
+                1 -> drawRect(Color.Blue, Offset(x*c,y*c), Size(c,c))
+                2 -> drawCircle(Color.White, c*0.1f, Offset(x*c+c/2,y*c+c/2))
+                3 -> drawCircle(Color.Cyan, c*0.3f, Offset(x*c+c/2,y*c+c/2))
             }
         }
     }
 }
 
-private fun drawPacman(scope: DrawScope, p: Pacman, cell: Float, offset: Offset, mouth: Float) = with(scope) {
-    val center = offset + Offset(p.pixelX * cell + cell / 2, p.pixelY * cell + cell / 2)
-    val mouthAngle = 0.2f + mouth * 0.6f
-    val startAngle = when (p.dir) {
-        Direction.RIGHT -> 0f
-        Direction.DOWN -> 90f
-        Direction.LEFT -> 180f
-        Direction.UP -> 270f
-        else -> 0f
-    }
-    drawArc(
-        color = Color.Yellow,
-        startAngle = startAngle - mouthAngle * 45f,
-        sweepAngle = 360f - mouthAngle * 90f,
-        useCenter = true,
-        topLeft = center - Offset(cell * 0.45f, cell * 0.45f),
-        size = Size(cell * 0.9f, cell * 0.9f)
-    )
+private fun drawPacman(s: androidx.compose.ui.graphics.drawscope.DrawScope, p: Pacman, c: Float) = with(s) {
+    drawCircle(Color.Yellow, c*0.45f, Offset(p.pixelX*c+c/2,p.pixelY*c+c/2))
 }
 
-private fun drawGhost(scope: DrawScope, g: Ghost, index: Int, cell: Float, offset: Offset, frightened: Boolean, flashing: Boolean) = with(scope) {
-    val center = offset + Offset(g.pixelX * cell + cell / 2, g.pixelY * cell + cell / 2)
-    val color = if (frightened) {
-        if (flashing) Color.White else Color.Blue
-    } else {
-        when (index) {
-            0 -> Color.Red
-            1 -> Color.Magenta
-            2 -> Color.Cyan
-            else -> Color(0xFFFF9800)
+private fun drawGhost(s: androidx.compose.ui.graphics.drawscope.DrawScope, g: Ghost, c: Float) = with(s) {
+    val color = when {
+        g.state == GhostState.FRIGHTENED -> Color.Blue
+        g.state == GhostState.EATEN -> Color.Gray
+        else -> listOf(Color.Red,Color.Magenta,Color.Cyan,Color(0xFFFF9800))[g.type]
+    }
+    drawCircle(color, c*0.45f, Offset(g.pixelX*c+c/2,g.pixelY*c+c/2))
+}
+
+/* ===================== CONTROLS ===================== */
+
+@Composable
+private fun Controls(p: Pacman) {
+    Row(Modifier.align(Alignment.BottomCenter).padding(24.dp)) {
+        IconButton({ p.nextDir = Direction.LEFT }) {
+            Icon(Icons.Default.KeyboardArrowLeft,null,tint=Color.Yellow)
+        }
+        Column {
+            IconButton({ p.nextDir = Direction.UP }) {
+                Icon(Icons.Default.KeyboardArrowUp,null,tint=Color.Yellow)
+            }
+            IconButton({ p.nextDir = Direction.DOWN }) {
+                Icon(Icons.Default.KeyboardArrowDown,null,tint=Color.Yellow)
+            }
+        }
+        IconButton({ p.nextDir = Direction.RIGHT }) {
+            Icon(Icons.Default.KeyboardArrowRight,null,tint=Color.Yellow)
         }
     }
-
-    drawCircle(color, cell * 0.45f, center)
-
-    val eyeX = cell * 0.15f
-    val eyeY = cell * 0.1f
-    drawCircle(Color.White, cell * 0.15f, center + Offset(-eyeX, -eyeY))
-    drawCircle(Color.White, cell * 0.15f, center + Offset(eyeX, -eyeY))
-
-    val pupilX = g.dir.dx() * cell * 0.1f
-    val pupilY = g.dir.dy() * cell * 0.05f
-    drawCircle(Color.Black, cell * 0.07f, center + Offset(-eyeX + pupilX, -eyeY + pupilY))
-    drawCircle(Color.Black, cell * 0.07f, center + Offset(eyeX + pupilX, -eyeY + pupilY))
 }
