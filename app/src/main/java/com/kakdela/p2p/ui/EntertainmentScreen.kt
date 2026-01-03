@@ -30,10 +30,14 @@ import java.nio.charset.StandardCharsets
 enum class EntertainmentType { WEB, INTERNAL_CHAT, GAME }
 
 data class EntertainmentItem(
-    val id: String, val title: String, val description: String,
-    val type: EntertainmentType, val route: String? = null, val url: String? = null
+    val id: String,
+    val title: String,
+    val description: String,
+    val type: EntertainmentType,
+    val route: String? = null,
+    val url: String? = null
 ) {
-    val iconVector: ImageVector get() = when(type) {
+    val iconVector: ImageVector get() = when (type) {
         EntertainmentType.GAME -> Icons.Filled.Gamepad
         EntertainmentType.INTERNAL_CHAT -> Icons.Filled.Chat
         else -> Icons.Filled.Public
@@ -43,9 +47,18 @@ data class EntertainmentItem(
 private val entertainmentItems = listOf(
     EntertainmentItem("global_chat", "ЧёКаВо?", "Общий чат", EntertainmentType.INTERNAL_CHAT, "chat/global"),
     EntertainmentItem("tictactoe", "Крестики-нолики", "Игра против ИИ", EntertainmentType.GAME, Routes.TIC_TAC_TOE),
-    // Новые игры
-    EntertainmentItem("pacman", "Pacman", "Классическая аркада", EntertainmentType.GAME, "pacman"),
-    EntertainmentItem("jewels", "Jewels Blast", "Три в ряд (200 уровней)", EntertainmentType.GAME, "jewels_blast"),
+    EntertainmentItem("pacman", "Pacman", "Классическая аркада", EntertainmentType.GAME, Routes.PACMAN),
+    EntertainmentItem("jewels", "Jewels Blast", "Три в ряд (200 уровней)", EntertainmentType.GAME, Routes.JEWELS),
+
+    // ←←← НОВАЯ ИГРА: СУДОКУ ←←←
+    EntertainmentItem(
+        id = "sudoku",
+        title = "Судоку",
+        description = "Классическая головоломка 9×9",
+        type = EntertainmentType.GAME,
+        route = Routes.SUDOKU
+    ),
+
     // Веб-сервисы
     EntertainmentItem("tiktok", "TikTok", "Смотреть (ПК режим)", EntertainmentType.WEB, url = "https://www.tiktok.com"),
     EntertainmentItem("pikabu", "Пикабу", "Юмор", EntertainmentType.WEB, url = "https://pikabu.ru"),
@@ -64,7 +77,11 @@ fun EntertainmentScreen(navController: NavHostController) {
         }
     ) { padding ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().background(Color.Black).padding(padding).padding(16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .padding(padding)
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             items(entertainmentItems) { item ->
@@ -76,14 +93,17 @@ fun EntertainmentScreen(navController: NavHostController) {
 
 @Composable
 fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostController) {
-    val neonColor = when(item.type) {
+    val neonColor = when (item.type) {
         EntertainmentType.GAME -> Color.Green
         EntertainmentType.INTERNAL_CHAT -> Color.Cyan
         EntertainmentType.WEB -> Color.Magenta
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth().height(80.dp).shadow(8.dp, spotColor = neonColor),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(80.dp)
+            .shadow(8.dp, spotColor = neonColor),
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, neonColor.copy(alpha = 0.8f)),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF121212)),
@@ -91,24 +111,26 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
             when (item.type) {
                 EntertainmentType.WEB -> item.url?.let {
                     val encoded = URLEncoder.encode(it, StandardCharsets.UTF_8.toString())
-                    navController.navigate("webview/$encoded/${item.title}")
+                    navController.navigate("webview/\( encoded/ \){item.title}")
                 }
                 else -> item.route?.let { navController.navigate(it) }
             }
         }
     ) {
         Row(
-            modifier = Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(Color.Transparent, neonColor.copy(0.05f)))).padding(horizontal = 16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Brush.horizontalGradient(listOf(Color.Transparent, neonColor.copy(0.05f))))
+                .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(item.iconVector, null, tint = neonColor, modifier = Modifier.size(32.dp))
+            Icon(item.iconVector, contentDescription = null, tint = neonColor, modifier = Modifier.size(32.dp))
             Spacer(Modifier.width(20.dp))
             Column(Modifier.weight(1f)) {
                 Text(item.title.uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
                 Text(item.description, color = Color.Gray, fontSize = 12.sp)
             }
-            Icon(Icons.Filled.PlayArrow, null, tint = neonColor)
+            Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = neonColor)
         }
     }
 }
-
