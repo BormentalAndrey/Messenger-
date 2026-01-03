@@ -304,8 +304,8 @@ private fun updateGhostSimple(ghost: Ghost, pacman: Pacman, maze: Array<IntArray
     if (ghost.pos.x < 0) ghost.pos.x = 27
     if (ghost.pos.x > 27) ghost.pos.x = 0
 
-    ghost.pixelX += (ghost.pos.x - ghost.pixelX) * 0.4f
-    ghost.pixelY += (ghost.pos.y - ghost.pixelY) * 0.4f
+    ghost.pixelX += (ghost.pos.x - ghost.pixelX) * 0.25f
+    ghost.pixelY += (ghost.pos.y - ghost.pixelY) * 0.25f
 }
 
 // ===================== HELPERS =====================
