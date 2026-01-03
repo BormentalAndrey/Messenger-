@@ -39,7 +39,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            
+
             val enableSign = (System.getenv("KEYSTORE_PASSWORD") ?: "").isNotEmpty()
             if (enableSign) {
                 signingConfig = signingConfigs.getByName("release")
@@ -50,17 +50,12 @@ android {
                 "proguard-rules.pro"
             )
         }
-        
-        debug {
-            // Debug конфиг
-        }
+
+        debug {}
     }
 
-    // --- ИСПРАВЛЕНИЕ ОШИБКИ LINT ---
     lint {
-        // Не останавливать сборку при ошибках Lint
         abortOnError = false
-        // Не проверять строго при релизной сборке
         checkReleaseBuilds = false
     }
 
@@ -69,13 +64,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+    kotlinOptions { jvmTarget = "17" }
 
-    buildFeatures {
-        compose = true
-    }
+    buildFeatures { compose = true }
 
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.11"
@@ -103,8 +94,6 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.0")
-    
-    // --- ИСПРАВЛЕНИЕ: Явное обновление Fragment API ---
     implementation("androidx.fragment:fragment-ktx:1.8.1")
 
     implementation("com.wireguard.android:tunnel:1.0.20230706")
@@ -119,6 +108,10 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.navigation:navigation-compose:2.8.0")
     implementation("io.coil-kt:coil-compose:2.6.0")
+
+    // 🎵 MP3 / FLAC PLAYER (Media3)
+    implementation("androidx.media3:media3-exoplayer:1.3.1")
+    implementation("androidx.media3:media3-session:1.3.1")
 
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
@@ -136,9 +129,4 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     implementation("io.getstream:stream-webrtc-android:1.2.0")
-
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 }
-
