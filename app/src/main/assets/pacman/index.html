@@ -16,7 +16,8 @@
       height: 100%;
       background: black;
       overflow: hidden;
-      touch-action: none; /* отключаем стандартный скролл */
+      touch-action: none;
+      font-family: Arial, sans-serif;
     }
 
     #pacman {
@@ -25,38 +26,70 @@
       position: relative;
     }
 
-    /* Сенсорные кнопки */
-    .control-button {
+    /* Контейнер кнопок */
+    #controls {
       position: absolute;
-      width: 60px;
-      height: 60px;
+      bottom: 5%;
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 20px;
+    }
+
+    /* Основные кнопки */
+    .control-button {
+      width: 70px;
+      height: 70px;
       background: rgba(255, 255, 255, 0.3);
       border-radius: 50%;
       text-align: center;
-      line-height: 60px;
+      line-height: 70px;
       font-weight: bold;
       font-size: 24px;
       color: black;
       user-select: none;
       touch-action: none;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      transition: all 0.1s;
     }
 
-    #up { top: 80%; left: 50%; transform: translateX(-50%); }
-    #down { top: 95%; left: 50%; transform: translateX(-50%); }
-    #left { top: 87%; left: 35%; }
-    #right { top: 87%; left: 65%; }
-    #start { top: 87%; left: 50%; transform: translateX(-50%); background: rgba(0,255,0,0.5); }
+    .control-button:active {
+      transform: scale(0.9);
+      background: rgba(255,255,255,0.6);
+    }
+
+    /* Старт */
+    #start {
+      width: 100px;
+      height: 100px;
+      background: #4CAF50;
+      color: white;
+      font-size: 20px;
+      line-height: 100px;
+      border-radius: 50%;
+      box-shadow: 0 6px 12px rgba(0,0,0,0.6);
+    }
+
+    /* Стрелки */
+    .arrow-up { position: relative; top: -60px; }
+    .arrow-down { position: relative; top: 60px; }
+    .arrow-left { position: relative; left: -60px; }
+    .arrow-right { position: relative; left: 60px; }
+
   </style>
 </head>
 <body>
   <div id="pacman"></div>
 
-  <!-- Сенсорные кнопки -->
-  <div id="up" class="control-button">↑</div>
-  <div id="down" class="control-button">↓</div>
-  <div id="left" class="control-button">←</div>
-  <div id="right" class="control-button">→</div>
-  <div id="start" class="control-button">N</div>
+  <!-- Контейнер кнопок -->
+  <div id="controls">
+    <div id="left" class="control-button">←</div>
+    <div id="up" class="control-button arrow-up">↑</div>
+    <div id="start" class="control-button">СТАРТ</div>
+    <div id="down" class="control-button arrow-down">↓</div>
+    <div id="right" class="control-button arrow-right">→</div>
+  </div>
 
   <script src="modernizr-1.5.min.js"></script>
   <script src="pacman.js"></script>
@@ -78,13 +111,13 @@
 
       startGame();
 
-      // --- Сенсорное управление ---
       function sendKey(keyCode) {
         if (!gameStarted) return;
         var e = new KeyboardEvent('keydown', { keyCode: keyCode, which: keyCode });
         document.dispatchEvent(e);
       }
 
+      // Управление кнопками
       document.getElementById('up').addEventListener('touchstart', () => sendKey(38));
       document.getElementById('down').addEventListener('touchstart', () => sendKey(40));
       document.getElementById('left').addEventListener('touchstart', () => sendKey(37));
