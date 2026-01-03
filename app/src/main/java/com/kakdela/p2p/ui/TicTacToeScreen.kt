@@ -24,28 +24,27 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
 // Проверка победителя
-fun checkWinnerForBoard(board: List<String>): String? {
-    val winLines = listOf(
-        listOf(0, 1, 2), listOf(3, 4, 5), listOf(6, 7, 8), // горизонтали
-        listOf(0, 3, 6), listOf(1, 4, 7), listOf(2, 5, 8), // вертикали
-        listOf(0, 4, 8), listOf(2, 4, 6)                  // диагонали
+private fun checkWinner(board: List<String>): String? {
+    val lines = listOf(
+        listOf(0, 1, 2), listOf(3, 4, 5), listOf(6, 7, 8), // ряды
+        listOf(0, 3, 6), listOf(1, 4, 7), listOf(2, 5, 8), // столбцы
+        listOf(0, 4, 8), listOf(2, 4, 6)                   // диагонали
     )
-    for (line in winLines) {
-        val a = board[line[0]]
-        val b = board[line[1]]
-        val c = board[line[2]]
-        if (a.isNotEmpty() && a == b && a == c) {
-            return a
+    for (line in lines) {
+        val (a, b, c) = line
+        if (board[a].isNotEmpty() && board[a] == board[b] && board[a] == board[c]) {
+            return board[a]
         }
     }
     return null
 }
 
-fun isBoardFull(board: List<String>): Boolean = board.all { it.isNotEmpty() }
+// Проверка на ничью
+private fun isBoardFull(board: List<String>): Boolean = board.all { it.isNotEmpty() }
 
-// Minimax алгоритм — непобедимый ИИ
-fun minimax(board: List<String>, isMaximizing: Boolean): Int {
-    val winner = checkWinnerForBoard(board)
+// Minimax — непобедимый ИИ
+private fun minimax(board: List<String>, isMaximizing: Boolean): Int {
+    val winner = checkWinner(board)
     if (winner == "O") return 10
     if (winner == "X") return -10
     if (isBoardFull(board)) return 0
@@ -54,10 +53,8 @@ fun minimax(board: List<String>, isMaximizing: Boolean): Int {
         var best = Int.MIN_VALUE
         for (i in board.indices) {
             if (board[i].isEmpty()) {
-                val newBoard = board.toMutableList()
-                newBoard[i] = "O"
-                val score = minimax(newBoard, false)
-                best = maxOf(best, score)
+                val newBoard = board.toMutableList().apply { this[i] = "O" }
+                best = maxOf(best, minimax(newBoard, false))
             }
         }
         return best
@@ -65,24 +62,22 @@ fun minimax(board: List<String>, isMaximizing: Boolean): Int {
         var best = Int.MAX_VALUE
         for (i in board.indices) {
             if (board[i].isEmpty()) {
-                val newBoard = board.toMutableList()
-                newBoard[i] = "X"
-                val score = minimax(newBoard, true)
-                best = minOf(best, score)
+                val newBoard = board.toMutableList().apply { this[i] = "X" }
+                best = minOf(best, minimax(newBoard, true))
             }
         }
         return best
     }
 }
 
-fun getBestMove(board: List<String>): Int {
+// Поиск лучшего хода для ИИ ("O")
+private fun getBestMove(board: List<String>): Int {
     var bestScore = Int.MIN_VALUE
     var bestMove = -1
 
     for (i in board.indices) {
         if (board[i].isEmpty()) {
-            val newBoard = board.toMutableList()
-            newBoard[i] = "O"
+            val newBoard = board.toMutableList().apply { this[i] = "O" }
             val score = minimax(newBoard, false)
             if (score > bestScore) {
                 bestScore = score
@@ -94,13 +89,13 @@ fun getBestMove(board: List<String>): Int {
 }
 
 // Подсветка выигрышной линии
-fun getWinningLine(board: List<String>, winner: String): List<Int> {
-    val winLines = listOf(
+private fun getWinningLine(board: List<String>, winner: String): List<Int> {
+    val lines = listOf(
         listOf(0, 1, 2), listOf(3, 4, 5), listOf(6, 7, 8),
         listOf(0, 3, 6), listOf(1, 4, 7), listOf(2, 5, 8),
         listOf(0, 4, 8), listOf(2, 4, 6)
     )
-    for (line in winLines) {
+    for (line in lines) {
         if (board[line[0]] == winner && board[line[1]] == winner && board[line[2]] == winner) {
             return line
         }
@@ -126,14 +121,14 @@ fun TicTacToeScreen() {
     // Ход ИИ
     LaunchedEffect(isPlayerTurn, winner, isDraw) {
         if (!isPlayerTurn && winner == null && !isDraw) {
-            delay(800) // "думает"
+            delay(800) // Имитация "размышлений"
             val move = getBestMove(board)
             if (move != -1) {
                 val newBoard = board.toMutableList()
                 newBoard[move] = "O"
                 board = newBoard
 
-                val newWinner = checkWinnerForBoard(board)
+                val newWinner = checkWinner(board)
                 if (newWinner != null) {
                     winner = newWinner
                 } else if (isBoardFull(board)) {
@@ -153,7 +148,7 @@ fun TicTacToeScreen() {
                         "XO NEON",
                         color = Color.Cyan,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp
+                        fontSize = 22.sp
                     )
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -161,7 +156,7 @@ fun TicTacToeScreen() {
                 ),
                 actions = {
                     IconButton(onClick = { resetGame() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Restart", tint = Color.White)
+                        Icon(Icons.Default.Refresh, contentDescription = "Новая игра", tint = Color.White)
                     }
                 }
             )
@@ -179,13 +174,13 @@ fun TicTacToeScreen() {
             Card(
                 modifier = Modifier
                     .fillMaxWidth(0.85f)
-                    .padding(bottom = 32.dp),
+                    .padding(bottom = 40.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),
                 elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
             ) {
                 Text(
                     text = when {
-                        winner == "X" -> "🎉 ПОБЕДА! ТЫ ВЫИГРАЛ!"
+                        winner == "X" -> "🎉 ТЫ ПОБЕДИЛ! НЕВЕРОЯТНО!"
                         winner == "O" -> "🤖 ИИ ПОБЕДИЛ"
                         isDraw -> "🤝 НИЧЬЯ — ОТЛИЧНЫЙ РЕЗУЛЬТАТ!"
                         isPlayerTurn -> "⚡ ТВОЙ ХОД (X)"
@@ -227,25 +222,27 @@ fun TicTacToeScreen() {
                                             .fillMaxHeight()
                                             .padding(8.dp)
                                             .shadow(
-                                                elevation = if (isWinningCell) 16.dp else 4.dp,
+                                                elevation = if (isWinningCell) 20.dp else 6.dp,
                                                 shape = RoundedCornerShape(16.dp),
                                                 ambientColor = if (isWinningCell) Color.Magenta else Color.Black
                                             )
                                             .background(
-                                                color = if (isWinningCell) Color.Magenta.copy(alpha = 0.3f) else Color(0xFF1E1E1E),
+                                                color = if (isWinningCell) Color.Magenta.copy(alpha = 0.25f) else Color(0xFF1E1E1E),
                                                 shape = RoundedCornerShape(16.dp)
                                             )
                                             .border(
-                                                width = if (isWinningCell) 3.dp else 2.dp,
-                                                color = if (isWinningCell) Color.Magenta else Color(0xFF333333),
+                                                width = if (isWinningCell) 4.dp else 2.dp,
+                                                color = if (isWinningCell) Color.Magenta else Color(0xFF404040),
                                                 shape = RoundedCornerShape(16.dp)
                                             )
-                                            .clickable(enabled = isPlayerTurn && symbol.isEmpty() && winner == null && !isDraw) {
+                                            .clickable(
+                                                enabled = isPlayerTurn && symbol.isEmpty() && winner == null && !isDraw
+                                            ) {
                                                 val newBoard = board.toMutableList()
                                                 newBoard[index] = "X"
                                                 board = newBoard
 
-                                                val newWinner = checkWinnerForBoard(board)
+                                                val newWinner = checkWinner(board)
                                                 if (newWinner != null) {
                                                     winner = newWinner
                                                 } else if (isBoardFull(board)) {
@@ -256,7 +253,7 @@ fun TicTacToeScreen() {
                                             },
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        AnimatedVisibility(
+                                        androidx.compose.animation.AnimatedVisibility(  // Явный импорт для избежания конфликтов
                                             visible = symbol.isNotEmpty(),
                                             enter = fadeIn(),
                                             exit = fadeOut()
@@ -285,7 +282,7 @@ fun TicTacToeScreen() {
 
             Spacer(modifier = Modifier.height(48.dp))
 
-            // Кнопка новой игры
+            // Кнопка "Новая игра"
             AnimatedVisibility(
                 visible = winner != null || isDraw,
                 enter = fadeIn(),
@@ -297,15 +294,15 @@ fun TicTacToeScreen() {
                         containerColor = if (winner == "O") Color.Magenta else Color.Cyan
                     ),
                     modifier = Modifier
-                        .shadow(16.dp, RoundedCornerShape(16.dp))
-                        .height(56.dp)
-                        .width(220.dp),
+                        .width(240.dp)
+                        .height(60.dp)
+                        .shadow(16.dp, RoundedCornerShape(16.dp)),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Text(
                         "НОВАЯ ИГРА",
                         color = Color.Black,
-                        fontSize = 18.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
