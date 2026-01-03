@@ -163,7 +163,7 @@ fun PacmanScreen() {
                 resetLevel(pacman, ghosts)
             }
 
-            delay(16)
+            delay(16) // 60 FPS
         }
     }
 
@@ -278,11 +278,12 @@ private fun updatePacman(pacman: Pacman, maze: Array<IntArray>) {
     val targetX = pacman.pos.x.toFloat()
     val targetY = pacman.pos.y.toFloat()
 
+    // Pac-Man остаётся быстрым (0.45f)
     pacman.pixelX += (targetX - pacman.pixelX) * 0.45f
     pacman.pixelY += (targetY - pacman.pixelY) * 0.45f
 }
 
-// ===================== GHOST UPDATE =====================
+// ===================== GHOST UPDATE (УМЕНЬШЕННАЯ СКОРОСТЬ) =====================
 private fun updateGhostSimple(ghost: Ghost, pacman: Pacman, maze: Array<IntArray>, frightened: Boolean) {
     val dirs = Direction.entries.filter { it != ghost.dir.opposite() }
     val bestDir = if (frightened) {
@@ -304,8 +305,9 @@ private fun updateGhostSimple(ghost: Ghost, pacman: Pacman, maze: Array<IntArray
     if (ghost.pos.x < 0) ghost.pos.x = 27
     if (ghost.pos.x > 27) ghost.pos.x = 0
 
-    ghost.pixelX += (ghost.pos.x - ghost.pixelX) * 0.25f
-    ghost.pixelY += (ghost.pos.y - ghost.pixelY) * 0.25f
+    // ← Призраки теперь медленнее (0.22f вместо 0.4f)
+    ghost.pixelX += (ghost.pos.x - ghost.pixelX) * 0.22f
+    ghost.pixelY += (ghost.pos.y - ghost.pixelY) * 0.22f
 }
 
 // ===================== HELPERS =====================
@@ -379,7 +381,7 @@ private fun drawGhost(scope: DrawScope, g: Ghost, index: Int, cell: Float, offse
             0 -> Color.Red
             1 -> Color.Magenta
             2 -> Color.Cyan
-            else -> Color(0xFFFF9800) // Orange as hex — безопасно для всех версий Compose
+            else -> Color(0xFFFF9800)
         }
     }
 
