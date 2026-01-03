@@ -27,7 +27,11 @@ import com.kakdela.p2p.ui.navigation.Routes
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
-enum class EntertainmentType { WEB, INTERNAL_CHAT, GAME }
+enum class EntertainmentType {
+    WEB,
+    INTERNAL_CHAT,
+    GAME
+}
 
 data class EntertainmentItem(
     val id: String,
@@ -37,22 +41,71 @@ data class EntertainmentItem(
     val route: String? = null,
     val url: String? = null
 ) {
-    val iconVector: ImageVector get() = when (type) {
-        EntertainmentType.GAME -> Icons.Filled.Gamepad
-        EntertainmentType.INTERNAL_CHAT -> Icons.Filled.Chat
-        else -> Icons.Filled.Public
-    }
+    val iconVector: ImageVector
+        get() = when (type) {
+            EntertainmentType.GAME -> Icons.Filled.Gamepad
+            EntertainmentType.INTERNAL_CHAT -> Icons.Filled.Chat
+            EntertainmentType.WEB -> Icons.Filled.Public
+        }
 }
 
 private val entertainmentItems = listOf(
-    EntertainmentItem("global_chat", "ЧёКаВо?", "Общий чат", EntertainmentType.INTERNAL_CHAT, route = "chat/global"),
-    EntertainmentItem("tictactoe", "Крестики-нолики", "Игра против ИИ", EntertainmentType.GAME, route = Routes.TIC_TAC_TOE),
-    EntertainmentItem("pacman", "Pacman", "Классическая аркада", EntertainmentType.GAME, route = Routes.PACMAN),
-    EntertainmentItem("jewels", "Jewels Blast", "Три в ряд (200 уровней)", EntertainmentType.GAME, route = Routes.JEWELS),
-    EntertainmentItem("sudoku", "Судоку", "Классическая головоломка 9x9", EntertainmentType.GAME, route = Routes.SUDOKU),
-    EntertainmentItem("tiktok", "TikTok", "Смотреть (ПК режим)", EntertainmentType.WEB, url = "https://www.tiktok.com"),
-    EntertainmentItem("pikabu", "Пикабу", "Юмор", EntertainmentType.WEB, url = "https://pikabu.ru"),
-    EntertainmentItem("crazygames", "CrazyGames", "Игры онлайн", EntertainmentType.WEB, url = "https://www.crazygames.com")
+    EntertainmentItem(
+        id = "global_chat",
+        title = "ЧёКаВо?",
+        description = "Общий чат",
+        type = EntertainmentType.INTERNAL_CHAT,
+        route = "chat/global"
+    ),
+    EntertainmentItem(
+        id = "tictactoe",
+        title = "Крестики-нолики",
+        description = "Игра против ИИ",
+        type = EntertainmentType.GAME,
+        route = Routes.TIC_TAC_TOE
+    ),
+    EntertainmentItem(
+        id = "pacman",
+        title = "Pacman",
+        description = "Классическая аркада",
+        type = EntertainmentType.GAME,
+        route = Routes.PACMAN
+    ),
+    EntertainmentItem(
+        id = "jewels",
+        title = "Jewels Blast",
+        description = "Три в ряд (200 уровней)",
+        type = EntertainmentType.GAME,
+        route = Routes.JEWELS
+    ),
+    EntertainmentItem(
+        id = "sudoku",
+        title = "Судоку",
+        description = "Классическая головоломка 9x9",
+        type = EntertainmentType.GAME,
+        route = Routes.SUDOKU
+    ),
+    EntertainmentItem(
+        id = "tiktok",
+        title = "TikTok",
+        description = "Смотреть (ПК режим)",
+        type = EntertainmentType.WEB,
+        url = "https://www.tiktok.com"
+    ),
+    EntertainmentItem(
+        id = "pikabu",
+        title = "Пикабу",
+        description = "Юмор",
+        type = EntertainmentType.WEB,
+        url = "https://pikabu.ru"
+    ),
+    EntertainmentItem(
+        id = "crazygames",
+        title = "CrazyGames",
+        description = "Игры онлайн",
+        type = EntertainmentType.WEB,
+        url = "https://www.crazygames.com"
+    )
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,28 +114,43 @@ fun EntertainmentScreen(navController: NavHostController) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Развлечения", fontWeight = FontWeight.Black, color = Color.Green, letterSpacing = 2.sp) },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black)
+                title = {
+                    Text(
+                        text = "Развлечения",
+                        fontWeight = FontWeight.Black,
+                        color = Color.Green,
+                        letterSpacing = 2.sp
+                    )
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = Color.Black
+                )
             )
         }
-    ) { padding ->
+    ) { paddingValues ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color.Black)
-                .padding(padding)
+                .padding(paddingValues)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             items(entertainmentItems) { item ->
-                EntertainmentNeonItem(item = item, navController = navController)
+                EntertainmentNeonItem(
+                    item = item,
+                    navController = navController
+                )
             }
         }
     }
 }
 
 @Composable
-fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostController) {
+fun EntertainmentNeonItem(
+    item: EntertainmentItem,
+    navController: NavHostController
+) {
     val neonColor = when (item.type) {
         EntertainmentType.GAME -> Color.Green
         EntertainmentType.INTERNAL_CHAT -> Color.Cyan
@@ -93,18 +161,41 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
         modifier = Modifier
             .fillMaxWidth()
             .height(80.dp)
-            .shadow(elevation = 8.dp, spotColor = neonColor),
+            .shadow(
+                elevation = 8.dp,
+                spotColor = neonColor
+            ),
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, neonColor.copy(alpha = 0.8f)),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF121212)),
+        border = BorderStroke(
+            width = 1.dp,
+            color = neonColor.copy(alpha = 0.8f)
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF121212)
+        ),
         onClick = {
             when (item.type) {
-                EntertainmentType.WEB -> item.url?.let { url ->
-                    val encoded = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
-                    navController.navigate("webview/\( encoded/ \){item.title}")
+                EntertainmentType.WEB -> {
+                    item.url?.let { url ->
+                        val encodedUrl = URLEncoder.encode(
+                            url,
+                            StandardCharsets.UTF_8.toString()
+                        )
+                        val encodedTitle = URLEncoder.encode(
+                            item.title,
+                            StandardCharsets.UTF_8.toString()
+                        )
+
+                        navController.navigate(
+                            "webview/$encodedUrl/$encodedTitle"
+                        )
+                    }
                 }
-                else -> item.route?.let { route ->
-                    navController.navigate(route)
+
+                else -> {
+                    item.route?.let { route ->
+                        navController.navigate(route)
+                    }
                 }
             }
         }
@@ -112,7 +203,14 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Brush.horizontalGradient(listOf(Color.Transparent, neonColor.copy(0.05f))))
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            neonColor.copy(alpha = 0.05f)
+                        )
+                    )
+                )
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -122,8 +220,12 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
                 tint = neonColor,
                 modifier = Modifier.size(32.dp)
             )
+
             Spacer(modifier = Modifier.width(20.dp))
-            Column(modifier = Modifier.weight(1f)) {
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
                 Text(
                     text = item.title.uppercase(),
                     color = Color.White,
@@ -135,6 +237,7 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
                     fontSize = 12.sp
                 )
             }
+
             Icon(
                 imageVector = Icons.Filled.PlayArrow,
                 contentDescription = null,
