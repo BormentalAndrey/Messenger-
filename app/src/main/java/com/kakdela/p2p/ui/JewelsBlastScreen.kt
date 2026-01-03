@@ -38,22 +38,22 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.random.Random
 
-// --- КОНСТАНТЫ И ЦВЕТА ---
-private const val GRID_SIZE = 8
-private const val JEWEL_TYPES = 6
-private const val MAX_LEVELS = 200
+// ==================== КОНСТАНТЫ И ЦВЕТА ====================
+private const val GRID_SIZE = 8              // 8×8 поле
+private const val JEWEL_TYPES = 6            // 6 видов кристаллов
+private const val MAX_LEVELS = 200            // Максимальное количество уровней
 
 // Неоновые цвета кристаллов
-val gemColors = listOf(
-    Color(0xFFFF0055), // Red Neon
-    Color(0xFF00FFFF), // Cyan Neon
-    Color(0xFF00FF00), // Green Neon
-    Color(0xFFFFD700), // Gold
-    Color(0xFFBF00FF), // Purple Neon
-    Color(0xFFFFFFFF)  // White/Diamond
+private val gemColors = listOf(
+    Color(0xFFFF0055), // Красный неон
+    Color(0xFF00FFFF), // Циан
+    Color(0xFF00FF00), // Зелёный неон
+    Color(0xFFFFD700), // Золотой
+    Color(0xFFBF00FF), // Пурпурный неон
+    Color(0xFFFFFFFF)  // Белый/бриллиант
 )
 
-// --- МОДЕЛИ ДАННЫХ ---
+// ==================== МОДЕЛИ ДАННЫХ ====================
 data class LevelData(
     val levelNumber: Int,
     val targetScore: Int,
@@ -64,69 +64,59 @@ data class Position(val row: Int, val col: Int)
 
 enum class GameState { PLAYING, WON, LOST, SWAPPING, PROCESSING }
 
-// --- ГЕНЕРАТОР УРОВНЕЙ ---
-fun generateLevel(level: Int): LevelData {
-    // Алгоритмическая сложность: с каждым уровнем нужно больше очков, ходы варьируются
+// ==================== ГЕНЕРАТОР УРОВНЕЙ ====================
+private fun generateLevel(level: Int): LevelData {
     val baseScore = 1000
     val scoreMultiplier = 250
-    val movesBase = 25
-    // Каждые 10 уровней ходов становится чуть меньше (минимум 15)
+    val movesBase = 30
     val moves = (movesBase - (level / 10)).coerceAtLeast(15)
-    
+
     return LevelData(
         levelNumber = level,
-        targetScore = baseScore + (level * scoreMultiplier),
+        targetScore = baseScore + level * scoreMultiplier,
         moves = moves
     )
 }
 
+// ==================== ОСНОВНОЙ ЭКРАН ====================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun JewelsBlastScreen() {
-    // Состояние уровня
-    var currentLevelIndex by remember { mutableIntStateOf(1) }
-    var levelData by remember { mutableStateOf(generateLevel(currentLevelIndex)) }
-    
-    // Состояние игры
+    var currentLevel by remember { mutableIntStateOf(1) }
+    var levelData by remember { mutableStateOf(generateLevel(currentLevel)) }
+
     var score by remember { mutableIntStateOf(0) }
     var movesLeft by remember { mutableIntStateOf(levelData.moves) }
     var gameState by remember { mutableStateOf(GameState.PLAYING) }
-    
-    // Игровое поле (двумерный список ID цветов)
-    var board by remember { 
-        mutableStateOf(List(GRID_SIZE) { List(GRID_SIZE) { Random.nextInt(JEWEL_TYPES) } }) 
+
+    // Игровое поле: -1 = пусто (удалённый камень)
+    var board by remember {
+        mutableStateOf(List(GRID_SIZE) { List(GRID_SIZE) { Random.nextInt(JEWEL_TYPES) } })
     }
-    
-    // Логика выделения
+
     var selectedPos by remember { mutableStateOf<Position?>(null) }
-    
     val scope = rememberCoroutineScope()
 
-    // Функция сброса уровня
-    fun resetLevel(level: Int) {
-        currentLevelIndex = level
-        levelData = generateLevel(level)
+    // Сброс уровня
+    fun resetLevel(newLevel: Int) {
+        currentLevel = newLevel
+        levelData = generateLevel(newLevel)
         score = 0
         movesLeft = levelData.moves
         board = List(GRID_SIZE) { List(GRID_SIZE) { Random.nextInt(JEWEL_TYPES) } }
         gameState = GameState.PLAYING
         selectedPos = null
-        
-        // Начальная проверка на готовые совпадения (чтобы поле было честным)
-        // В упрощенной версии просто оставляем как есть, игрок сразу получит комбо
     }
 
-    // --- ЛОГИКА MATCH-3 ---
-    
-    // Проверка совпадений
+    // Поиск совпадений (3+ в ряд/столбец)
     fun findMatches(currentBoard: List<List<Int>>): Set<Position> {
         val matches = mutableSetOf<Position>()
-        
-        // Горизонталь
+
+        // Горизонтальные
         for (r in 0 until GRID_SIZE) {
             var count = 1
             for (c in 0 until GRID_SIZE - 1) {
-                if (currentBoard[r][c] == currentBoard[r][c + 1]) {
+                if (currentBoard[r][c] == currentBoard[r][c + 1] && currentBoard[r][c] != -1) {
                     count++
                 } else {
                     if (count >= 3) {
@@ -139,12 +129,12 @@ fun JewelsBlastScreen() {
                 for (k in 0 until count) matches.add(Position(r, GRID_SIZE - 1 - k))
             }
         }
-        
-        // Вертикаль
+
+        // Вертикальные
         for (c in 0 until GRID_SIZE) {
             var count = 1
             for (r in 0 until GRID_SIZE - 1) {
-                if (currentBoard[r][c] == currentBoard[r + 1][c]) {
+                if (currentBoard[r][c] == currentBoard[r + 1][c] && currentBoard[r][c] != -1) {
                     count++
                 } else {
                     if (count >= 3) {
@@ -160,107 +150,92 @@ fun JewelsBlastScreen() {
         return matches
     }
 
-    // Обработка падения камней
+    // Обработка удаления, падения и каскада
     suspend fun processBoard() {
         gameState = GameState.PROCESSING
-        var stability = false
-        
-        while (!stability) {
-            val matches = findMatches(board)
-            if (matches.isEmpty()) {
-                stability = true
-            } else {
-                // 1. Подсчет очков
-                val points = matches.size * 10 + (matches.size - 3) * 5
-                score += points
-                
-                // 2. Удаление (ставим -1)
-                val mutableBoard = board.map { it.toMutableList() }.toMutableList()
-                matches.forEach { pos -> mutableBoard[pos.row][pos.col] = -1 }
-                
-                // Небольшая задержка для визуализации взрыва
-                board = mutableBoard
-                delay(200)
+        var hasMatches: Boolean
 
-                // 3. Гравитация
-                for (c in 0 until GRID_SIZE) {
-                    val newCol = mutableListOf<Int>()
-                    // Собираем существующие камни
-                    for (r in 0 until GRID_SIZE) {
-                        if (mutableBoard[r][c] != -1) newCol.add(mutableBoard[r][c])
+        do {
+            val matches = findMatches(board)
+            hasMatches = matches.isNotEmpty()
+
+            if (hasMatches) {
+                // Очки
+                val points = matches.size * 10 + (matches.size - 3) * 20
+                score += points
+
+                // Удаляем (ставим -1)
+                val mutableBoard = board.map { it.toMutableList() }.toMutableList()
+                matches.forEach { mutableBoard[it.row][it.col] = -1 }
+                board = mutableBoard
+                delay(300) // Время на "взрыв"
+
+                // Гравитация + новые камни сверху
+                for (col in 0 until GRID_SIZE) {
+                    val column = mutableListOf<Int>()
+                    for (row in 0 until GRID_SIZE) {
+                        if (mutableBoard[row][col] != -1) column.add(mutableBoard[row][col])
                     }
-                    // Дополняем сверху случайными
-                    val itemsNeeded = GRID_SIZE - newCol.size
-                    for (k in 0 until itemsNeeded) {
-                        newCol.add(0, Random.nextInt(JEWEL_TYPES))
-                    }
-                    // Записываем обратно в столбец
-                    for (r in 0 until GRID_SIZE) {
-                        mutableBoard[r][c] = newCol[r]
+                    val missing = GRID_SIZE - column.size
+                    repeat(missing) { column.add(0, Random.nextInt(JEWEL_TYPES)) }
+                    for (row in 0 until GRID_SIZE) {
+                        mutableBoard[row][col] = column[row]
                     }
                 }
                 board = mutableBoard
-                delay(200)
+                delay(300) // Время на падение
             }
-        }
-        
-        // Проверка условий победы/поражения
-        if (score >= levelData.targetScore) {
-            gameState = GameState.WON
-        } else if (movesLeft <= 0) {
-            gameState = GameState.LOST
-        } else {
-            gameState = GameState.PLAYING
+        } while (hasMatches)
+
+        // Проверка конца уровня
+        when {
+            score >= levelData.targetScore -> gameState = GameState.WON
+            movesLeft <= 0 -> gameState = GameState.LOST
+            else -> gameState = GameState.PLAYING
         }
     }
 
-    // Обработка клика
+    // Обработка клика по кристаллу
     fun onGemClick(pos: Position) {
         if (gameState != GameState.PLAYING) return
 
         if (selectedPos == null) {
             selectedPos = pos
-        } else {
-            val start = selectedPos!!
-            // Проверка на соседство (сверху, снизу, слева, справа)
-            val isAdjacent = (abs(start.row - pos.row) == 1 && start.col == pos.col) ||
-                             (abs(start.col - pos.col) == 1 && start.row == pos.row)
+            return
+        }
 
-            if (isAdjacent) {
-                // СВАП
-                gameState = GameState.SWAPPING
-                movesLeft--
-                
-                scope.launch {
-                    // 1. Визуально меняем
-                    val mutableBoard = board.map { it.toMutableList() }.toMutableList()
-                    val temp = mutableBoard[start.row][start.col]
-                    mutableBoard[start.row][start.col] = mutableBoard[pos.row][pos.col]
-                    mutableBoard[pos.row][pos.col] = temp
+        val first = selectedPos!!
+        val adjacent = (abs(first.row - pos.row) + abs(first.col - pos.col)) == 1
+
+        if (adjacent) {
+            movesLeft--
+            gameState = GameState.SWAPPING
+
+            scope.launch {
+                // Свап
+                val mutableBoard = board.map { it.toMutableList() }.toMutableList()
+                val temp = mutableBoard[first.row][first.col]
+                mutableBoard[first.row][first.col] = mutableBoard[pos.row][pos.col]
+                mutableBoard[pos.row][pos.col] = temp
+                board = mutableBoard
+                delay(200)
+
+                // Проверяем, есть ли совпадения
+                if (findMatches(board).isEmpty()) {
+                    // Неверный ход — возвращаем
+                    val tempBack = mutableBoard[first.row][first.col]
+                    mutableBoard[first.row][first.col] = mutableBoard[pos.row][pos.col]
+                    mutableBoard[pos.row][pos.col] = tempBack
                     board = mutableBoard
-                    
-                    delay(200)
-                    
-                    // 2. Проверяем валидность хода
-                    val matches = findMatches(board)
-                    if (matches.isEmpty()) {
-                        // Ход невалиден - возвращаем обратно
-                        val tempBack = mutableBoard[start.row][start.col]
-                        mutableBoard[start.row][start.col] = mutableBoard[pos.row][pos.col]
-                        mutableBoard[pos.row][pos.col] = tempBack
-                        board = mutableBoard
-                        movesLeft++ // Возвращаем ход
-                        gameState = GameState.PLAYING
-                    } else {
-                        // Ход успешен - запускаем каскад
-                        processBoard()
-                    }
-                    selectedPos = null
+                    movesLeft++
+                    gameState = GameState.PLAYING
+                } else {
+                    processBoard()
                 }
-            } else {
-                // Если кликнули далеко - просто меняем выделение
-                selectedPos = pos
+                selectedPos = null
             }
+        } else {
+            selectedPos = pos // Просто новое выделение
         }
     }
 
@@ -270,7 +245,7 @@ fun JewelsBlastScreen() {
                 CenterAlignedTopAppBar(
                     title = {
                         Text(
-                            "УРОВЕНЬ $currentLevelIndex",
+                            "Jewels Blast • УРОВЕНЬ $currentLevel",
                             color = Color.Magenta,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 2.sp
@@ -278,12 +253,12 @@ fun JewelsBlastScreen() {
                     },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black),
                     actions = {
-                        IconButton(onClick = { resetLevel(currentLevelIndex) }) {
+                        IconButton(onClick = { resetLevel(currentLevel) }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Restart", tint = Color.White)
                         }
                     }
                 )
-                // Инфо панель
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -292,23 +267,21 @@ fun JewelsBlastScreen() {
                 ) {
                     Column(horizontalAlignment = Alignment.Start) {
                         Text("ХОДЫ", color = Color.Gray, fontSize = 12.sp)
-                        Text("$movesLeft", color = if(movesLeft < 5) Color.Red else Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Text("$movesLeft", color = if (movesLeft < 6) Color.Red else Color.White,
+                            fontSize = 28.sp, fontWeight = FontWeight.Bold)
                     }
-                    
                     Column(horizontalAlignment = Alignment.End) {
                         Text("ЦЕЛЬ: ${levelData.targetScore}", color = Color.Gray, fontSize = 12.sp)
-                        Text("$score", color = Color.Cyan, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                        Text("$score", color = Color.Cyan, fontSize = 28.sp, fontWeight = FontWeight.Bold)
                     }
                 }
-                // Прогресс бар
+
                 val progress = (score.toFloat() / levelData.targetScore).coerceIn(0f, 1f)
                 LinearProgressIndicator(
                     progress = { progress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp),
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
                     color = Color.Magenta,
-                    trackColor = Color.DarkGray,
+                    trackColor = Color.DarkGray
                 )
             }
         }
@@ -320,153 +293,142 @@ fun JewelsBlastScreen() {
                 .padding(padding),
             contentAlignment = Alignment.Center
         ) {
-            // ИГРОВОЕ ПОЛЕ
             LazyVerticalGrid(
                 columns = GridCells.Fixed(GRID_SIZE),
                 modifier = Modifier
-                    .padding(8.dp)
-                    .aspectRatio(1f) // Квадратное поле
-                    .border(2.dp, Brush.linearGradient(listOf(Color.Magenta, Color.Cyan)), RoundedCornerShape(8.dp)),
+                    .padding(16.dp)
+                    .aspectRatio(1f)
+                    .border(4.dp, Brush.linearGradient(listOf(Color.Magenta, Color.Cyan)), RoundedCornerShape(16.dp))
+                    .background(Color(0xFF0A0A0A)),
                 userScrollEnabled = false
             ) {
                 items(GRID_SIZE * GRID_SIZE) { index ->
                     val row = index / GRID_SIZE
                     val col = index % GRID_SIZE
-                    val colorIndex = board[row][col]
-                    
-                    // Если индекс -1, значит камень уничтожен (рисуем пустоту или эффект)
-                    if (colorIndex != -1) {
-                        val isSelected = selectedPos?.row == row && selectedPos?.col == col
+                    val type = board[row][col]
+
+                    if (type != -1) {
                         JewelItem(
-                            color = gemColors[colorIndex],
-                            isSelected = isSelected,
+                            color = gemColors[type],
+                            isSelected = selectedPos?.row == row && selectedPos?.col == col,
                             onClick = { onGemClick(Position(row, col)) }
                         )
                     } else {
-                        Spacer(modifier = Modifier.padding(2.dp))
+                        Spacer(Modifier.size(48.dp))
                     }
                 }
             }
-            
-            // ДИАЛОГИ ПОБЕДЫ / ПОРАЖЕНИЯ
-            if (gameState == GameState.WON) {
+
+            // Диалог победы
+            AnimatedVisibility(visible = gameState == GameState.WON) {
                 GameDialog(
                     title = "УРОВЕНЬ ПРОЙДЕН!",
                     message = "Счёт: $score",
-                    buttonText = "СЛЕДУЮЩИЙ",
-                    color = Color.Green,
+                    buttonText = if (currentLevel < MAX_LEVELS) "СЛЕДУЮЩИЙ" else "ПОБЕДА!",
+                    color = Color(0xFF00FF00),
                     onAction = {
-                        if (currentLevelIndex < MAX_LEVELS) {
-                            resetLevel(currentLevelIndex + 1)
-                        }
+                        if (currentLevel < MAX_LEVELS) resetLevel(currentLevel + 1)
                     }
                 )
             }
-            
-            if (gameState == GameState.LOST) {
+
+            // Диалог поражения
+            AnimatedVisibility(visible = gameState == GameState.LOST) {
                 GameDialog(
                     title = "ХОДЫ ЗАКОНЧИЛИСЬ",
-                    message = "Не хватило очков...",
+                    message = "Набрано: $score из ${levelData.targetScore}",
                     buttonText = "ПОВТОРИТЬ",
                     color = Color.Red,
-                    onAction = { resetLevel(currentLevelIndex) }
+                    onAction = { resetLevel(currentLevel) }
                 )
             }
         }
     }
 }
 
+// ==================== КОМПОНЕНТ КРИСТАЛЛА ====================
 @Composable
-fun JewelItem(
-    color: Color,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
+fun JewelItem(color: Color, isSelected: Boolean, onClick: () -> Unit) {
     val scale by animateFloatAsState(
-        targetValue = if (isSelected) 1.15f else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessLow), label = "scale"
+        targetValue = if (isSelected) 1.2f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "jewel_scale"
     )
 
     Box(
         modifier = Modifier
-            .padding(2.dp)
+            .padding(4.dp)
             .aspectRatio(1f)
             .scale(scale)
-            .clickable(enabled = true, onClick = onClick),
+            .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
-        // Подсветка выбора
         if (isSelected) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(color.copy(alpha = 0.3f), CircleShape)
-                    .border(2.dp, Color.White, CircleShape)
+                    .background(color.copy(alpha = 0.4f), CircleShape)
+                    .border(3.dp, Color.White, CircleShape)
             )
         }
 
-        // Отрисовка кристалла
-        Canvas(modifier = Modifier.fillMaxSize(0.8f)) {
+        Canvas(modifier = Modifier.fillMaxSize(0.85f)) {
             val path = Path().apply {
-                // Рисуем форму "бриллианта"
-                moveTo(size.width / 2, 0f) // Верх
-                lineTo(size.width, size.height / 2) // Право
-                lineTo(size.width / 2, size.height) // Низ
-                lineTo(0f, size.height / 2) // Лево
+                moveTo(size.width / 2, 0f)
+                lineTo(size.width, size.height / 2)
+                lineTo(size.width / 2, size.height)
+                lineTo(0f, size.height / 2)
                 close()
             }
-            
+
             drawPath(
                 path = path,
                 brush = Brush.radialGradient(
-                    colors = listOf(Color.White, color, color.copy(alpha = 0.8f)),
+                    colors = listOf(Color.White, color, color.copy(alpha = 0.7f)),
                     center = Offset(size.width * 0.3f, size.height * 0.3f),
                     radius = size.width
                 ),
                 style = Fill
             )
-            
+
             // Блик
             drawCircle(
-                color = Color.White.copy(alpha = 0.6f),
-                radius = size.width * 0.1f,
+                color = Color.White.copy(alpha = 0.7f),
+                radius = size.width * 0.15f,
                 center = Offset(size.width * 0.3f, size.height * 0.3f)
             )
         }
     }
 }
 
+// ==================== ДИАЛОГ ====================
 @Composable
-fun GameDialog(
-    title: String,
-    message: String,
-    buttonText: String,
-    color: Color,
-    onAction: () -> Unit
-) {
+fun GameDialog(title: String, message: String, buttonText: String, color: Color, onAction: () -> Unit) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),
-        border = BorderStroke(2.dp, color),
-        modifier = Modifier.padding(32.dp).shadow(16.dp),
-        shape = RoundedCornerShape(16.dp)
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF111111)),
+        border = BorderStroke(3.dp, color),
+        modifier = Modifier
+            .padding(32.dp)
+            .shadow(24.dp, RoundedCornerShape(20.dp)),
+        shape = RoundedCornerShape(20.dp)
     ) {
         Column(
-            modifier = Modifier.padding(24.dp),
+            modifier = Modifier.padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(Icons.Default.Star, null, tint = color, modifier = Modifier.size(48.dp))
-            Spacer(Modifier.height(16.dp))
-            Text(title, color = color, fontSize = 20.sp, fontWeight = FontWeight.Black)
-            Spacer(Modifier.height(8.dp))
-            Text(message, color = Color.White, fontSize = 16.sp)
+            Icon(Icons.Default.Star, contentDescription = null, tint = color, modifier = Modifier.size(64.dp))
             Spacer(Modifier.height(24.dp))
+            Text(title, color = color, fontSize = 28.sp, fontWeight = FontWeight.Black)
+            Spacer(Modifier.height(12.dp))
+            Text(message, color = Color.White, fontSize = 18.sp, textAlign = TextAlign.Center)
+            Spacer(Modifier.height(32.dp))
             Button(
                 onClick = onAction,
-                colors = ButtonDefaults.buttonColors(containerColor = color)
+                colors = ButtonDefaults.buttonColors(containerColor = color),
+                modifier = Modifier.height(56.dp).width(200.dp)
             ) {
-                Text(buttonText, color = Color.Black, fontWeight = FontWeight.Bold)
+                Text(buttonText, color = Color.Black, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
 }
-
