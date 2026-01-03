@@ -110,6 +110,8 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.6.0")
 
     // 🎵 MP3 / FLAC PLAYER (Media3)
+    implementation "androidx.compose.foundation:foundation:1.6.0" // для HorizontalPager (уже обычно есть в Compose проектах)
+    implementation "kotlinx-coroutines-core:1.8.0" // для combine (обычно уже есть)
     implementation "androidx.media3:media3-exoplayer:1.4.1"
     implementation "androidx.media3:media3-ui:1.4.1"
     implementation "io.coil-kt:coil-compose:2.7.0"
