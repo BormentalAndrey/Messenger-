@@ -1,31 +1,72 @@
 package com.kakdela.p2p.ui.player
 
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
-import androidx.media3.common.MediaItem
-import androidx.media3.exoplayer.ExoPlayer
-import com.kakdela.p2p.data.AudioRepository
-import com.kakdela.p2p.model.AudioTrack
+import androidx.lifecycle.ViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-class PlayerViewModel(app: Application) : AndroidViewModel(app) {
+// Простая модель трека
+data class Track(
+    val id: String,
+    val title: String,
+    val artist: String,
+    val url: String = "" // Для примера
+)
 
-    private val player = ExoPlayer.Builder(app).build()
-    val tracks = AudioRepository(app).loadTracks()
+class PlayerViewModel : ViewModel() {
 
-    private val _current = MutableStateFlow<AudioTrack?>(null)
-    val current = _current.asStateFlow()
+    // Список треков (заглушка для демонстрации)
+    val tracks = listOf(
+        Track("1", "Neon Vibes", "Cyber Artist"),
+        Track("2", "Night Drive", "Synthwave Hero"),
+        Track("3", "Coding Flow", "Dev Music"),
+        Track("4", "Relax", "Chill Zone")
+    )
 
-    fun play(track: AudioTrack) {
-        player.setMediaItem(MediaItem.fromUri(track.uri))
-        player.prepare()
-        player.play()
+    private val _current = MutableStateFlow<Track?>(null)
+    val current: StateFlow<Track?> = _current.asStateFlow()
+
+    private val _isPlaying = MutableStateFlow(false)
+    val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
+
+    // Логика воспроизведения
+    fun play(track: Track) {
         _current.value = track
+        _isPlaying.value = true
+        // Здесь была бы логика MediaPlayer
     }
 
-    fun pause() = player.pause()
-    fun resume() = player.play()
-    fun next() = player.seekToNext()
-    fun prev() = player.seekToPrevious()
+    fun pause() {
+        _isPlaying.value = false
+        // mediaPlayer.pause()
+    }
+
+    fun resume() {
+        if (_current.value != null) {
+            _isPlaying.value = true
+            // mediaPlayer.start()
+        }
+    }
+
+    fun next() {
+        val currentTrack = _current.value ?: return
+        val index = tracks.indexOf(currentTrack)
+        if (index != -1 && index < tracks.lastIndex) {
+            play(tracks[index + 1])
+        } else {
+            // Циклически к началу
+            play(tracks[0])
+        }
+    }
+
+    fun prev() {
+        val currentTrack = _current.value ?: return
+        val index = tracks.indexOf(currentTrack)
+        if (index > 0) {
+            play(tracks[index - 1])
+        } else {
+            play(tracks.last())
+        }
+    }
 }
+
