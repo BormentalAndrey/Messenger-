@@ -14,110 +14,197 @@ import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.*
 import androidx.navigation.navArgument
+import com.google.firebase.auth.FirebaseAuth
+import com.kakdela.p2p.model.ChatMessage
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
-import com.kakdela.p2p.model.ChatMessage
-import com.google.firebase.auth.FirebaseAuth
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NavGraph(navController: NavHostController) {
+
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
     val showBottomBar = currentRoute in listOf(
-        Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
+        Routes.CHATS,
+        Routes.DEALS,
+        Routes.ENTERTAINMENT,
+        Routes.SETTINGS
     )
 
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar(containerColor = Color(0xFF0A0A0A)) {
+
                     NavigationBarItem(
                         selected = currentRoute == Routes.CHATS,
-                        onClick = { navController.navigate(Routes.CHATS) { popUpTo(Routes.CHATS) { inclusive = true }; launchSingleTop = true } },
+                        onClick = {
+                            navController.navigate(Routes.CHATS) {
+                                popUpTo(Routes.CHATS) { inclusive = true }
+                                launchSingleTop = true
+                            }
+                        },
                         icon = { Icon(Icons.Outlined.ChatBubbleOutline, null) },
                         label = { Text("Чаты") },
-                        colors = NavigationBarItemDefaults.colors(selectedIconColor = Color.Cyan, indicatorColor = Color(0xFF002222))
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.Cyan,
+                            indicatorColor = Color(0xFF002222)
+                        )
                     )
+
                     NavigationBarItem(
                         selected = currentRoute == Routes.DEALS,
-                        onClick = { navController.navigate(Routes.DEALS) { launchSingleTop = true } },
+                        onClick = {
+                            navController.navigate(Routes.DEALS) {
+                                launchSingleTop = true
+                            }
+                        },
                         icon = { Icon(Icons.Filled.Checklist, null) },
                         label = { Text("Дела") },
-                        colors = NavigationBarItemDefaults.colors(selectedIconColor = Color.Magenta, indicatorColor = Color(0xFF220022))
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.Magenta,
+                            indicatorColor = Color(0xFF220022)
+                        )
                     )
+
                     NavigationBarItem(
                         selected = currentRoute == Routes.ENTERTAINMENT,
-                        onClick = { navController.navigate(Routes.ENTERTAINMENT) { launchSingleTop = true } },
+                        onClick = {
+                            navController.navigate(Routes.ENTERTAINMENT) {
+                                launchSingleTop = true
+                            }
+                        },
                         icon = { Icon(Icons.Outlined.PlayCircleOutline, null) },
                         label = { Text("Развлечения") },
-                        colors = NavigationBarItemDefaults.colors(selectedIconColor = Color.Green, indicatorColor = Color(0xFF002200))
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.Green,
+                            indicatorColor = Color(0xFF002200)
+                        )
                     )
+
                     NavigationBarItem(
                         selected = currentRoute == Routes.SETTINGS,
-                        onClick = { navController.navigate(Routes.SETTINGS) { launchSingleTop = true } },
+                        onClick = {
+                            navController.navigate(Routes.SETTINGS) {
+                                launchSingleTop = true
+                            }
+                        },
                         icon = { Icon(Icons.Filled.Settings, null) },
                         label = { Text("Настройки") },
-                        colors = NavigationBarItemDefaults.colors(selectedIconColor = Color.White, indicatorColor = Color.Gray)
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.White,
+                            indicatorColor = Color.Gray
+                        )
                     )
                 }
             }
         }
     ) { padding ->
+
         NavHost(
             navController = navController,
             startDestination = Routes.SPLASH,
-            modifier = Modifier.padding(padding).background(Color.Black)
+            modifier = Modifier
+                .padding(padding)
+                .background(Color.Black)
         ) {
-            composable(Routes.SPLASH) { 
-                SplashScreen(onTimeout = {
-                    val nextRoute = if (FirebaseAuth.getInstance().currentUser != null) Routes.CHATS else Routes.CHOICE
-                    navController.navigate(nextRoute) {
-                        popUpTo(Routes.SPLASH) { inclusive = true }
+
+            composable(Routes.SPLASH) {
+                SplashScreen(
+                    onTimeout = {
+                        val next = if (FirebaseAuth.getInstance().currentUser != null)
+                            Routes.CHATS else Routes.CHOICE
+
+                        navController.navigate(next) {
+                            popUpTo(Routes.SPLASH) { inclusive = true }
+                        }
                     }
-                })
+                )
             }
-            
-            composable(Routes.CHOICE) { RegistrationChoiceScreen({ navController.navigate(Routes.AUTH_EMAIL) }, { navController.navigate(Routes.AUTH_PHONE) }) }
-            composable(Routes.AUTH_EMAIL) { EmailAuthScreen(navController) { navController.navigate(Routes.CHATS) } }
-            composable(Routes.AUTH_PHONE) { PhoneAuthScreen { navController.navigate(Routes.CHATS) } }
-            
+
+            composable(Routes.CHOICE) {
+                RegistrationChoiceScreen(
+                    onEmail = { navController.navigate(Routes.AUTH_EMAIL) },
+                    onPhone = { navController.navigate(Routes.AUTH_PHONE) }
+                )
+            }
+
+            composable(Routes.AUTH_EMAIL) {
+                EmailAuthScreen(navController) {
+                    navController.navigate(Routes.CHATS)
+                }
+            }
+
+            composable(Routes.AUTH_PHONE) {
+                PhoneAuthScreen {
+                    navController.navigate(Routes.CHATS)
+                }
+            }
+
             composable(Routes.CHATS) { ChatsListScreen(navController) }
-            composable(Routes.CONTACTS) { ContactsScreen { userId -> navController.navigate("chat/$userId") } }
+            composable(Routes.CONTACTS) { ContactsScreen { id -> navController.navigate("chat/$id") } }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
             composable(Routes.DEALS) { DealsScreen(navController) }
-            composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
-            
+
+            composable(Routes.ENTERTAINMENT) {
+                EntertainmentScreen(navController)
+            }
+
+            // 🎵 MP3 ПРОИГРЫВАТЕЛЬ
+            composable(Routes.MUSIC) {
+                MusicPlayerScreen()
+            }
+
             composable(Routes.CALCULATOR) { CalculatorScreen() }
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
             composable(Routes.JEWELS) { JewelsBlastScreen() }
-
-            // ←←← ДОБАВЛЕННЫЙ МАРШРУТ ДЛЯ СУДОКУ ←←←
             composable(Routes.SUDOKU) { SudokuScreen() }
 
             composable(
                 route = "webview/{url}/{title}",
-                arguments = listOf(navArgument("url") { type = NavType.StringType }, navArgument("title") { type = NavType.StringType })
-            ) { backStackEntry ->
-                val url = backStackEntry.arguments?.getString("url") ?: ""
-                val title = backStackEntry.arguments?.getString("title") ?: ""
-                WebViewScreen(url = url, title = title, navController = navController)
+                arguments = listOf(
+                    navArgument("url") { type = NavType.StringType },
+                    navArgument("title") { type = NavType.StringType }
+                )
+            ) { backStack ->
+                WebViewScreen(
+                    url = backStack.arguments?.getString("url") ?: "",
+                    title = backStack.arguments?.getString("title") ?: "",
+                    navController = navController
+                )
             }
 
-            composable("chat/{chatId}") { backStackEntry ->
-                val chatId = backStackEntry.arguments?.getString("chatId") ?: "global"
+            composable("chat/{chatId}") { backStack ->
+                val chatId = backStack.arguments?.getString("chatId") ?: "global"
                 val vm: ChatViewModel = viewModel()
                 val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
-                LaunchedEffect(chatId) { vm.initChat(chatId, uid) }
+
+                LaunchedEffect(chatId) {
+                    vm.initChat(chatId, uid)
+                }
+
                 val msgs by vm.messages.collectAsState()
-                ChatScreen(chatId, msgs.map { ChatMessage(it.id.toString(), it.text, it.senderId, it.timestamp, it.senderId == uid) }, { vm.sendMessage(it) }, { t, d -> vm.scheduleMessage(t, d) })
+
+                ChatScreen(
+                    chatId = chatId,
+                    messages = msgs.map {
+                        ChatMessage(
+                            it.id.toString(),
+                            it.text,
+                            it.senderId,
+                            it.timestamp,
+                            it.senderId == uid
+                        )
+                    },
+                    onSend = { vm.sendMessage(it) },
+                    onSchedule = { t, d -> vm.scheduleMessage(t, d) }
+                )
             }
         }
     }
