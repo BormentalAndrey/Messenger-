@@ -3,7 +3,6 @@
 <head>
   <meta charset="utf-8" />
   <title>Pacman</title>
-
   <style>
     @font-face {
       font-family: 'BDCartoonShoutRegular';
@@ -17,40 +16,81 @@
       height: 100%;
       background: black;
       overflow: hidden;
+      touch-action: none; /* отключаем стандартный скролл */
     }
 
     #pacman {
       width: 100%;
       height: 100%;
+      position: relative;
     }
+
+    /* Сенсорные кнопки */
+    .control-button {
+      position: absolute;
+      width: 60px;
+      height: 60px;
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      text-align: center;
+      line-height: 60px;
+      font-weight: bold;
+      font-size: 24px;
+      color: black;
+      user-select: none;
+      touch-action: none;
+    }
+
+    #up { top: 80%; left: 50%; transform: translateX(-50%); }
+    #down { top: 95%; left: 50%; transform: translateX(-50%); }
+    #left { top: 87%; left: 35%; }
+    #right { top: 87%; left: 65%; }
+    #start { top: 87%; left: 50%; transform: translateX(-50%); background: rgba(0,255,0,0.5); }
   </style>
 </head>
-
 <body>
+  <div id="pacman"></div>
 
-<div id="pacman"></div>
+  <!-- Сенсорные кнопки -->
+  <div id="up" class="control-button">↑</div>
+  <div id="down" class="control-button">↓</div>
+  <div id="left" class="control-button">←</div>
+  <div id="right" class="control-button">→</div>
+  <div id="start" class="control-button">N</div>
 
-<!-- ВАЖНО: СНАЧАЛА modernizr -->
-<script src="modernizr-1.5.min.js"></script>
+  <script src="modernizr-1.5.min.js"></script>
+  <script src="pacman.js"></script>
+  <script>
+    (function () {
+      var el = document.getElementById("pacman");
+      var gameStarted = false;
 
-<!-- ПОТОМ pacman -->
-<script src="pacman.js"></script>
-
-<script>
-  (function () {
-    var el = document.getElementById("pacman");
-
-    function start() {
-      if (window.PACMAN && window.Modernizr && Modernizr.canvas) {
-        PACMAN.init(el, "./");
-      } else {
-        setTimeout(start, 50);
+      function startGame() {
+        if (window.PACMAN && window.Modernizr && Modernizr.canvas) {
+          if (!gameStarted) {
+            PACMAN.init(el, "./");
+            gameStarted = true;
+          }
+        } else {
+          setTimeout(startGame, 50);
+        }
       }
-    }
 
-    start();
-  })();
-</script>
+      startGame();
 
+      // --- Сенсорное управление ---
+      function sendKey(keyCode) {
+        if (!gameStarted) return;
+        var e = new KeyboardEvent('keydown', { keyCode: keyCode, which: keyCode });
+        document.dispatchEvent(e);
+      }
+
+      document.getElementById('up').addEventListener('touchstart', () => sendKey(38));
+      document.getElementById('down').addEventListener('touchstart', () => sendKey(40));
+      document.getElementById('left').addEventListener('touchstart', () => sendKey(37));
+      document.getElementById('right').addEventListener('touchstart', () => sendKey(39));
+      document.getElementById('start').addEventListener('touchstart', () => sendKey(78)); // N
+    })();
+  </script>
 </body>
 </html>
