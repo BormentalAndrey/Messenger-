@@ -1,4 +1,3 @@
-
 package com.kakdela.p2p.ui
 
 import androidx.compose.animation.core.*
@@ -380,7 +379,7 @@ private fun drawGhost(scope: DrawScope, g: Ghost, index: Int, cell: Float, offse
             0 -> Color.Red
             1 -> Color.Magenta
             2 -> Color.Cyan
-            else -> Color.Orange
+            else -> Color(0xFFFF9800) // Orange as hex — безопасно для всех версий Compose
         }
     }
 
