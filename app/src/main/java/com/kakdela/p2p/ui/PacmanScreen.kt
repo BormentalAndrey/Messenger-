@@ -306,8 +306,8 @@ private fun updateGhostSimple(ghost: Ghost, pacman: Pacman, maze: Array<IntArray
     if (ghost.pos.x > 27) ghost.pos.x = 0
 
     // ← Призраки теперь медленнее (0.22f вместо 0.4f)
-    ghost.pixelX += (ghost.pos.x - ghost.pixelX) * 0.22f
-    ghost.pixelY += (ghost.pos.y - ghost.pixelY) * 0.22f
+    ghost.pixelX += (ghost.pos.x - ghost.pixelX) * 0.01f
+    ghost.pixelY += (ghost.pos.y - ghost.pixelY) * 0.01f
 }
 
 // ===================== HELPERS =====================
