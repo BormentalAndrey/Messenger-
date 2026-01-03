@@ -27,81 +27,87 @@
       position: relative;
     }
 
-    /* Контейнер управления */
+    /* Контейнер управления — идеально ровный крест */
     #controls {
       position: absolute;
-      bottom: 20px;
+      bottom: 30px;
       left: 50%;
       transform: translateX(-50%);
       display: grid;
+      grid-template-columns: 90px 120px 90px;
+      grid-template-rows: 90px 120px 90px;
       grid-template-areas: 
-        ". up ."
-        "left start right"
-        ". down .";
-      gap: 15px;
+        ".       up      ."
+        "left    start   right"
+        ".       down    .";
+      gap: 20px;
       z-index: 10;
     }
 
-    /* Общий стиль кнопок направления */
+    /* Кнопки направления — все одинаковые */
     .direction-btn {
-      width: 80px;
-      height: 80px;
-      background: radial-gradient(circle at 30% 30%, #ffff00, #cccc00);
-      border: 4px solid #ffff66;
+      width: 90px;
+      height: 90px;
+      background: radial-gradient(circle at center, #ffff33, #ffcc00);
+      border: 5px solid #ffff66;
       border-radius: 50%;
       color: #000;
-      font-size: 40px;
+      font-size: 48px;
       font-weight: bold;
       display: flex;
       align-items: center;
       justify-content: center;
       box-shadow: 
-        0 0 20px #ffff00,
-        0 8px 15px rgba(0, 0, 0, 0.6),
-        inset 0 4px 10px rgba(255, 255, 255, 0.4);
+        0 0 25px #ffff00,
+        0 10px 20px rgba(0, 0, 0, 0.7),
+        inset 0 5px 15px rgba(255, 255, 255, 0.5);
       user-select: none;
       touch-action: manipulation;
       transition: all 0.15s ease;
     }
 
-    /* Эффект нажатия */
     .direction-btn:active {
-      transform: scale(0.88);
+      transform: scale(0.92);
       box-shadow: 
-        0 0 30px #ffff66,
-        0 4px 8px rgba(0, 0, 0, 0.8),
-        inset 0 4px 10px rgba(255, 255, 255, 0.2);
-      background: radial-gradient(circle at 30% 30%, #cccc00, #aaaa00);
+        0 0 35px #ffff66,
+        0 5px 10px rgba(0, 0, 0, 0.9);
+      background: radial-gradient(circle at center, #ffcc00, #ccaa00);
     }
 
-    /* Кнопка СТАРТ */
+    /* Центральная кнопка СТАРТ */
     #start {
       grid-area: start;
-      width: 110px;
-      height: 110px;
-      background: radial-gradient(circle, #ff3366, #cc0033);
-      border: 5px solid #ff6699;
+      width: 120px;
+      height: 120px;
+      background: radial-gradient(circle at center, #ff3366, #dd1144);
+      border: 6px solid #ff6699;
       border-radius: 50%;
       color: white;
-      font-size: 24px;
+      font-size: 28px;
       font-weight: bold;
-      text-shadow: 0 2px 4px rgba(0,0,0,0.8);
-      letter-spacing: 1px;
+      letter-spacing: 2px;
+      text-shadow: 0 3px 6px rgba(0,0,0,0.8);
+      
+      /* Идеальное центрирование текста */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      
       box-shadow: 
-        0 0 30px #ff3366,
-        0 10px 20px rgba(0, 0, 0, 0.7),
-        inset 0 5px 15px rgba(255, 255, 255, 0.3);
+        0 0 35px #ff3366,
+        0 12px 25px rgba(0, 0, 0, 0.8),
+        inset 0 6px 20px rgba(255, 255, 255, 0.3);
       transition: all 0.15s ease;
     }
 
     #start:active {
-      transform: scale(0.90);
+      transform: scale(0.93);
       box-shadow: 
-        0 0 40px #ff6699,
-        0 5px 10px rgba(0, 0, 0, 0.9);
+        0 0 45px #ff6699,
+        0 6px 12px rgba(0, 0, 0, 0.9);
     }
 
-    /* Позиционирование стрелок */
+    /* Привязка кнопок к сетке */
     #up { grid-area: up; }
     #down { grid-area: down; }
     #left { grid-area: left; }
@@ -112,7 +118,7 @@
 <body>
   <div id="pacman"></div>
 
-  <!-- Красивые кнопки управления -->
+  <!-- Ровные кнопки управления -->
   <div id="controls">
     <div id="left" class="direction-btn">←</div>
     <div id="up" class="direction-btn">↑</div>
@@ -151,7 +157,7 @@
         document.dispatchEvent(event);
       }
 
-      // Обработка касаний (touchstart для мгновенной реакции)
+      // Touch события
       document.getElementById('up').addEventListener('touchstart', function(e) {
         e.preventDefault();
         sendKey(38);
@@ -170,10 +176,10 @@
       });
       document.getElementById('start').addEventListener('touchstart', function(e) {
         e.preventDefault();
-        sendKey(78); // 'N' — начать новую игру
+        sendKey(78); // N — новая игра
       });
 
-      // Поддержка мыши (для теста на ПК)
+      // Поддержка мыши для тестирования на ПК
       document.getElementById('up').addEventListener('mousedown', () => sendKey(38));
       document.getElementById('down').addEventListener('mousedown', () => sendKey(40));
       document.getElementById('left').addEventListener('mousedown', () => sendKey(37));
