@@ -5,6 +5,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,66 +18,79 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.random.Random
 
+data class SudokuCell(var value: Int = 0, val isFixed: Boolean = false)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SudokuScreen() {
-    // 9x9 доска: 0 = пусто, иначе число от 1 до 9
-    var board by remember { mutableStateOf(createSudokuPuzzle()) }
+    var board by remember { mutableStateOf(generateSudokuPuzzle()) }
     var selectedRow by remember { mutableStateOf(-1) }
     var selectedCol by remember { mutableStateOf(-1) }
     var isVictory by remember { mutableStateOf(false) }
 
     fun newGame() {
-        board = createSudokuPuzzle()
+        board = generateSudokuPuzzle()
         selectedRow = -1
         selectedCol = -1
         isVictory = false
     }
 
-    fun setNumber(number: Int) {
-        if (selectedRow in 0..8 && selectedCol in 0..8) {
-            if (board[selectedRow][selectedCol].isFixed) return // нельзя менять исходные
+    fun setNumber(num: Int) {
+        if (selectedRow !in 0..8 || selectedCol !in 0..8) return
+        if (board[selectedRow][selectedCol].isFixed) return
 
-            val newBoard = board.map { it.toMutableList() }.toMutableList()
-            newBoard[selectedRow][selectedCol].value = number
-            board = newBoard
+        val newBoard = board.map { it.toMutableList() }.toMutableList()
+        newBoard[selectedRow][selectedCol].value = if (newBoard[selectedRow][selectedCol].value == num) 0 else num
+        board = newBoard
 
-            // Проверка на победу
-            if (isBoardComplete(board) && isValidSolution(board)) {
-                isVictory = true
-            }
+        if (isBoardFull(board) && isValidSolution(board)) {
+            isVictory = true
         }
     }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Судоку", color = Color.White, fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color(0xFF1976D2))
+                title = {
+                    Text(
+                        "СУДОКУ",
+                        color = Color.Green,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 3.sp
+                    )
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black),
+                actions = {
+                    IconButton(onClick = { newGame() }) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "Новая игра", tint = Color.Green)
+                    }
+                }
             )
         }
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF121212))
+                .background(Color.Black)
                 .padding(padding),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = if (isVictory) "🎉 Победа! Отлично!" else "Заполните поле",
-                color = if (isVictory) Color(0xFF4CAF50) else Color.White,
+                text = if (isVictory) "ПОБЕДА! ОТЛИЧНО!" else "Заполни поле правильно",
+                color = if (isVictory) Color.Green else Color.Cyan,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(16.dp)
             )
 
             // Игровое поле
-            Box(
+            Card(
                 modifier = Modifier
                     .size(360.dp)
-                    .padding(8.dp)
-                    .background(Color(0xFF1E1E1E), RoundedCornerShape(12.dp))
+                    .padding(8.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF0F0F0F)),
+                border = BorderStroke(2.dp, Color.Green.copy(alpha = 0.6f))
             ) {
                 Column {
                     for (row in 0 until 9) {
@@ -83,49 +98,39 @@ fun SudokuScreen() {
                             for (col in 0 until 9) {
                                 val cell = board[row][col]
                                 val isSelected = selectedRow == row && selectedCol == col
-                                val hasConflict = cell.value != 0 && !isValidPlacement(board, row, col, cell.value)
+                                val hasError = cell.value != 0 && !isValidPlacement(board, row, col, cell.value)
 
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
                                         .aspectRatio(1f)
-                                        .padding(1.dp)
                                         .background(
-                                            color = when {
-                                                isSelected -> Color(0xFF42A5F5)
-                                                (row / 3 == selectedRow / 3 && col / 3 == selectedCol / 3 && selectedRow != -1) -> Color(0xFF2A2A2A)
-                                                else -> Color(0xFF1E1E1E)
+                                            when {
+                                                isSelected -> Color.Green.copy(alpha = 0.3f)
+                                                (row / 3 == selectedRow / 3 && col / 3 == selectedCol / 3 && selectedRow != -1) -> Color(0xFF1A1A1A)
+                                                else -> Color(0xFF0F0F0F)
                                             }
                                         )
                                         .border(
-                                            width = when {
-                                                col % 3 == 0 -> 3.dp
-                                                col % 3 == 2 -> 3.dp
-                                                else -> 1.dp
-                                            },
-                                            color = if (col % 3 == 2 && col != 8) Color(0xFFBBBBBB) else Color.Transparent
+                                            width = if (col % 3 == 0) 3.dp else 1.dp,
+                                            color = if (col % 3 == 0) Color.Green else Color.DarkGray
                                         )
                                         .border(
-                                            width = when {
-                                                row % 3 == 0 -> 3.dp
-                                                row % 3 == 2 -> 3.dp
-                                                else -> 1.dp
-                                            },
-                                            color = if (row % 3 == 2 && row != 8) Color(0xFFBBBBBB) else Color.Transparent
+                                            width = if (row % 3 == 0) 3.dp else 1.dp,
+                                            color = if (row % 3 == 0) Color.Green else Color.DarkGray
                                         )
                                         .clickable { selectedRow = row; selectedCol = col },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = if (cell.value == 0) "" else cell.value.toString(),
-                                        fontSize = 28.sp,
-                                        fontWeight = if (cell.isFixed) FontWeight.ExtraBold else FontWeight.Normal,
+                                        fontSize = 32.sp,
+                                        fontWeight = if (cell.isFixed) FontWeight.ExtraBold else FontWeight.SemiBold,
                                         color = when {
-                                            cell.isFixed -> Color(0xFFFFFFFF)
-                                            hasConflict -> Color.Red
-                                            else -> Color(0xFF90CAF9)
-                                        },
-                                        textAlign = TextAlign.Center
+                                            cell.isFixed -> Color.White
+                                            hasError -> Color.Red
+                                            else -> Color.Cyan
+                                        }
                                     )
                                 }
                             }
@@ -134,73 +139,54 @@ fun SudokuScreen() {
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(Modifier.height(24.dp))
 
-            // Кнопки чисел 1–9
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(horizontal = 16.dp)
-            ) {
-                for (num in 1..9) {
-                    Button(
-                        onClick = { setNumber(num) },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2)),
-                        modifier = Modifier.weight(1f)
+            // Кнопки ввода чисел
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                for (chunk in listOf(1..5, 6..9)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(vertical = 4.dp)
                     ) {
-                        Text(num.toString(), fontSize = 20.sp)
+                        for (num in chunk) {
+                            Button(
+                                onClick = { setNumber(num) },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.Green.copy(alpha = 0.8f)),
+                                modifier = Modifier.size(52.dp)
+                            ) {
+                                Text(num.toString(), fontSize = 20.sp, color = Color.Black)
+                            }
+                        }
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Button(
-                    onClick = { setNumber(0) }, // стереть
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB00020))
-                ) {
-                    Text("Стереть")
-                }
+                Spacer(Modifier.height(12.dp))
 
                 Button(
-                    onClick = { newGame() },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF388E3C))
+                    onClick = { setNumber(0) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f))
                 ) {
-                    Text("Новая игра")
-                }
-
-                Button(
-                    onClick = {
-                        isVictory = isBoardComplete(board) && isValidSolution(board)
-                    }
-                ) {
-                    Text("Проверить")
+                    Text("Стереть", color = Color.White)
                 }
             }
         }
     }
 }
 
-// Модель ячейки
-data class Cell(var value: Int, val isFixed: Boolean)
-
-// Генерация полной доски + удаление чисел
-fun createSudokuPuzzle(difficulty: Int = 40): List<MutableList<Cell>> {
-    val board = MutableList(9) { MutableList(9) { Cell(0, false) } }
+// Генерация судоку
+private fun generateSudokuPuzzle(): List<MutableList<SudokuCell>> {
+    val board = MutableList(9) { MutableList(9) { SudokuCell() } }
     fillBoard(board)
-    removeNumbers(board, difficulty)
+    removeCells(board, 45) // средняя сложность
     return board
 }
 
-// Заполнение доски валидным решением
-fun fillBoard(board: MutableList<MutableList<Cell>>): Boolean {
-    for (row in 0 until 9) {
-        for (col in 0 until 9) {
+private fun fillBoard(board: MutableList<MutableList<SudokuCell>>): Boolean {
+    for (row in 0..8) {
+        for (col in 0..8) {
             if (board[row][col].value == 0) {
-                val numbers = (1..9).shuffled()
-                for (num in numbers) {
+                val nums = (1..9).shuffled()
+                for (num in nums) {
                     if (isValidPlacement(board, row, col, num)) {
                         board[row][col].value = num
                         if (fillBoard(board)) return true
@@ -214,8 +200,7 @@ fun fillBoard(board: MutableList<MutableList<Cell>>): Boolean {
     return true
 }
 
-// Удаление чисел для создания головоломки
-fun removeNumbers(board: MutableList<MutableList<Cell>>, count: Int) {
+private fun removeCells(board: MutableList<MutableList<SudokuCell>>, count: Int) {
     var removed = 0
     while (removed < count) {
         val row = Random.nextInt(9)
@@ -228,37 +213,29 @@ fun removeNumbers(board: MutableList<MutableList<Cell>>, count: Int) {
             removed++
         }
     }
-    // Оставшиеся — фиксированные
-    for (r in board.indices) {
-        for (c in board[r].indices) {
-            if (board[r][c].value != 0) {
-                board[r][c].isFixed = true
-            }
+    // Фиксируем оставшиеся
+    board.forEach { row ->
+        row.forEach { cell ->
+            if (cell.value != 0) cell.isFixed = true
         }
     }
 }
 
-// Проверка, можно ли поставить число
-fun isValidPlacement(board: List<List<Cell>>, row: Int, col: Int, num: Int): Boolean {
-    // Строка
-    for (c in 0 until 9) if (board[row][c].value == num) return false
-    // Столбец
-    for (r in 0 until 9) if (board[r][col].value == num) return false
-    // Блок 3x3
-    val startRow = row / 3 * 3
-    val startCol = col / 3 * 3
-    for (r in startRow until startRow + 3) {
-        for (c in startCol until startCol + 3) {
-            if (board[r][c].value == num) return false
+private fun isValidPlacement(board: List<List<SudokuCell>>, row: Int, col: Int, num: Int): Boolean {
+    // Строка и столбец
+    for (i in 0..8) {
+        if (board[row][i].value == num || board[i][col].value == num) return false
+    }
+    // Квадрат 3x3
+    val r = row / 3 * 3
+    val c = col / 3 * 3
+    for (i in r until r + 3) {
+        for (j in c until c + 3) {
+            if (board[i][j].value == num) return false
         }
     }
     return true
 }
 
-fun isBoardComplete(board: List<List<Cell>>): Boolean =
-    board.all { row -> row.all { it.value != 0 } }
-
-fun isValidSolution(board: List<List<Cell>>): Boolean =
-    board.indices.all { row ->
-        (0..8).all { col -> isValidPlacement(board, row, col, board[row][col].value) }
-    }
+private fun isBoardFull(board: List<List<SudokuCell>>) = board.all { row -> row.all { it.value != 0 } }
+private fun isValidSolution(board: List<List<SudokuCell>>) = board.flatten().all { isValidPlacement(board, it.value.let { r -> board.indexOfFirst { it.contains(it) } }, board[0].indexOf(it), it.value) }
