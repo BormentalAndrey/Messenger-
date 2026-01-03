@@ -49,17 +49,7 @@ private val entertainmentItems = listOf(
     EntertainmentItem("tictactoe", "Крестики-нолики", "Игра против ИИ", EntertainmentType.GAME, route = Routes.TIC_TAC_TOE),
     EntertainmentItem("pacman", "Pacman", "Классическая аркада", EntertainmentType.GAME, route = Routes.PACMAN),
     EntertainmentItem("jewels", "Jewels Blast", "Три в ряд (200 уровней)", EntertainmentType.GAME, route = Routes.JEWELS),
-
-    // Судоку
-    EntertainmentItem(
-        id = "sudoku",
-        title = "Судоку",
-        description = "Классическая головоломка 9x9",
-        type = EntertainmentType.GAME,
-        route = Routes.SUDOKU
-    ),
-
-    // Веб-сервисы
+    EntertainmentItem("sudoku", "Судоку", "Классическая головоломка 9x9", EntertainmentType.GAME, route = Routes.SUDOKU),
     EntertainmentItem("tiktok", "TikTok", "Смотреть (ПК режим)", EntertainmentType.WEB, url = "https://www.tiktok.com"),
     EntertainmentItem("pikabu", "Пикабу", "Юмор", EntertainmentType.WEB, url = "https://pikabu.ru"),
     EntertainmentItem("crazygames", "CrazyGames", "Игры онлайн", EntertainmentType.WEB, url = "https://www.crazygames.com")
@@ -113,7 +103,9 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
                     val encoded = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
                     navController.navigate("webview/\( encoded/ \){item.title}")
                 }
-                else -> item.route?.let { route -> navController.navigate(route) }
+                else -> item.route?.let { route ->
+                    navController.navigate(route)
+                }
             }
         }
     ) {
