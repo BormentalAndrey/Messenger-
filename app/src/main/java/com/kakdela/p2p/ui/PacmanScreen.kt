@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -116,7 +115,6 @@ fun PacmanScreen() {
         while (gameState == PacmanGameState.PLAYING) {
             updatePacman(pacman, maze)
 
-            // Поедание точек
             val px = pacman.pos.x
             val py = pacman.pos.y
             when (maze[py][px]) {
@@ -133,12 +131,10 @@ fun PacmanScreen() {
                 }
             }
 
-            // Призраки (упрощённый ИИ)
             ghosts.forEach { ghost ->
                 updateGhostSimple(ghost, pacman, maze, frightenedTimer > 0)
             }
 
-            // Столкновение
             ghosts.forEach { ghost ->
                 if (abs(ghost.pixelX - pacman.pixelX) < 0.5f && abs(ghost.pixelY - pacman.pixelY) < 0.5f) {
                     if (frightenedTimer > 0) {
@@ -166,7 +162,7 @@ fun PacmanScreen() {
                 resetLevel(pacman, ghosts)
             }
 
-            delay(16) // 60 FPS — максимальная отзывчивость
+            delay(16)
         }
     }
 
@@ -199,7 +195,6 @@ fun PacmanScreen() {
                 }
             }
 
-            // Управление стрелками
             Row(
                 modifier = Modifier.align(Alignment.BottomCenter).padding(32.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -286,7 +281,7 @@ private fun updatePacman(pacman: Pacman, maze: Array<IntArray>) {
     pacman.pixelY += (targetY - pacman.pixelY) * 0.45f
 }
 
-// ===================== GHOST UPDATE (простой ИИ) =====================
+// ===================== GHOST UPDATE =====================
 private fun updateGhostSimple(ghost: Ghost, pacman: Pacman, maze: Array<IntArray>, frightened: Boolean) {
     val dirs = Direction.entries.filter { it != ghost.dir.opposite() }
     val bestDir = if (frightened) {
@@ -346,7 +341,7 @@ private fun DrawScope.drawMaze(maze: Array<IntArray>, cell: Float, offset: Offse
         row.forEachIndexed { x, v ->
             val pos = offset + Offset(x * cell, y * cell)
             when (v) {
-                1 -> drawRect(Color(0xFF00FFFF), pos, Size(cell, cell))
+                1 -> drawRect(Color(0xFF4488FF), pos, Size(cell, cell))
                 2 -> drawCircle(Color.White, cell * 0.12f, pos + Offset(cell / 2, cell / 2))
                 3 -> drawCircle(Color.Cyan, cell * 0.35f, pos + Offset(cell / 2, cell / 2))
             }
@@ -379,7 +374,12 @@ private fun DrawScope.drawGhost(g: Ghost, index: Int, cell: Float, offset: Offse
     val color = if (frightened) {
         if (flashing) Color.White else Color.Blue
     } else {
-        listOf(Color.Red, Color.Magenta, Color.Cyan, Color.Orange)[index]
+        when (index) {
+            0 -> Color.Red
+            1 -> Color.Magenta
+            2 -> Color.Cyan
+            else -> Color.Orange  // <-- Теперь используем стандартный Color.Orange
+        }
     }
 
     drawCircle(color, cell * 0.45f, center)
