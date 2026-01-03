@@ -20,6 +20,8 @@ import com.google.firebase.auth.FirebaseAuth
 import com.kakdela.p2p.model.ChatMessage
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
+// Добавлен импорт плеера
+import com.kakdela.p2p.ui.player.MusicPlayerScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -182,6 +184,7 @@ fun NavGraph(navController: NavHostController) {
 
             composable("chat/{chatId}") { backStack ->
                 val chatId = backStack.arguments?.getString("chatId") ?: "global"
+                // Предполагается, что ChatViewModel у вас уже есть, так как в логах ошибок по нему нет
                 val vm: ChatViewModel = viewModel()
                 val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
 
@@ -202,10 +205,12 @@ fun NavGraph(navController: NavHostController) {
                             it.senderId == uid
                         )
                     },
-                    onSend = { vm.sendMessage(it) },
-                    onSchedule = { t, d -> vm.scheduleMessage(t, d) }
+                    // ИСПРАВЛЕНИЕ: Используем правильные имена параметров как в ChatScreen.kt
+                    onSendMessage = { vm.sendMessage(it) },
+                    onScheduleMessage = { text, time -> vm.scheduleMessage(text, time) }
                 )
             }
         }
     }
 }
+
