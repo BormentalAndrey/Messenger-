@@ -45,16 +45,16 @@ data class EntertainmentItem(
 }
 
 private val entertainmentItems = listOf(
-    EntertainmentItem("global_chat", "ЧёКаВо?", "Общий чат", EntertainmentType.INTERNAL_CHAT, "chat/global"),
-    EntertainmentItem("tictactoe", "Крестики-нолики", "Игра против ИИ", EntertainmentType.GAME, Routes.TIC_TAC_TOE),
-    EntertainmentItem("pacman", "Pacman", "Классическая аркада", EntertainmentType.GAME, Routes.PACMAN),
-    EntertainmentItem("jewels", "Jewels Blast", "Три в ряд (200 уровней)", EntertainmentType.GAME, Routes.JEWELS),
+    EntertainmentItem("global_chat", "ЧёКаВо?", "Общий чат", EntertainmentType.INTERNAL_CHAT, route = "chat/global"),
+    EntertainmentItem("tictactoe", "Крестики-нолики", "Игра против ИИ", EntertainmentType.GAME, route = Routes.TIC_TAC_TOE),
+    EntertainmentItem("pacman", "Pacman", "Классическая аркада", EntertainmentType.GAME, route = Routes.PACMAN),
+    EntertainmentItem("jewels", "Jewels Blast", "Три в ряд (200 уровней)", EntertainmentType.GAME, route = Routes.JEWELS),
 
-    // ←←← НОВАЯ ИГРА: СУДОКУ ←←←
+    // Судоку
     EntertainmentItem(
         id = "sudoku",
         title = "Судоку",
-        description = "Классическая головоломка 9×9",
+        description = "Классическая головоломка 9x9",
         type = EntertainmentType.GAME,
         route = Routes.SUDOKU
     ),
@@ -85,7 +85,7 @@ fun EntertainmentScreen(navController: NavHostController) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             items(entertainmentItems) { item ->
-                EntertainmentNeonItem(item, navController)
+                EntertainmentNeonItem(item = item, navController = navController)
             }
         }
     }
@@ -103,17 +103,17 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
         modifier = Modifier
             .fillMaxWidth()
             .height(80.dp)
-            .shadow(8.dp, spotColor = neonColor),
+            .shadow(elevation = 8.dp, spotColor = neonColor),
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, neonColor.copy(alpha = 0.8f)),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF121212)),
         onClick = {
             when (item.type) {
-                EntertainmentType.WEB -> item.url?.let {
-                    val encoded = URLEncoder.encode(it, StandardCharsets.UTF_8.toString())
+                EntertainmentType.WEB -> item.url?.let { url ->
+                    val encoded = URLEncoder.encode(url, StandardCharsets.UTF_8.toString())
                     navController.navigate("webview/\( encoded/ \){item.title}")
                 }
-                else -> item.route?.let { navController.navigate(it) }
+                else -> item.route?.let { route -> navController.navigate(route) }
             }
         }
     ) {
@@ -124,13 +124,30 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(item.iconVector, contentDescription = null, tint = neonColor, modifier = Modifier.size(32.dp))
-            Spacer(Modifier.width(20.dp))
-            Column(Modifier.weight(1f)) {
-                Text(item.title.uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
-                Text(item.description, color = Color.Gray, fontSize = 12.sp)
+            Icon(
+                imageVector = item.iconVector,
+                contentDescription = null,
+                tint = neonColor,
+                modifier = Modifier.size(32.dp)
+            )
+            Spacer(modifier = Modifier.width(20.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.title.uppercase(),
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = item.description,
+                    color = Color.Gray,
+                    fontSize = 12.sp
+                )
             }
-            Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = neonColor)
+            Icon(
+                imageVector = Icons.Filled.PlayArrow,
+                contentDescription = null,
+                tint = neonColor
+            )
         }
     }
 }
