@@ -1,5 +1,6 @@
 package com.kakdela.p2p.ui
 
+import androidx.compose.foundation.BorderStroke  // ← ДОБАВЛЕН ИМПОРТ
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,7 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.random.Random
 
-data class SudokuCell(var value: Int = 0, val isFixed: Boolean = false)
+// ← ИСПРАВЛЕНО: isFixed теперь var
+data class SudokuCell(var value: Int = 0, var isFixed: Boolean = false)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,14 +78,13 @@ fun SudokuScreen() {
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = if (isVictory) "ПОБЕДА! ОТЛИЧНО!" else "Заполни поле правильно",
+                text = if (isVictory) "🎉 ПОБЕДА! ГЕНИАЛЬНО!" else "Заполни поле правильно",
                 color = if (isVictory) Color.Green else Color.Cyan,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(16.dp)
             )
 
-            // Игровое поле
             Card(
                 modifier = Modifier
                     .size(360.dp)
@@ -130,7 +131,8 @@ fun SudokuScreen() {
                                             cell.isFixed -> Color.White
                                             hasError -> Color.Red
                                             else -> Color.Cyan
-                                        }
+                                        },
+                                        textAlign = TextAlign.Center
                                     )
                                 }
                             }
@@ -141,7 +143,6 @@ fun SudokuScreen() {
 
             Spacer(Modifier.height(24.dp))
 
-            // Кнопки ввода чисел
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 for (chunk in listOf(1..5, 6..9)) {
                     Row(
@@ -164,20 +165,20 @@ fun SudokuScreen() {
 
                 Button(
                     onClick = { setNumber(0) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f))
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red.copy(alpha = 0.8f)),
+                    modifier = Modifier.width(160.dp)
                 ) {
-                    Text("Стереть", color = Color.White)
+                    Text("Стереть", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             }
         }
     }
 }
 
-// Генерация судоку
 private fun generateSudokuPuzzle(): List<MutableList<SudokuCell>> {
     val board = MutableList(9) { MutableList(9) { SudokuCell() } }
     fillBoard(board)
-    removeCells(board, 45) // средняя сложность
+    removeCells(board, 45)
     return board
 }
 
@@ -213,29 +214,34 @@ private fun removeCells(board: MutableList<MutableList<SudokuCell>>, count: Int)
             removed++
         }
     }
-    // Фиксируем оставшиеся
-    board.forEach { row ->
-        row.forEach { cell ->
+    // ← ИСПРАВЛЕНО: теперь isFixed = var, можно присваивать
+    board.forEach { rowList ->
+        rowList.forEach { cell ->
             if (cell.value != 0) cell.isFixed = true
         }
     }
 }
 
 private fun isValidPlacement(board: List<List<SudokuCell>>, row: Int, col: Int, num: Int): Boolean {
-    // Строка и столбец
     for (i in 0..8) {
         if (board[row][i].value == num || board[i][col].value == num) return false
     }
-    // Квадрат 3x3
     val r = row / 3 * 3
     val c = col / 3 * 3
-    for (i in r until r + 3) {
-        for (j in c until c + 3) {
-            if (board[i][j].value == num) return false
+    for (i in r until r + 3) for (j in c until c + 3) if (board[i][j].value == num) return false
+    return true
+}
+
+private fun isBoardFull(board: List<List<SudokuCell>>) = board.all { it.all { cell -> cell.value != 0 } }
+
+// ← ИСПРАВЛЕНО: правильная реализация без flatten и ошибок типов
+private fun isValidSolution(board: List<List<SudokuCell>>): Boolean {
+    for (row in 0..8) {
+        for (col in 0..8) {
+            if (!isValidPlacement(board, row, col, board[row][col].value)) {
+                return false
+            }
         }
     }
     return true
 }
-
-private fun isBoardFull(board: List<List<SudokuCell>>) = board.all { row -> row.all { it.value != 0 } }
-private fun isValidSolution(board: List<List<SudokuCell>>) = board.flatten().all { isValidPlacement(board, it.value.let { r -> board.indexOfFirst { it.contains(it) } }, board[0].indexOf(it), it.value) }
