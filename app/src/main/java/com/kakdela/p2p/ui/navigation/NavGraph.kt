@@ -75,7 +75,7 @@ fun NavGraph(navController: NavHostController) {
             modifier = Modifier.padding(padding).background(Color.Black)
         ) {
             composable(Routes.SPLASH) { 
-                SplashScreen(onTimeout = { // Исправлено: передаем лямбду
+                SplashScreen(onTimeout = {
                     val nextRoute = if (FirebaseAuth.getInstance().currentUser != null) Routes.CHATS else Routes.CHOICE
                     navController.navigate(nextRoute) {
                         popUpTo(Routes.SPLASH) { inclusive = true }
@@ -99,6 +99,9 @@ fun NavGraph(navController: NavHostController) {
             composable(Routes.PACMAN) { PacmanScreen() }
             composable(Routes.JEWELS) { JewelsBlastScreen() }
 
+            // ←←← ДОБАВЛЕННЫЙ МАРШРУТ ДЛЯ СУДОКУ ←←←
+            composable(Routes.SUDOKU) { SudokuScreen() }
+
             composable(
                 route = "webview/{url}/{title}",
                 arguments = listOf(navArgument("url") { type = NavType.StringType }, navArgument("title") { type = NavType.StringType })
@@ -119,4 +122,3 @@ fun NavGraph(navController: NavHostController) {
         }
     }
 }
-
