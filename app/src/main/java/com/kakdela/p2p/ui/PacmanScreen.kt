@@ -276,38 +276,6 @@ fun PacmanScreen() {
 }
 
 // ===================== ЛОГИКА =====================
-private fun updatePacman(pacman: Pacman, maze: Array<IntArray>) {
-    val nextPos = GridPos(pacman.pos.x, pacman.pos.y).apply {
-        when (pacman.nextDir) {
-            Direction.UP -> y--
-            Direction.DOWN -> y++
-            Direction.LEFT -> x--
-            Direction.RIGHT -> x++
-            else -> {}
-        }
-    }
-    if (isValidMove(nextPos, maze)) pacman.dir = pacman.nextDir
-
-    val currentPos = GridPos(pacman.pos.x, pacman.pos.y).apply {
-        when (pacman.dir) {
-            Direction.UP -> y--
-            Direction.DOWN -> y++
-            Direction.LEFT -> x--
-            Direction.RIGHT -> x++
-            else -> {}
-        }
-    }
-
-    if (isValidMove(currentPos, maze)) {
-        pacman.pos = currentPos
-    }
-
-    if (pacman.pos.x < 0) pacman.pos.x = 27
-    if (pacman.pos.x > 27) pacman.pos.x = 0
-
-    pacman.pixelX += (pacman.pos.x - pacman.pixelX) * 0.3f
-    pacman.pixelY += (pacman.pos.y - pacman.pixelY) * 0.3f
-}
 
 private fun updateGhost(ghost: Ghost, pacman: Pacman, blinky: Ghost, maze: Array<IntArray>, mode: GhostMode, frightened: Boolean) {
     val target = if (frightened) {
