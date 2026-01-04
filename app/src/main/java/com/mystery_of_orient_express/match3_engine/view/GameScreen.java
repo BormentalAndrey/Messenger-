@@ -71,9 +71,9 @@ public class GameScreen extends ScreenAdapter implements IScreen, InputProcessor
         if (pointer != 0) return false;
 
         for (IGameControl control : this.controls) {
-            InputProcessor inputProcessor = control.getInputProcessor();
-            if (inputProcessor != null && inputProcessor.touchDown(screenX, this.screenHeight - screenY, pointer, button)) {
-                this.inputProcessor = control.getInputProcessor();
+            InputProcessor ip = control.getInputProcessor();
+            if (ip != null && ip.touchDown(screenX, this.screenHeight - screenY, pointer, button)) {
+                this.inputProcessor = ip;
                 return true;
             }
         }
@@ -106,8 +106,9 @@ public class GameScreen extends ScreenAdapter implements IScreen, InputProcessor
         return false;
     }
 
+    // ⚠ Новая сигнатура для libGDX 1.12+
     @Override
-    public boolean scrolled(int amount) {
+    public boolean scrolled(float amountX, float amountY) {
         return false;
     }
 
@@ -128,9 +129,9 @@ public class GameScreen extends ScreenAdapter implements IScreen, InputProcessor
 
     @Override
     public boolean touchCancelled(int screenX, int screenY, int pointer, int button) {
-        if (this.inputProcessor != null)
+        if (this.inputProcessor != null) {
             this.inputProcessor.touchCancelled(screenX, screenY, pointer, button);
-
+        }
         this.inputProcessor = null;
         return true;
     }
