@@ -46,6 +46,17 @@ public class Field {
         return null;
     }
 
+    public Set<CellObject> getAllGems() {
+        Set<CellObject> all = new HashSet<>();
+        for (int i = 0; i < this.size; ++i) {
+            for (int j = 0; j < this.size; ++j) {
+                CellObject gem = getGem(i, j);
+                if (gem != null) all.add(gem);
+            }
+        }
+        return all;
+    }
+
     public Set<CellObject> removeGems(Set<CellObject> gems) {
         Set<CellObject> chained = new HashSet<>();
         for (int i = 0; i < this.size; ++i) {
@@ -54,21 +65,20 @@ public class Field {
                 if (thisGem != null && gems.contains(thisGem)) {
                     this.cells[i][j].object = null;
                     
-                    // Обработка цепной реакции эффектов
                     if (thisGem.effect == CellObject.Effects.H_RAY) {
-                        for (int newI = 0; newI < this.size; ++newI) {
-                            CellObject gem = this.getGem(newI, j);
+                        for (int nI = 0; nI < this.size; ++nI) {
+                            CellObject gem = getGem(nI, j);
                             if (gem != null && gem.activity == -1) chained.add(gem);
                         }
                     } else if (thisGem.effect == CellObject.Effects.V_RAY) {
-                        for (int newJ = 0; newJ < this.size; ++newJ) {
-                            CellObject gem = this.getGem(i, newJ);
+                        for (int nJ = 0; nJ < this.size; ++nJ) {
+                            CellObject gem = getGem(i, nJ);
                             if (gem != null && gem.activity == -1) chained.add(gem);
                         }
                     } else if (thisGem.effect == CellObject.Effects.AREA) {
                         for (int nI = Math.max(0, i-1); nI <= Math.min(this.size-1, i+1); nI++) {
                             for (int nJ = Math.max(0, j-1); nJ <= Math.min(this.size-1, j+1); nJ++) {
-                                CellObject gem = this.getGem(nI, nJ);
+                                CellObject gem = getGem(nI, nJ);
                                 if (gem != null && gem.activity == -1) chained.add(gem);
                             }
                         }
@@ -76,7 +86,7 @@ public class Field {
                         int targetKind = (int) (Math.random() * this.kindsCount);
                         for (int nI = 0; nI < this.size; nI++) {
                             for (int nJ = 0; nJ < this.size; nJ++) {
-                                CellObject gem = this.getGem(nI, nJ);
+                                CellObject gem = getGem(nI, nJ);
                                 if (gem != null && gem.activity == -1 && gem.kind == targetKind) chained.add(gem);
                             }
                         }
@@ -114,6 +124,34 @@ public class Field {
         }
     }
 
+    public Set<CellObject> findMatchedGems() {
+        findMatchedGems(true);
+        findMatchedGems(false);
+        this.scoreController.updateCombo(this.rowMatches.size() + this.colMatches.size());
+        
+        Set<CellObject> matchedAll = new HashSet<>();
+        processSpecialMatches();
+
+        for (Match m : rowMatches) {
+            for (int d = 0; d < m.length; d++) matchedAll.add(getGem(m.i + d, m.j));
+        }
+        for (Match m : colMatches) {
+            for (int d = 0; d < m.length; d++) matchedAll.add(getGem(m.i, m.j + d));
+        }
+        return matchedAll;
+    }
+
+    private void processSpecialMatches() {
+        for (Match rm : rowMatches) {
+            for (Match cm : colMatches) {
+                if (rm.i <= cm.i && cm.i < rm.i + rm.length && cm.j <= rm.j && rm.j < cm.j + cm.length) {
+                    CellObject gem = getGem(cm.i, rm.j);
+                    if (gem != null) gem.effect = CellObject.Effects.AREA;
+                }
+            }
+        }
+    }
+
     public Set<CellObject> findGemsToFall() {
         Set<CellObject> gemsToFall = new HashSet<>();
         for (int i = 0; i < this.size; ++i) {
@@ -134,51 +172,45 @@ public class Field {
         return gemsToFall;
     }
 
-    public Set<CellObject> findMatchedGems() {
-        findMatchedGems(true);
-        findMatchedGems(false);
-        this.scoreController.updateCombo(this.rowMatches.size() + this.colMatches.size());
-        
-        Set<CellObject> matchedAll = new HashSet<>();
-        
-        // Логика создания спец-эффектов (AREA, RAY, KIND)
-        processSpecialMatches();
-
-        // Сбор всех камней для удаления
-        for (Match m : rowMatches) {
-            for (int d = 0; d < m.length; d++) matchedAll.add(getGem(m.i + d, m.j));
-        }
-        for (Match m : colMatches) {
-            for (int d = 0; d < m.length; d++) matchedAll.add(getGem(m.i, m.j + d));
-        }
-        
-        return matchedAll;
-    }
-
-    private void processSpecialMatches() {
-        // Логика AREA (пересечение линий)
-        for (Match rm : rowMatches) {
-            for (Match cm : colMatches) {
-                if (rm.i <= cm.i && cm.i < rm.i + rm.length && cm.j <= rm.j && rm.j < cm.j + cm.length) {
-                    CellObject gem = getGem(cm.i, rm.j);
-                    if (gem != null) gem.effect = CellObject.Effects.AREA;
-                }
+    public boolean testNoMoves() {
+        for (int i = 0; i < size; i++) {
+            for (int j = 0; j < size; j++) {
+                if (cells[i][j].object != null && cells[i][j].object.effect == CellObject.Effects.KIND) return false;
             }
         }
+        // Упрощенная проверка на горизонтальный свайп
+        for (int i = 0; i < size; i++) {
+            for (int j = 0; j < size - 1; j++) {
+                if (testSwapInternal(i, j, i, j + 1)) return false;
+            }
+        }
+        // Упрощенная проверка на вертикальный свайп
+        for (int i = 0; i < size - 1; i++) {
+            for (int j = 0; j < size; j++) {
+                if (testSwapInternal(i, j, i + 1, j)) return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean testSwapInternal(int i1, int j1, int i2, int j2) {
+        swapObjects(i1, j1, i2, j2);
+        findMatchedGems(true);
+        findMatchedGems(false);
+        boolean hasMatch = rowMatches.size() > 0 || colMatches.size() > 0;
+        swapObjects(i1, j1, i2, j2);
+        return hasMatch;
     }
 
     public boolean testSwap(int i1, int j1, int i2, int j2) {
         swapObjects(i1, j1, i2, j2);
         findMatchedGems(true);
         findMatchedGems(false);
-        
         CellObject obj1 = getGem(i1, j1);
         CellObject obj2 = getGem(i2, j2);
-        
         boolean success = rowMatches.size() > 0 || colMatches.size() > 0 ||
                 (obj1 != null && obj1.effect == CellObject.Effects.KIND) || 
                 (obj2 != null && obj2.effect == CellObject.Effects.KIND);
-        
         if (!success) swapObjects(i1, j1, i2, j2);
         return success;
     }
