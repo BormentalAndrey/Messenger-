@@ -5,7 +5,7 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
-// 1. Создаем отдельную конфигурацию для поиска нативных библиотек libGDX
+// 1. Конфигурация для сбора JAR-файлов с нативными библиотеками
 val gdxNatives by configurations.creating
 
 android {
@@ -28,10 +28,10 @@ android {
         }
     }
 
-    // 2. Указываем Android Plugin брать .so файлы из папки, куда мы их распакуем
+    // 2. Указываем AGP искать нативные библиотеки в нашей папке генерации
     sourceSets {
         getByName("main") {
-            jniLibs.srcDir(layout.buildDirectory.dir("intermediates/gdx-natives"))
+            jniLibs.srcDir(layout.buildDirectory.dir("gdx-natives-out"))
         }
     }
 
@@ -78,8 +78,7 @@ android {
     }
 
     composeOptions {
-        // ВАЖНО: Убедись, что версия Kotlin в проекте — 1.9.23. 
-        // Если используешь Kotlin 2.0+, удали этот блок.
+        // Используй 1.5.11 для Kotlin 1.9.23. Если Kotlin 2.0+, этот блок можно удалить.
         kotlinCompilerExtensionVersion = "1.5.11"
     }
 
@@ -93,35 +92,38 @@ android {
     }
 }
 
-// 3. Задача для распаковки .so файлов из jar-архивов gdx-platform
+// 3. Задача для правильной распаковки .so файлов
 val unpackNatives = tasks.register<Copy>("unpackNatives") {
-    description = "Unpacks libGDX native libraries from jars"
+    description = "Unpacks libGDX native libraries and organizes them by ABI"
     
-    // Берем файлы из созданной нами конфигурации
-    from(gdxNatives.map { zipTree(it) })
+    // Берем все файлы из gdxNatives и превращаем их в деревья zip-архивов
+    from(gdxNatives.map { jar -> zipTree(jar) })
     
-    // Распаковываем в промежуточную папку билда (не в src!)
-    into(layout.buildDirectory.dir("intermediates/gdx-natives"))
+    // Куда кладем результат
+    into(layout.buildDirectory.dir("gdx-natives-out"))
     
-    include("**/libgdx.so")
-    include("**/libgdx-box2d.so") // если используешь box2d
-    
-    // Перемещаем файлы из вложенных папок com/badlogic/gdx/natives-xxx/ в корень для jniLibs
+    // Фильтруем только библиотеки
+    include("com/badlogic/gdx/natives-*/*.so")
+
+    // Логика перекладывания файлов для устранения ошибки "is not an ABI"
     eachFile {
-        val parts = path.split("/")
-        if (parts.contains("natives-armeabi-v7a")) path = "armeabi-v7a/${name}"
-        if (parts.contains("natives-arm64-v8a")) path = "arm64-v8a/${name}"
-        if (parts.contains("natives-x86")) path = "x86/${name}"
-        if (parts.contains("natives-x86_64")) path = "x86_64/${name}"
+        val nativeDir = relativePath.segments.find { it.startsWith("natives-") }
+        if (nativeDir != null) {
+            val abi = nativeDir.substringAfter("natives-")
+            // Перемещаем файл из глубокого пути прямо в папку ABI (например, arm64-v8a/libgdx.so)
+            relativePath = RelativePath(true, abi, name)
+        }
     }
-    
+
     includeEmptyDirs = false
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
-// 4. Заставляем задачу выполняться перед компиляцией
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach {
-    dependsOn(unpackNatives)
+// 4. Гарантируем выполнение задачи перед сборкой нативных библиотек
+tasks.configureEach {
+    if (name.contains("merge") && name.contains("JniLibFolders")) {
+        dependsOn(unpackNatives)
+    }
 }
 
 dependencies {
@@ -167,12 +169,11 @@ dependencies {
     implementation("com.badlogicgames.gdx:gdx:1.12.1")
     implementation("com.badlogicgames.gdx:gdx-backend-android:1.12.1")
 
-    // libGDX Natives - добавляем и в обычные зависимости, и в нашу gdxNatives
+    // libGDX Natives
     val gdxVersion = "1.12.1"
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
     platforms.forEach { platform ->
-        val dep = "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform"
-        gdxNatives(dep)
+        gdxNatives("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
     }
 
     implementation("androidx.datastore:datastore-preferences:1.1.1")
