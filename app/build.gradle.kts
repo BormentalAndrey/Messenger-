@@ -149,4 +149,38 @@ dependencies {
     // WebRTC
     implementation("io.getstream:stream-webrtc-android:1.2.0")
 }
+// ... (после блока dependencies)
+
+// Задача для извлечения нативных библиотек из JAR-файлов LibGDX
+tasks.register<Copy>("copyAndroidNatives") {
+    val gdxVersion = "1.12.1"
+    val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+    
+    platforms.forEach { platform ->
+        val jarConfiguration = configurations.detachedConfiguration(
+            dependencies.create("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
+        )
+        
+        from(jarConfiguration.map { zipTree(it) }) {
+            include("*.so")
+            into("lib/$platform")
+        }
+    }
+    
+    into("$buildDir/gdx-natives")
+}
+
+// Связываем задачу с процессом сборки
+android {
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDirs("$buildDir/gdx-natives/lib")
+        }
+    }
+}
+
+// Автоматически запускаем копирование перед компиляцией
+tasks.withType<JavaCompile> {
+    dependsOn("copyAndroidNatives")
+}
 
