@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 🌐 Permissions -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.READ_CONTACTS"/>
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" /> <!-- если позже добавите уведомление -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
         android:allowBackup="false"
@@ -14,6 +17,7 @@
         android:icon="@mipmap/ic_launcher"
         android:theme="@style/Theme.Kakdela">
 
+        <!-- 🚀 Главное Compose-приложение -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -24,11 +28,19 @@
             </intent-filter>
         </activity>
 
+        <!-- 🎮 LibGDX Match-3 игра -->
+        <activity
+            android:name="com.kakdela.p2p.game.JewelsBlastActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|keyboardHidden|screenSize"
+            android:theme="@style/Theme.AppCompat.NoActionBar"/>
+
         <!-- 🎵 Музыкальный сервис -->
         <service
             android:name=".service.MusicPlaybackService"
             android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
+            android:foregroundServiceType="mediaPlayback"/>
 
     </application>
 
