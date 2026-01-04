@@ -1,5 +1,6 @@
 package com.kakdela.p2p.ui.player
 
+import androidx.compose.foundation.BorderStroke
 import android.Manifest
 import android.content.ContentUris
 import android.content.Context
