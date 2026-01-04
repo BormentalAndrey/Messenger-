@@ -1,7 +1,6 @@
 package com.mystery_of_orient_express.match3_engine.view;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -62,13 +61,14 @@ public class GameFieldControl implements IGameControl, IAnimationHandler, IGameF
 
     @Override
     public void render(float delta, SpriteBatch batch, AssetManager assetManager) {
-        // Обновляем анимации (копия списка во избежание ConcurrentModificationException)
+        // 1. Обновление логики
         for (int i = 0; i < animations.size(); i++) {
             animations.get(i).update(delta);
         }
 
         updateFieldState(assetManager);
 
+        // 2. Отрисовка (batch.begin() уже вызван в GameScreen)
         if (assetManager.isLoaded("field.png")) {
             Texture boardImage = assetManager.get("field.png");
             batch.draw(boardImage, gameInputProcessor.getOffset(true), gameInputProcessor.getOffset(false), boardSize, boardSize);
@@ -86,11 +86,12 @@ public class GameFieldControl implements IGameControl, IAnimationHandler, IGameF
 
     public void drawObject(SpriteBatch batch, AssetManager assetManager, GameObject obj) {
         if (obj.kind != -1) {
+            if (!assetManager.isLoaded(gemNames[obj.kind])) return;
+            
             Texture image = assetManager.get(gemNames[obj.kind], Texture.class);
             float minX = obj.posX - 0.5f * obj.sizeX;
             float minY = obj.posY - 0.5f * obj.sizeY;
             
-            // Отрисовка эффектов (тени/свечение)
             if (obj.effect != CellObject.Effects.NONE) {
                 float offset = 0.08f;
                 if (obj.effect == CellObject.Effects.AREA || obj.effect == CellObject.Effects.H_RAY) {
@@ -104,26 +105,22 @@ public class GameFieldControl implements IGameControl, IAnimationHandler, IGameF
             }
             drawImage(batch, image, minX, minY, obj.sizeX, obj.sizeY);
         } else if (obj.effect == CellObject.Effects.KIND) {
-            // Отрисовка "радужного" камня
             float sX = 0.5f * obj.sizeX;
             float sY = 0.5f * obj.sizeY;
             double step = 2 * Math.PI / gemNames.length;
             for (int i = 0; i < gemNames.length; i++) {
-                Texture img = assetManager.get(gemNames[i], Texture.class);
-                drawImage(batch, img, obj.posX - 0.25f * sX + 0.3f * sX * (float)Math.sin(i * step),
-                        obj.posY - 0.25f * sY + 0.3f * sY * (float)Math.cos(i * step), sX, sY);
+                if (assetManager.isLoaded(gemNames[i])) {
+                    Texture img = assetManager.get(gemNames[i], Texture.class);
+                    drawImage(batch, img, obj.posX - 0.25f * sX + 0.3f * sX * (float)Math.sin(i * step),
+                            obj.posY - 0.25f * sY + 0.3f * sY * (float)Math.cos(i * step), sX, sY);
+                }
             }
         }
     }
 
-    @Override
-    public InputProcessor getInputProcessor() { return gameInputProcessor; }
-
-    @Override
-    public boolean canMove() { return canMove; }
-
-    @Override
-    public boolean checkIndex(int index) { return field.checkIndex(index); }
+    @Override public InputProcessor getInputProcessor() { return gameInputProcessor; }
+    @Override public boolean canMove() { return canMove; }
+    @Override public boolean checkIndex(int index) { return field.checkIndex(index); }
 
     @Override
     public GameObject newGem(int i, int j) {
@@ -151,7 +148,8 @@ public class GameFieldControl implements IGameControl, IAnimationHandler, IGameF
         Set<CellObject> matchedAll = field.findMatchedGems();
         if (!matchedAll.isEmpty()) {
             animations.add(new DisappearAnimation(matchedAll, gemSize, this));
-            int soundIdx = Math.min(scoreControl.getCombo(), 2);
+            int combo = scoreControl.getCombo();
+            int soundIdx = Math.min(combo > 0 ? combo - 1 : 0, 2);
             if (assetManager.isLoaded(soundNames[soundIdx])) assetManager.get(soundNames[soundIdx], Sound.class).play(0.3f);
             return;
         }
@@ -175,8 +173,12 @@ public class GameFieldControl implements IGameControl, IAnimationHandler, IGameF
         if (animation instanceof DisappearAnimation) {
             DisappearAnimation da = (DisappearAnimation) animation;
             Set<CellObject> chained = field.removeGems(da.gems);
-            if (!chained.isEmpty()) animations.add(new DisappearAnimation(chained, gemSize, this));
-            for (CellObject gem : da.gems) objects.remove(gem);
+            if (!chained.isEmpty()) {
+                animations.add(new DisappearAnimation(chained, gemSize, this));
+            }
+            for (CellObject gem : da.gems) {
+                objects.remove((GameObject)gem);
+            }
         }
         animations.remove(animation);
     }
