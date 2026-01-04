@@ -3,116 +3,76 @@ package com.mystery_of_orient_express.match3_engine.controller;
 import com.badlogic.gdx.InputProcessor;
 
 public class GameInputProcessor implements InputProcessor {
-
     private IGameFieldInputController controller;
-    private int boardOffset;
-    private int cellSize;
-    private int offsetX;
-    private int offsetY;
-
-    private int touchedX = -1;
-    private int touchedY = -1;
+    private int boardOffset, cellSize, offsetX, offsetY;
+    private int touchedX = -1, touchedY = -1;
 
     public GameInputProcessor(IGameFieldInputController controller) {
         this.controller = controller;
     }
 
     public void resize(int cellSize, int offsetX, int offsetY, int boardOffset) {
+        this.cellSize = cellSize;
         this.offsetX = offsetX;
         this.offsetY = offsetY;
-        this.cellSize = cellSize;
         this.boardOffset = boardOffset;
     }
 
-    private int getOffset(boolean x) {
+    // ИЗМЕНЕНО: Сделан public для использования в GameFieldControl
+    public int getOffset(boolean x) {
         return x ? this.offsetX : this.offsetY;
+    }
+
+    // ИЗМЕНЕНО: Сделан public
+    public float indexToCoord(float index, boolean x) {
+        return this.boardOffset + this.getOffset(x) + (index + 0.5f) * this.cellSize;
+    }
+
+    // ИЗМЕНЕНО: Сделан public
+    public float sizeToCoord(float size) {
+        return size * this.cellSize;
     }
 
     public int coordToIndex(float coord, boolean x) {
         return (int) ((coord - this.boardOffset - this.getOffset(x)) / this.cellSize);
     }
 
+    // ... (остальные методы touchDown, touchUp, scrolled без изменений) ...
+    @Override public boolean touchDown(int screenX, int screenY, int pointer, int button) {
+        if (!controller.canMove()) return false;
+        int i = coordToIndex(screenX, true);
+        int j = coordToIndex(screenY, false);
+        if (controller.checkIndex(i) && controller.checkIndex(j)) {
+            touchedX = screenX; touchedY = screenY; return true;
+        }
+        return false;
+    }
+
+    @Override public boolean touchUp(int screenX, int screenY, int pointer, int button) {
+        trySwap(screenX, screenY, 0.25f * cellSize);
+        touchedX = -1; touchedY = -1; return true;
+    }
+
     public boolean trySwap(int screenX, int screenY, float swapDistance) {
         if (touchedX == -1) return false;
-        
-        int dx = screenX - this.touchedX;
-        int dy = screenY - this.touchedY;
-        
+        int dx = screenX - touchedX, dy = screenY - touchedY;
         if (Math.abs(dx) > swapDistance || Math.abs(dy) > swapDistance) {
-            int i1 = this.coordToIndex(this.touchedX, true);
-            int j1 = this.coordToIndex(this.touchedY, false);
-
-            int i2 = i1;
-            int j2 = j1;
-
-            if (Math.abs(dx) > Math.abs(dy)) {
-                i2 += dx > 0 ? 1 : -1;
-            } else {
-                j2 += dy > 0 ? 1 : -1;
-            }
-
-            if (this.controller.checkIndex(i2) && this.controller.checkIndex(j2)) {
-                this.controller.swap(i1, j1, i2, j2);
-            }
+            int i1 = coordToIndex(touchedX, true), j1 = coordToIndex(touchedY, false);
+            int i2 = i1, j2 = j1;
+            if (Math.abs(dx) > Math.abs(dy)) i2 += dx > 0 ? 1 : -1;
+            else j2 += dy > 0 ? 1 : -1;
+            if (controller.checkIndex(i2) && controller.checkIndex(j2)) controller.swap(i1, j1, i2, j2);
             return true;
         }
         return false;
     }
 
-    @Override
-    public boolean touchDown(int screenX, int screenY, int pointer, int button) {
-        if (!this.controller.canMove()) return false;
-
-        int i = this.coordToIndex(screenX, true);
-        int j = this.coordToIndex(screenY, false);
-        if (this.controller.checkIndex(i) && this.controller.checkIndex(j)) {
-            this.touchedX = screenX;
-            this.touchedY = screenY;
-            return true;
-        }
-        return false;
-    }
-
-    @Override
-    public boolean touchUp(int screenX, int screenY, int pointer, int button) {
-        this.trySwap(screenX, screenY, 0.25f * this.cellSize);
-        this.touchedX = -1;
-        this.touchedY = -1;
-        return true;
-    }
-
-    @Override
-    public boolean touchDragged(int screenX, int screenY, int pointer) {
-        if (this.trySwap(screenX, screenY, (float)this.cellSize)) {
-            this.touchedX = -1;
-            this.touchedY = -1;
-            return true;
-        }
-        return false;
-    }
-
-    @Override
-    public boolean touchCancelled(int screenX, int screenY, int pointer, int button) {
-        this.touchedX = -1;
-        this.touchedY = -1;
-        return true;
-    }
-
-    @Override
-    public boolean scrolled(float amountX, float amountY) {
-        return false;
-    }
-
-    @Override
-    public boolean mouseMoved(int screenX, int screenY) { return false; }
-
-    @Override
-    public boolean keyDown(int keycode) { return false; }
-
-    @Override
-    public boolean keyUp(int keycode) { return false; }
-
-    @Override
-    public boolean keyTyped(char character) { return false; }
+    @Override public boolean touchDragged(int x, int y, int p) { return trySwap(x, y, cellSize); }
+    @Override public boolean mouseMoved(int x, int y) { return false; }
+    @Override public boolean scrolled(float amountX, float amountY) { return false; }
+    @Override public boolean keyDown(int k) { return false; }
+    @Override public boolean keyUp(int k) { return false; }
+    @Override public boolean keyTyped(char c) { return false; }
+    @Override public boolean touchCancelled(int x, int y, int p, int b) { touchedX = -1; return true; }
 }
 
