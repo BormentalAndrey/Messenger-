@@ -17,11 +17,13 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.kakdela.p2p.ui.navigation.Routes
+import com.kakdela.p2p.ui.player.MusicManager
 
 enum class EntertainmentType {
     WEB, INTERNAL_CHAT, GAME, MUSIC
@@ -68,7 +70,11 @@ fun EntertainmentScreen(navController: NavHostController) {
         }
     ) { paddingValues ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().background(Color.Black).padding(paddingValues).padding(16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .padding(paddingValues)
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             items(entertainmentItems) { item ->
@@ -80,6 +86,7 @@ fun EntertainmentScreen(navController: NavHostController) {
 
 @Composable
 fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostController) {
+    val context = LocalContext.current
     val neonColor = when (item.type) {
         EntertainmentType.GAME -> Color.Green
         EntertainmentType.INTERNAL_CHAT -> Color.Cyan
@@ -88,7 +95,10 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth().height(85.dp).shadow(8.dp, spotColor = neonColor),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(85.dp)
+            .shadow(8.dp, spotColor = neonColor),
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, neonColor.copy(alpha = 0.8f)),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF121212)),
@@ -103,28 +113,68 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
         }
     ) {
         Row(
-            modifier = Modifier.fillMaxSize().background(
-                Brush.horizontalGradient(listOf(Color.Transparent, neonColor.copy(alpha = 0.08f)))
-            ).padding(horizontal = 16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(listOf(Color.Transparent, neonColor.copy(alpha = 0.08f)))
+                )
+                .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(item.iconVector, contentDescription = null, tint = neonColor, modifier = Modifier.size(32.dp))
             Spacer(Modifier.width(16.dp))
+            
             Column(Modifier.weight(1f)) {
-                Text(item.title.uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
-                Text(item.description, color = Color.Gray, fontSize = 11.sp)
+                // Если музыка играет, показываем название трека
+                if (item.type == EntertainmentType.MUSIC && MusicManager.currentTrack != null) {
+                    Text(
+                        text = MusicManager.currentTrack!!.title,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = "Играет: ${MusicManager.currentTrack!!.artist}",
+                        color = neonColor,
+                        fontSize = 11.sp,
+                        maxLines = 1
+                    )
+                } else {
+                    Text(item.title.uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(item.description, color = Color.Gray, fontSize = 11.sp)
+                }
             }
 
             if (item.type == EntertainmentType.MUSIC) {
-                // Блок кнопок управления для музыки
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { /* Логика назад */ }) {
+                    // Кнопка Назад
+                    IconButton(onClick = { 
+                        MusicManager.playPrevious(context) 
+                    }) {
                         Icon(Icons.Filled.ChevronLeft, contentDescription = null, tint = neonColor)
                     }
-                    IconButton(onClick = { /* Логика Плей */ }) {
-                        Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = neonColor, modifier = Modifier.size(30.dp))
+                    
+                    // Кнопка Плей/Пауза
+                    IconButton(onClick = { 
+                        if (MusicManager.currentIndex == -1) {
+                            // Если ничего не выбрано, запускаем первый трек
+                            MusicManager.playTrack(context, 0)
+                        } else {
+                            MusicManager.togglePlayPause() 
+                        }
+                    }) {
+                        Icon(
+                            imageVector = if (MusicManager.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            tint = neonColor,
+                            modifier = Modifier.size(30.dp)
+                        )
                     }
-                    IconButton(onClick = { /* Логика вперед */ }) {
+                    
+                    // Кнопка Вперед
+                    IconButton(onClick = { 
+                        MusicManager.playNext(context) 
+                    }) {
                         Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = neonColor)
                     }
                 }
