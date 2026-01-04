@@ -24,7 +24,7 @@ public class GameInputProcessor implements InputProcessor {
         this.boardOffset = boardOffset;
     }
 
-    public int getOffset(boolean x) {
+    private int getOffset(boolean x) {
         return x ? this.offsetX : this.offsetY;
     }
 
@@ -32,17 +32,12 @@ public class GameInputProcessor implements InputProcessor {
         return (int) ((coord - this.boardOffset - this.getOffset(x)) / this.cellSize);
     }
 
-    public float indexToCoord(float index, boolean x) {
-        return this.boardOffset + this.getOffset(x) + (index + 0.5f) * this.cellSize;
-    }
-
-    public float sizeToCoord(float size) {
-        return size * this.cellSize;
-    }
-
     public boolean trySwap(int screenX, int screenY, float swapDistance) {
+        if (touchedX == -1) return false;
+        
         int dx = screenX - this.touchedX;
         int dy = screenY - this.touchedY;
+        
         if (Math.abs(dx) > swapDistance || Math.abs(dy) > swapDistance) {
             int i1 = this.coordToIndex(this.touchedX, true);
             int j1 = this.coordToIndex(this.touchedY, false);
@@ -88,36 +83,11 @@ public class GameInputProcessor implements InputProcessor {
 
     @Override
     public boolean touchDragged(int screenX, int screenY, int pointer) {
-        if (this.trySwap(screenX, screenY, this.cellSize)) {
+        if (this.trySwap(screenX, screenY, (float)this.cellSize)) {
             this.touchedX = -1;
             this.touchedY = -1;
             return true;
         }
-        return false;
-    }
-
-    @Override
-    public boolean mouseMoved(int screenX, int screenY) {
-        return false;
-    }
-
-    @Override
-    public boolean scrolled(float amountX, float amountY) {
-        return false;
-    }
-
-    @Override
-    public boolean keyDown(int keycode) {
-        return false;
-    }
-
-    @Override
-    public boolean keyUp(int keycode) {
-        return false;
-    }
-
-    @Override
-    public boolean keyTyped(char character) {
         return false;
     }
 
@@ -127,4 +97,22 @@ public class GameInputProcessor implements InputProcessor {
         this.touchedY = -1;
         return true;
     }
+
+    @Override
+    public boolean scrolled(float amountX, float amountY) {
+        return false;
+    }
+
+    @Override
+    public boolean mouseMoved(int screenX, int screenY) { return false; }
+
+    @Override
+    public boolean keyDown(int keycode) { return false; }
+
+    @Override
+    public boolean keyUp(int keycode) { return false; }
+
+    @Override
+    public boolean keyTyped(char character) { return false; }
 }
+
