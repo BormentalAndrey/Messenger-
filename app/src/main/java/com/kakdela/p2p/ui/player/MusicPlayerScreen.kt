@@ -27,28 +27,35 @@ import com.kakdela.p2p.model.AudioTrack
 fun MusicPlayerScreen() {
     val context = LocalContext.current
 
-    // Получаем все аудиотреки с устройства
+    // Состояние списка треков
     val tracks = remember { mutableStateListOf<AudioTrack>() }
+    var currentTrack by remember { mutableStateOf<AudioTrack?>(null) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
 
+    // Загрузка треков при запуске
     LaunchedEffect(Unit) {
         tracks.clear()
         tracks.addAll(fetchAudioTracks(context))
     }
 
-    var currentTrack by remember { mutableStateOf<AudioTrack?>(null) }
-    var isPlaying by remember { mutableStateOf(false) }
-    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
-
+    // Функции управления плеером
     fun playTrack(track: AudioTrack) {
+        mediaPlayer?.stop()
         mediaPlayer?.release()
-        mediaPlayer = MediaPlayer.create(context, track.uri).apply {
-            setOnCompletionListener {
-                isPlaying = false
+        
+        try {
+            mediaPlayer = MediaPlayer.create(context, track.uri).apply {
+                setOnCompletionListener {
+                    isPlaying = false
+                }
+                start()
             }
-            start()
+            currentTrack = track
+            isPlaying = true
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
-        currentTrack = track
-        isPlaying = true
     }
 
     fun pauseTrack() {
@@ -85,13 +92,18 @@ fun MusicPlayerScreen() {
                 .padding(paddingValues)
                 .padding(16.dp)
         ) {
+            // Список треков
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.weight(1f)
             ) {
-                items(tracks) { track ->
-                    TrackItem(track = track, isCurrent = track == currentTrack, isPlaying = isPlaying) {
-                        if (currentTrack == track) {
+                items(items = tracks, key = { it.id }) { track ->
+                    TrackItem(
+                        track = track, 
+                        isCurrent = (track.id == currentTrack?.id), 
+                        isPlaying = isPlaying
+                    ) {
+                        if (currentTrack?.id == track.id) {
                             if (isPlaying) pauseTrack() else resumeTrack()
                         } else {
                             playTrack(track)
@@ -100,32 +112,34 @@ fun MusicPlayerScreen() {
                 }
             }
 
-            // Панель управления текущим треком
+            // Панель управления (внизу)
             currentTrack?.let { track ->
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 16.dp)
-                        .background(Color(0xFF222222))
-                        .padding(12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF222222)),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) {
-                    Text(track.title, color = Color.White, fontWeight = FontWeight.Bold)
-                    Text(track.artist, color = Color.Gray, fontSize = 12.sp)
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        IconButton(onClick = { pauseTrack() }) {
-                            Icon(Icons.Filled.Pause, contentDescription = "Pause", tint = Color.Cyan)
-                        }
-                        IconButton(onClick = { resumeTrack() }) {
-                            Icon(Icons.Filled.PlayArrow, contentDescription = "Play", tint = Color.Cyan)
-                        }
-                        IconButton(onClick = { stopTrack() }) {
-                            Icon(Icons.Filled.Stop, contentDescription = "Stop", tint = Color.Red)
+                        Text(track.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Text(track.artist, color = Color.Gray, fontSize = 12.sp)
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(onClick = { if (isPlaying) pauseTrack() else resumeTrack() }) {
+                                Icon(
+                                    if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                    contentDescription = "Play/Pause",
+                                    tint = Color.Cyan
+                                )
+                            }
+                            IconButton(onClick = { stopTrack() }) {
+                                Icon(Icons.Filled.Stop, contentDescription = "Stop", tint = Color.Red)
+                            }
                         }
                     }
                 }
@@ -133,10 +147,11 @@ fun MusicPlayerScreen() {
         }
     }
 
-    // Освобождение MediaPlayer при уничтожении
+    // Очистка ресурсов при закрытии экрана
     DisposableEffect(Unit) {
         onDispose {
             mediaPlayer?.release()
+            mediaPlayer = null
         }
     }
 }
@@ -147,29 +162,32 @@ fun TrackItem(track: AudioTrack, isCurrent: Boolean, isPlaying: Boolean, onClick
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        colors = CardDefaults.cardColors(containerColor = if (isCurrent) Color.DarkGray else Color(0xFF1E1E1E))
+        colors = CardDefaults.cardColors(
+            containerColor = if (isCurrent) Color(0xFF333333) else Color(0xFF1E1E1E)
+        )
     ) {
         Row(
-            modifier = Modifier
-                .padding(12.dp)
-                .fillMaxWidth(),
+            modifier = Modifier.padding(12.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                Text(track.title, color = Color.White, fontWeight = FontWeight.Bold)
-                Text(track.artist, color = Color.Gray, fontSize = 12.sp)
-                Text(track.albumTitle, color = Color.Gray, fontSize = 10.sp)
+                Text(
+                    text = track.title, 
+                    color = if (isCurrent) Color.Cyan else Color.White, 
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+                Text(text = track.artist, color = Color.Gray, fontSize = 12.sp)
             }
             Icon(
-                if (isCurrent && isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                imageVector = if (isCurrent && isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                 contentDescription = null,
-                tint = Color.Cyan
+                tint = if (isCurrent) Color.Cyan else Color.LightGray
             )
         }
     }
 }
 
-// Получение всех аудиотреков с устройства
 fun fetchAudioTracks(context: Context): List<AudioTrack> {
     val tracks = mutableListOf<AudioTrack>()
     val uri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
@@ -181,26 +199,26 @@ fun fetchAudioTracks(context: Context): List<AudioTrack> {
         MediaStore.Audio.Media.DURATION
     )
     val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
-    val cursor = context.contentResolver.query(uri, projection, selection, null, null)
+    
+    context.contentResolver.query(uri, projection, selection, null, null)?.use { cursor ->
+        val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+        val titleIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+        val artistIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+        val albumIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+        val durationIndex = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
 
-    cursor?.use {
-        val idIndex = it.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-        val titleIndex = it.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-        val artistIndex = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-        val albumIndex = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-        val durationIndex = it.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-
-        while (it.moveToNext()) {
-            val id = it.getLong(idIndex)
-            val title = it.getString(titleIndex)
-            val artist = it.getString(artistIndex)
-            val album = it.getString(albumIndex)
-            val duration = it.getLong(durationIndex)
+        while (cursor.moveToNext()) {
+            val id = cursor.getLong(idIndex)
+            val title = cursor.getString(titleIndex)
+            val artist = cursor.getString(artistIndex)
+            val album = cursor.getString(albumIndex)
+            val duration = cursor.getLong(durationIndex)
             val contentUri = Uri.withAppendedPath(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id.toString())
 
+            // Убедитесь, что конструктор AudioTrack совпадает с этим набором данных
             tracks.add(AudioTrack(id, title, artist, album, 0, duration, contentUri))
         }
     }
-
     return tracks
 }
+
