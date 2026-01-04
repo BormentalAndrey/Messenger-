@@ -50,9 +50,9 @@ public class GameInputProcessor implements InputProcessor {
             int i2 = i1;
             int j2 = j1;
 
-            if (Math.abs(dx) > Math.abs(dy)) { // horizontal
+            if (Math.abs(dx) > Math.abs(dy)) {
                 i2 += dx > 0 ? 1 : -1;
-            } else { // vertical
+            } else {
                 j2 += dy > 0 ? 1 : -1;
             }
 
@@ -102,7 +102,7 @@ public class GameInputProcessor implements InputProcessor {
     }
 
     @Override
-    public boolean scrolled(int amount) {
+    public boolean scrolled(float amountX, float amountY) {
         return false;
     }
 
