@@ -1,12 +1,11 @@
 package com.kakdela.p2p.ui.player
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,74 +21,59 @@ fun MusicPlayerScreen(
     vm: PlayerViewModel = viewModel()
 ) {
     val tracks by vm.filteredTracks.collectAsState()
-    val currentTrack by vm.currentTrack.collectAsState()
+    val current by vm.currentTrack.collectAsState()
 
-    Scaffold(
-        bottomBar = {
-            MiniPlayer(vm)
-        }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            items(tracks) { track ->
-                TrackItem(
-                    track = track,
-                    isCurrent = track == currentTrack,
-                    onClick = { vm.playTrack(track) }
-                )
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = Color.Black
+    ) {
+        Scaffold(
+            containerColor = Color.Black,
+            bottomBar = { MiniPlayer(vm) }
+        ) { padding ->
+
+            if (tracks.isEmpty()) {
+                // 👇 ВАЖНО: теперь не будет "чёрного экрана"
+                EmptyMusicState(Modifier.padding(padding))
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                ) {
+                    items(tracks) { track ->
+                        TrackItem(
+                            track = track,
+                            isCurrent = track == current,
+                            onClick = { vm.playTrack(track) }
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun TrackItem(
-    track: AudioTrack,
-    isCurrent: Boolean,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .background(
-                if (isCurrent)
-                    MaterialTheme.colorScheme.primaryContainer
-                else
-                    Color.Transparent
-            )
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
+private fun EmptyMusicState(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
     ) {
-        AsyncImage(
-            model = track.albumArt,
-            contentDescription = null,
-            modifier = Modifier.size(48.dp)
-        )
-
-        Spacer(modifier = Modifier.width(12.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = track.title,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 1
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                Icons.Default.MusicNote,
+                contentDescription = null,
+                tint = Color.Gray,
+                modifier = Modifier.size(64.dp)
             )
+            Spacer(Modifier.height(12.dp))
+            Text("Музыка не найдена", color = Color.White)
             Text(
-                text = track.artist,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                "Проверь разрешение и наличие MP3",
+                color = Color.Gray,
+                style = MaterialTheme.typography.bodySmall
             )
         }
-
-        Icon(
-            imageVector = Icons.Default.ChevronRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
