@@ -1,37 +1,24 @@
-package com.kakdela.p2p.ui
+package com.kakdela.p2p.game
 
-import android.content.Intent
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import com.kakdela.p2p.game.JewelsBlastActivity
+import android.os.Bundle
+import com.badlogic.gdx.backends.android.AndroidApplication
+import com.badlogic.gdx.backends.android.AndroidApplicationConfiguration
+import com.mystery_of_orient_express.game.MysteryOfOrientExpress
 
-@Composable
-fun JewelsBlastScreen() {
-    val context = LocalContext.current
+class JewelsBlastActivity : AndroidApplication() {
 
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Button(
-            modifier = Modifier
-                .width(220.dp)
-                .height(56.dp),
-            onClick = {
-                context.startActivity(
-                    Intent(context, JewelsBlastActivity::class.java)
-                )
-            }
-        ) {
-            Text(
-                text = "🎮 Играть",
-                style = MaterialTheme.typography.titleMedium
-            )
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        val config = AndroidApplicationConfiguration().apply {
+            useAccelerometer = false
+            useCompass = false
+            useGyroscope = false
+            useImmersiveMode = true
+            hideStatusBar = true
+            disableAudio = false
         }
+
+        initialize(MysteryOfOrientExpress(), config)
     }
 }
