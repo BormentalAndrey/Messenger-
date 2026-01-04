@@ -123,6 +123,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1") // обязательно для MediaSession и уведомлений
+    implementation("io.coil-kt:coil-compose:2.5.0")
 
     // Coroutines — исправлено: добавлен правильный group, версии согласованы
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
