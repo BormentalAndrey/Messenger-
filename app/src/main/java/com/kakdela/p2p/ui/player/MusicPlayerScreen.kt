@@ -25,31 +25,44 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import coil.compose.AsyncImage
+import com.kakdela.p2p.R
 import com.kakdela.p2p.model.AudioTrack
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MusicPlayerScreen() {
     val context = LocalContext.current
-    val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) 
-        Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
+    
+    // Определение разрешений в зависимости от версии Android
+    val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        Manifest.permission.READ_MEDIA_AUDIO
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
 
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+    // Лаунчер для запроса доступа к файлам
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
         if (isGranted) {
+            val fetched = fetchAudioTracks(context)
             MusicManager.tracks.clear()
-            MusicManager.tracks.addAll(fetchAudioTracks(context))
+            MusicManager.tracks.addAll(fetched)
         }
     }
 
+    // Проверка разрешений при входе на экран
     LaunchedEffect(Unit) {
         if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) {
             if (MusicManager.tracks.isEmpty()) {
-                MusicManager.tracks.addAll(fetchAudioTracks(context))
+                val fetched = fetchAudioTracks(context)
+                MusicManager.tracks.addAll(fetched)
             }
         } else {
             launcher.launch(permission)
@@ -59,33 +72,122 @@ fun MusicPlayerScreen() {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Моя Музыка", color = Color.Cyan, fontWeight = FontWeight.Bold) },
+                title = { 
+                    Text("МОЯ МУЗЫКА", fontWeight = FontWeight.Black, color = Color.Cyan) 
+                },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black)
             )
         },
         containerColor = Color.Black
     ) { paddingValues ->
-        Column(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp)) {
-            LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                itemsIndexed(MusicManager.tracks) { index, track ->
-                    TrackItem(
-                        track = track,
-                        isCurrent = index == MusicManager.currentIndex,
-                        isPlaying = index == MusicManager.currentIndex && MusicManager.isPlaying
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .background(Color.Black)
+        ) {
+            if (MusicManager.tracks.isEmpty()) {
+                Text(
+                    text = "Треки не найдены",
+                    color = Color.Gray,
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            } else {
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    // Список песен
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(vertical = 8.dp)
                     ) {
-                        if (MusicManager.currentIndex == index) MusicManager.togglePlayPause()
-                        else MusicManager.playTrack(context, index)
+                        itemsIndexed(MusicManager.tracks) { index, track ->
+                            TrackItem(
+                                track = track,
+                                isCurrent = (index == MusicManager.currentIndex),
+                                isPlaying = (index == MusicManager.currentIndex && MusicManager.isPlaying),
+                                onClick = {
+                                    if (MusicManager.currentIndex == index) {
+                                        MusicManager.togglePlayPause()
+                                    } else {
+                                        MusicManager.playTrack(context, index)
+                                    }
+                                }
+                            )
+                        }
+                    }
+
+                    // Нижняя панель управления
+                    MusicManager.currentTrack?.let { track ->
+                        PlaybackControlPanel(
+                            track = track,
+                            isPlaying = MusicManager.isPlaying,
+                            onPlayPause = { MusicManager.togglePlayPause() },
+                            onNext = { MusicManager.playNext(context) },
+                            onPrevious = { MusicManager.playPrevious(context) }
+                        )
                     }
                 }
             }
+        }
+    }
+}
 
-            MusicManager.currentTrack?.let { track ->
-                PlaybackControlPanel(
-                    track = track,
-                    isPlaying = MusicManager.isPlaying,
-                    onPlayPause = { MusicManager.togglePlayPause() },
-                    onNext = { MusicManager.playNext(context) },
-                    onPrevious = { MusicManager.playPrevious(context) }
+@Composable
+fun TrackItem(
+    track: AudioTrack, 
+    isCurrent: Boolean, 
+    isPlaying: Boolean, 
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(
+            containerColor = if (isCurrent) Color(0xFF1E1E1E) else Color(0xFF0A0A0A)
+        ),
+        shape = RoundedCornerShape(12.dp),
+        border = if (isCurrent) BorderStroke(1.dp, Color.Cyan.copy(alpha = 0.5f)) else null
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Обложка или ярлык приложения
+            AsyncImage(
+                model = track.albumArt,
+                contentDescription = null,
+                placeholder = painterResource(id = R.mipmap.ic_launcher),
+                error = painterResource(id = R.mipmap.ic_launcher),
+                modifier = Modifier
+                    .size(50.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.DarkGray),
+                contentScale = ContentScale.Crop
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = track.title,
+                    color = if (isCurrent) Color.Cyan else Color.White,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
+                Text(
+                    text = track.artist,
+                    color = Color.Gray,
+                    fontSize = 12.sp,
+                    maxLines = 1
+                )
+            }
+
+            if (isCurrent) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                    contentDescription = null,
+                    tint = Color.Cyan
                 )
             }
         }
@@ -93,71 +195,132 @@ fun MusicPlayerScreen() {
 }
 
 @Composable
-fun TrackItem(track: AudioTrack, isCurrent: Boolean, isPlaying: Boolean, onClick: () -> Unit) {
+fun PlaybackControlPanel(
+    track: AudioTrack,
+    isPlaying: Boolean,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit
+) {
     Card(
-        modifier = Modifier.fillMaxWidth().clickable { onClick() },
-        colors = CardDefaults.cardColors(containerColor = if (isCurrent) Color(0xFF252525) else Color(0xFF121212))
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A)),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(8.dp)
     ) {
-        Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Маленькая обложка в панели
             AsyncImage(
                 model = track.albumArt,
                 contentDescription = null,
-                modifier = Modifier.size(50.dp).clip(RoundedCornerShape(8.dp)).background(Color.DarkGray),
+                placeholder = painterResource(id = R.mipmap.ic_launcher),
+                error = painterResource(id = R.mipmap.ic_launcher),
+                modifier = Modifier
+                    .size(45.dp)
+                    .clip(RoundedCornerShape(10.dp)),
                 contentScale = ContentScale.Crop
             )
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(track.title, color = if (isCurrent) Color.Cyan else Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text(track.artist, color = Color.Gray, fontSize = 12.sp)
-            }
-            Icon(
-                if (isCurrent && isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                null, tint = if (isCurrent) Color.Cyan else Color.White
-            )
-        }
-    }
-}
 
-@Composable
-fun PlaybackControlPanel(track: AudioTrack, isPlaying: Boolean, onPlayPause: () -> Unit, onNext: () -> Unit, onPrevious: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E)), shape = RoundedCornerShape(16.dp)) {
-        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(model = track.albumArt, contentDescription = null, modifier = Modifier.size(45.dp).clip(RoundedCornerShape(6.dp)), contentScale = ContentScale.Crop)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(track.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text(track.artist, color = Color.Cyan, fontSize = 12.sp)
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = track.title,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    maxLines = 1
+                )
+                Text(
+                    text = track.artist,
+                    color = Color.Cyan,
+                    fontSize = 11.sp,
+                    maxLines = 1
+                )
             }
-            Row {
-                IconButton(onClick = onPrevious) { Icon(Icons.Filled.SkipPrevious, null, tint = Color.White) }
-                IconButton(onClick = onPlayPause, modifier = Modifier.background(Color.Cyan, RoundedCornerShape(50.dp))) {
-                    Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = Color.Black)
+
+            // Кнопки управления
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onPrevious) {
+                    Icon(Icons.Filled.SkipPrevious, null, tint = Color.White)
                 }
-                IconButton(onClick = onNext) { Icon(Icons.Filled.SkipNext, null, tint = Color.White) }
+                
+                Surface(
+                    onClick = onPlayPause,
+                    shape = RoundedCornerShape(50.dp),
+                    color = Color.Cyan,
+                    modifier = Modifier.size(42.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            tint = Color.Black,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+
+                IconButton(onClick = onNext) {
+                    Icon(Icons.Filled.SkipNext, null, tint = Color.White)
+                }
             }
         }
     }
 }
 
+// Вспомогательная функция получения треков (если она не вынесена)
 fun fetchAudioTracks(context: Context): List<AudioTrack> {
     val tracks = mutableListOf<AudioTrack>()
-    val projection = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST, MediaStore.Audio.Media.ALBUM, MediaStore.Audio.Media.TRACK, MediaStore.Audio.Media.DURATION, MediaStore.Audio.Media.ALBUM_ID)
-    context.contentResolver.query(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, projection, "${MediaStore.Audio.Media.IS_MUSIC} != 0", null, null)?.use { cursor ->
+    val projection = arrayOf(
+        MediaStore.Audio.Media._ID,
+        MediaStore.Audio.Media.TITLE,
+        MediaStore.Audio.Media.ARTIST,
+        MediaStore.Audio.Media.ALBUM,
+        MediaStore.Audio.Media.DURATION,
+        MediaStore.Audio.Media.ALBUM_ID
+    )
+
+    context.contentResolver.query(
+        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+        projection,
+        "${MediaStore.Audio.Media.IS_MUSIC} != 0",
+        null,
+        null
+    )?.use { cursor ->
         val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
         val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
         val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
         val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-        val trackNoCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TRACK)
         val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
         val albumIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+
         while (cursor.moveToNext()) {
             val id = cursor.getLong(idCol)
             val albumId = cursor.getLong(albumIdCol)
-            tracks.add(AudioTrack(
-                id = id, title = cursor.getString(titleCol) ?: "Unknown", artist = cursor.getString(artistCol) ?: "Unknown", albumTitle = cursor.getString(albumCol) ?: "Unknown",
-                trackNumber = cursor.getInt(trackNoCol), duration = cursor.getLong(durationCol), uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id),
-                albumArt = ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId), albumId = albumId
-            ))
+            val albumArtUri = ContentUris.withAppendedId(
+                Uri.parse("content://media/external/audio/albumart"), 
+                albumId
+            )
+
+            tracks.add(
+                AudioTrack(
+                    id = id,
+                    title = cursor.getString(titleCol) ?: "Unknown",
+                    artist = cursor.getString(artistCol) ?: "Unknown Artist",
+                    albumTitle = cursor.getString(albumCol) ?: "Unknown Album",
+                    trackNumber = 0,
+                    duration = cursor.getLong(durationCol),
+                    uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id),
+                    albumArt = albumArtUri,
+                    albumId = albumId
+                )
+            )
         }
     }
     return tracks
