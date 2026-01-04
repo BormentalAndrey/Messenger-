@@ -2,6 +2,7 @@ package com.kakdela.p2p.ui
 
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,15 +14,20 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import coil.compose.AsyncImage
+import com.kakdela.p2p.R
 import com.kakdela.p2p.ui.navigation.Routes
 import com.kakdela.p2p.ui.player.MusicManager
 
@@ -118,27 +124,37 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
                 .background(
                     Brush.horizontalGradient(listOf(Color.Transparent, neonColor.copy(alpha = 0.08f)))
                 )
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(item.iconVector, contentDescription = null, tint = neonColor, modifier = Modifier.size(32.dp))
-            Spacer(Modifier.width(16.dp))
+            // Иконка типа или Обложка/Логотип для музыки
+            if (item.type == EntertainmentType.MUSIC && MusicManager.currentTrack != null) {
+                AsyncImage(
+                    model = MusicManager.currentTrack!!.albumArt,
+                    contentDescription = null,
+                    error = painterResource(id = R.mipmap.ic_launcher),
+                    modifier = Modifier
+                        .size(45.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(45.dp)
+                        .background(neonColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(item.iconVector, contentDescription = null, tint = neonColor, modifier = Modifier.size(28.dp))
+                }
+            }
+
+            Spacer(Modifier.width(12.dp))
             
             Column(Modifier.weight(1f)) {
-                // Если музыка играет, показываем название трека
                 if (item.type == EntertainmentType.MUSIC && MusicManager.currentTrack != null) {
-                    Text(
-                        text = MusicManager.currentTrack!!.title,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    )
-                    Text(
-                        text = "Играет: ${MusicManager.currentTrack!!.artist}",
-                        color = neonColor,
-                        fontSize = 11.sp,
-                        maxLines = 1
-                    )
+                    Text(MusicManager.currentTrack!!.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
+                    Text("Сейчас играет", color = neonColor, fontSize = 10.sp)
                 } else {
                     Text(item.title.uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
                     Text(item.description, color = Color.Gray, fontSize = 11.sp)
@@ -147,39 +163,21 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
 
             if (item.type == EntertainmentType.MUSIC) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Кнопка Назад
-                    IconButton(onClick = { 
-                        MusicManager.playPrevious(context) 
-                    }) {
-                        Icon(Icons.Filled.ChevronLeft, contentDescription = null, tint = neonColor)
+                    IconButton(onClick = { MusicManager.playPrevious(context) }) {
+                        Icon(Icons.Filled.ChevronLeft, null, tint = neonColor)
                     }
-                    
-                    // Кнопка Плей/Пауза
                     IconButton(onClick = { 
-                        if (MusicManager.currentIndex == -1) {
-                            // Если ничего не выбрано, запускаем первый трек
-                            MusicManager.playTrack(context, 0)
-                        } else {
-                            MusicManager.togglePlayPause() 
-                        }
+                        if (MusicManager.currentIndex == -1) MusicManager.playTrack(context, 0)
+                        else MusicManager.togglePlayPause() 
                     }) {
-                        Icon(
-                            imageVector = if (MusicManager.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            contentDescription = null,
-                            tint = neonColor,
-                            modifier = Modifier.size(30.dp)
-                        )
+                        Icon(if (MusicManager.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = neonColor, modifier = Modifier.size(30.dp))
                     }
-                    
-                    // Кнопка Вперед
-                    IconButton(onClick = { 
-                        MusicManager.playNext(context) 
-                    }) {
-                        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = neonColor)
+                    IconButton(onClick = { MusicManager.playNext(context) }) {
+                        Icon(Icons.Filled.ChevronRight, null, tint = neonColor)
                     }
                 }
             } else {
-                Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = neonColor)
+                Icon(Icons.Filled.PlayArrow, null, tint = neonColor)
             }
         }
     }
