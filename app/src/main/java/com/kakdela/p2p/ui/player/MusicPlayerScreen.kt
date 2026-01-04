@@ -1,79 +1,83 @@
 package com.kakdela.p2p.ui.player
 
+import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
+import androidx.compose.ui.unit.sp
 import com.kakdela.p2p.model.AudioTrack
 
+// 🎵 Основной экран проигрывателя
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MusicPlayerScreen(
-    vm: PlayerViewModel = viewModel()
-) {
-    val tracks by vm.filteredTracks.collectAsState()
-    val current by vm.currentTrack.collectAsState()
+fun MusicPlayerScreen() {
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = Color.Black
-    ) {
-        Scaffold(
-            containerColor = Color.Black,
-            bottomBar = { MiniPlayer(vm) }
-        ) { padding ->
+    // Пример треков (замени на реальные из твоей коллекции)
+    val tracks = remember {
+        listOf(
+            AudioTrack(1, "Track 1", "Artist 1", "Album 1", 1, 200000, Uri.EMPTY),
+            AudioTrack(2, "Track 2", "Artist 2", "Album 2", 2, 180000, Uri.EMPTY),
+            AudioTrack(3, "Track 3", "Artist 3", "Album 3", 3, 240000, Uri.EMPTY),
+        )
+    }
 
-            if (tracks.isEmpty()) {
-                // 👇 ВАЖНО: теперь не будет "чёрного экрана"
-                EmptyMusicState(Modifier.padding(padding))
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                ) {
-                    items(tracks) { track ->
-                        TrackItem(
-                            track = track,
-                            isCurrent = track == current,
-                            onClick = { vm.playTrack(track) }
-                        )
-                    }
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("MP3 Проигрыватель", color = Color.Cyan) },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black)
+            )
+        },
+        containerColor = Color.Black
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .padding(paddingValues)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(tracks) { track ->
+                TrackItem(track) {
+                    // Тут можно добавить логику проигрывания
+                    println("Clicked on track: ${track.title}")
                 }
             }
         }
     }
 }
 
+// 🎵 Компонент трека
 @Composable
-private fun EmptyMusicState(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+fun TrackItem(track: AudioTrack, onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                Icons.Default.MusicNote,
-                contentDescription = null,
-                tint = Color.Gray,
-                modifier = Modifier.size(64.dp)
-            )
-            Spacer(Modifier.height(12.dp))
-            Text("Музыка не найдена", color = Color.White)
-            Text(
-                "Проверь разрешение и наличие MP3",
-                color = Color.Gray,
-                style = MaterialTheme.typography.bodySmall
-            )
+        Row(
+            modifier = Modifier
+                .padding(12.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(track.title, color = Color.White, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                Text(track.artist, color = Color.Gray, fontSize = 12.sp)
+            }
+            Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.Cyan)
         }
     }
 }
