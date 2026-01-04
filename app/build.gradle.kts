@@ -26,9 +26,6 @@ android {
         }
     }
 
-    // ВАЖНО: Удалите ручные настройки sourceSets для jniLibs, если они были.
-    // С runtimeOnly Gradle сам найдет библиотеки в зависимостях.
-
     signingConfigs {
         create("release") {
             storeFile = file("my-release-key.jks")
@@ -50,9 +47,6 @@ android {
                 "proguard-rules.pro"
             )
         }
-        debug {
-            // Опционально: настройки для дебага
-        }
     }
 
     compileOptions {
@@ -69,7 +63,6 @@ android {
     }
 
     composeOptions {
-        // Убедитесь, что версия Kotlin в проекте (в корневом build.gradle) - 1.9.23
         kotlinCompilerExtensionVersion = "1.5.11"
     }
 
@@ -80,12 +73,18 @@ android {
             excludes += "META-INF/INDEX.LIST"
             excludes += "META-INF/kotlinx-coroutines-core.kotlin_module"
             
-            // Если .so файлы дублируются в разных jar, берем первый найденный
             pickFirst("**/*.so")
         }
         jniLibs {
-            // Критично для загрузки библиотек на многих устройствах (Xiaomi/Oppo/etc)
+            // Критично для корректной загрузки библиотек LibGDX на Android
             useLegacyPackaging = true
+        }
+    }
+
+    // Указываем путь к извлеченным нативным библиотекам
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDirs(layout.buildDirectory.dir("gdx-natives/lib"))
         }
     }
 }
@@ -111,8 +110,7 @@ dependencies {
     implementation("com.badlogicgames.gdx:gdx:1.12.1")
     implementation("com.badlogicgames.gdx:gdx-backend-android:1.12.1")
 
-    // --- ИСПРАВЛЕНИЕ ОШИБКИ "libgdx.so not found" ---
-    // Используем runtimeOnly, чтобы Gradle сам извлек библиотеки из JAR и упаковал их в APK
+    // Нативные библиотеки для извлечения
     val gdxVersion = "1.12.1"
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
     platforms.forEach { platform ->
@@ -132,7 +130,7 @@ dependencies {
     implementation("com.google.firebase:firebase-storage")
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
 
-    // Библиотеки для сети и медиа
+    // Сеть и медиа
     implementation("com.wireguard.android:tunnel:1.0.20230706")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
@@ -149,9 +147,9 @@ dependencies {
     // WebRTC
     implementation("io.getstream:stream-webrtc-android:1.2.0")
 }
-// ... (после блока dependencies)
 
-// Задача для извлечения нативных библиотек из JAR-файлов LibGDX
+// РАЗДЕЛ ЗАДАЧ: Извлечение нативных библиотек и настройка зависимостей между задачами
+
 tasks.register<Copy>("copyAndroidNatives") {
     val gdxVersion = "1.12.1"
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
@@ -166,21 +164,21 @@ tasks.register<Copy>("copyAndroidNatives") {
             into("lib/$platform")
         }
     }
-    
-    into("$buildDir/gdx-natives")
+    into(layout.buildDirectory.dir("gdx-natives"))
 }
 
-// Связываем задачу с процессом сборки
-android {
-    sourceSets {
-        getByName("main") {
-            jniLibs.srcDirs("$buildDir/gdx-natives/lib")
-        }
+// Решение проблемы Implicit Dependency для Gradle 8+
+tasks.withType<com.android.build.gradle.tasks.MergeSourceSetFolders>().configureEach {
+    if (name.contains("JniLibFolders")) {
+        dependsOn("copyAndroidNatives")
     }
 }
 
-// Автоматически запускаем копирование перед компиляцией
-tasks.withType<JavaCompile> {
+tasks.withType<JavaCompile>().configureEach {
+    dependsOn("copyAndroidNatives")
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     dependsOn("copyAndroidNatives")
 }
 
