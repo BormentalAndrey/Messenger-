@@ -15,7 +15,6 @@ class JewelsBlastActivity : AndroidApplication() {
             useCompass = false
             useGyroscope = false
             useImmersiveMode = true
-            hideStatusBar = true
             disableAudio = false
         }
 
