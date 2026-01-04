@@ -1,24 +1,20 @@
 package com.mystery_of_orient_express.match3_engine.view;
 
-import java.util.List;
-import java.util.ArrayList;
-
 import com.badlogic.gdx.InputProcessor;
 import com.badlogic.gdx.ScreenAdapter;
 import com.badlogic.gdx.assets.AssetManager;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.mystery_of_orient_express.match3_engine.model.IGameControl;
+import java.util.ArrayList;
+import java.util.List;
 
 public class GameScreen extends ScreenAdapter implements IScreen, InputProcessor {
-
-    private int screenWidth;
-    private int screenHeight;
-    private int gameFieldSize;
+    private int screenWidth, screenHeight, gameFieldSize;
     private SpriteBatch batch;
     private AssetManager assetManager;
     private List<IGameControl> controls;
-    private InputProcessor inputProcessor = null;
+    private InputProcessor currentProcessor = null;
 
     public GameScreen(SpriteBatch batch) {
         this.batch = batch;
@@ -32,107 +28,74 @@ public class GameScreen extends ScreenAdapter implements IScreen, InputProcessor
     public void load(AssetManager assetManager) {
         this.assetManager = assetManager;
         assetManager.load("video.png", Texture.class);
-        for (IGameControl control : this.controls) {
-            control.load(this.assetManager);
-        }
+        for (IGameControl c : controls) c.load(assetManager);
     }
 
     @Override
     public void resize(int width, int height) {
         this.screenWidth = width;
         this.screenHeight = height;
-        this.gameFieldSize = Math.min(this.screenWidth, (int) (0.9f * this.screenHeight));
-        for (IGameControl control : this.controls) {
-            if (control instanceof ScoreControl) {
-                control.resize(0, this.gameFieldSize, this.screenWidth, this.screenHeight - this.gameFieldSize);
-            }
-            if (control instanceof GameFieldControl) {
-                control.resize((width - this.gameFieldSize) / 2, 0, this.gameFieldSize, this.gameFieldSize);
-            }
+        this.gameFieldSize = Math.min(width, (int) (0.9f * height));
+        for (IGameControl c : controls) {
+            if (c instanceof ScoreControl) c.resize(0, gameFieldSize, width, height - gameFieldSize);
+            else if (c instanceof GameFieldControl) c.resize((width - gameFieldSize) / 2, 0, gameFieldSize, gameFieldSize);
         }
-    }
-
-    @Override
-    public InputProcessor getInputProcessor() {
-        return this;
     }
 
     @Override
     public void render(float delta) {
-        Texture image = assetManager.get("video.png");
-        batch.draw(image, 0, 0, this.screenWidth, this.screenHeight);
-        for (IGameControl control : this.controls) {
-            control.render(delta, this.batch, this.assetManager);
+        if (assetManager.isLoaded("video.png")) {
+            batch.draw(assetManager.get("video.png", Texture.class), 0, 0, screenWidth, screenHeight);
         }
+        for (IGameControl c : controls) c.render(delta, batch, assetManager);
     }
 
     @Override
-    public boolean touchDown(int screenX, int screenY, int pointer, int button) {
-        if (pointer != 0) return false;
+    public InputProcessor getInputProcessor() { return this; }
 
-        for (IGameControl control : this.controls) {
-            InputProcessor ip = control.getInputProcessor();
-            if (ip != null && ip.touchDown(screenX, this.screenHeight - screenY, pointer, button)) {
-                this.inputProcessor = ip;
+    @Override
+    public boolean touchDown(int x, int y, int pointer, int button) {
+        if (pointer != 0) return false;
+        int ly = screenHeight - y; // Инверсия Y
+        for (IGameControl c : controls) {
+            InputProcessor ip = c.getInputProcessor();
+            if (ip != null && ip.touchDown(x, ly, pointer, button)) {
+                currentProcessor = ip;
                 return true;
             }
         }
-
         return false;
     }
 
     @Override
-    public boolean touchUp(int screenX, int screenY, int pointer, int button) {
-        if (pointer != 0 || this.inputProcessor == null) return false;
-
-        if (this.inputProcessor.touchUp(screenX, this.screenHeight - screenY, pointer, button)) {
-            this.inputProcessor = null;
+    public boolean touchUp(int x, int y, int pointer, int button) {
+        if (currentProcessor != null) {
+            currentProcessor.touchUp(x, screenHeight - y, pointer, button);
+            currentProcessor = null;
         }
         return true;
     }
 
     @Override
-    public boolean touchDragged(int screenX, int screenY, int pointer) {
-        if (pointer != 0 || this.inputProcessor == null) return false;
-
-        if (this.inputProcessor.touchDragged(screenX, this.screenHeight - screenY, pointer)) {
-            this.inputProcessor = null;
-        }
+    public boolean touchDragged(int x, int y, int pointer) {
+        if (currentProcessor != null) currentProcessor.touchDragged(x, screenHeight - y, pointer);
         return true;
     }
 
     @Override
-    public boolean mouseMoved(int screenX, int screenY) {
-        return false;
-    }
-
-    // ⚠ Новая сигнатура для libGDX 1.12+
+    public boolean scrolled(float amountX, float amountY) { return false; }
     @Override
-    public boolean scrolled(float amountX, float amountY) {
-        return false;
-    }
-
+    public boolean mouseMoved(int x, int y) { return false; }
     @Override
-    public boolean keyDown(int keycode) {
-        return false;
-    }
-
+    public boolean keyDown(int k) { return false; }
     @Override
-    public boolean keyUp(int keycode) {
-        return false;
-    }
-
+    public boolean keyUp(int k) { return false; }
     @Override
-    public boolean keyTyped(char character) {
-        return false;
-    }
-
+    public boolean keyTyped(char c) { return false; }
     @Override
-    public boolean touchCancelled(int screenX, int screenY, int pointer, int button) {
-        if (this.inputProcessor != null) {
-            this.inputProcessor.touchCancelled(screenX, screenY, pointer, button);
-        }
-        this.inputProcessor = null;
-        return true;
+    public boolean touchCancelled(int x, int y, int p, int b) { 
+        currentProcessor = null; 
+        return true; 
     }
 }
+
