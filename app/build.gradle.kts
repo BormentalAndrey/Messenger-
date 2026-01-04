@@ -21,10 +21,13 @@ android {
         }
 
         ndk {
-            // Строго ограничиваем список поддерживаемых архитектур
+            // Строго ограничиваем архитектуры для стабильности
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
         }
     }
+
+    // ВАЖНО: Удалите ручные настройки sourceSets для jniLibs, если они были.
+    // С runtimeOnly Gradle сам найдет библиотеки в зависимостях.
 
     signingConfigs {
         create("release") {
@@ -47,22 +50,8 @@ android {
                 "proguard-rules.pro"
             )
         }
-    }
-
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-            excludes += "META-INF/DEPENDENCIES"
-            excludes += "META-INF/INDEX.LIST"
-            excludes += "META-INF/kotlinx-coroutines-core.kotlin_module"
-            
-            // Если библиотека libgdx.so найдена в нескольких зависимостях, берем первую
-            pickFirst("**/*.so")
-        }
-        jniLibs {
-            // Это КРИТИЧЕСКИ важно: заставляет Gradle упаковывать .so файлы 
-            // в стандартном виде, который Android гарантированно увидит.
-            useLegacyPackaging = true
+        debug {
+            // Опционально: настройки для дебага
         }
     }
 
@@ -80,49 +69,84 @@ android {
     }
 
     composeOptions {
+        // Убедитесь, что версия Kotlin в проекте (в корневом build.gradle) - 1.9.23
         kotlinCompilerExtensionVersion = "1.5.11"
+    }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "META-INF/DEPENDENCIES"
+            excludes += "META-INF/INDEX.LIST"
+            excludes += "META-INF/kotlinx-coroutines-core.kotlin_module"
+            
+            // Если .so файлы дублируются в разных jar, берем первый найденный
+            pickFirst("**/*.so")
+        }
+        jniLibs {
+            // Критично для загрузки библиотек на многих устройствах (Xiaomi/Oppo/etc)
+            useLegacyPackaging = true
+        }
     }
 }
 
 dependencies {
-    // Android & Compose
+    // Android Core & Lifecycle
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.fragment:fragment-ktx:1.8.1")
 
-    // Compose BOM
+    // Compose
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.foundation:foundation")
     implementation("androidx.navigation:navigation-compose:2.8.0")
 
     // libGDX Core
     implementation("com.badlogicgames.gdx:gdx:1.12.1")
     implementation("com.badlogicgames.gdx:gdx-backend-android:1.12.1")
 
-    // --- РЕШЕНИЕ ДЛЯ ОШИБКИ "NOT FOUND" ---
+    // --- ИСПРАВЛЕНИЕ ОШИБКИ "libgdx.so not found" ---
+    // Используем runtimeOnly, чтобы Gradle сам извлек библиотеки из JAR и упаковал их в APK
     val gdxVersion = "1.12.1"
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
     platforms.forEach { platform ->
-        // Используем runtimeOnly. Это говорит Gradle: "скачай JAR, вытащи оттуда .so 
-        // и положи их в APK автоматически". Никаких задач Copy больше не нужно.
         runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
     }
 
-    // Room & Firebase
+    // Room Database
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
+    // Firebase
     implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
+    implementation("com.google.firebase:firebase-storage")
+    implementation("com.google.firebase:firebase-appcheck-playintegrity")
 
-    // Прочее
+    // Библиотеки для сети и медиа
     implementation("com.wireguard.android:tunnel:1.0.20230706")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
+    implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
+    implementation("androidx.media3:media3-session:1.4.1")
+
+    // Coroutines & DataStore
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    
+    // WebRTC
+    implementation("io.getstream:stream-webrtc-android:1.2.0")
 }
 
