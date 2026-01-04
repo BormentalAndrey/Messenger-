@@ -18,8 +18,14 @@ android {
         versionCode = 1
         versionName = "1.0"
 
+        ksp {
+            arg("room.schemaLocation", "$projectDir/schemas")
+        }
+
         ndk {
-            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
+            abiFilters.addAll(
+                listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            )
         }
     }
 
@@ -35,11 +41,24 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+
             val enableSign = (System.getenv("KEYSTORE_PASSWORD") ?: "").isNotEmpty()
-            if (enableSign) signingConfig = signingConfigs.getByName("release")
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (enableSign) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
+
         debug {}
+    }
+
+    lint {
+        abortOnError = false
+        checkReleaseBuilds = false
     }
 
     compileOptions {
@@ -59,11 +78,6 @@ android {
         kotlinCompilerExtensionVersion = "1.5.11"
     }
 
-    lint {
-        abortOnError = false
-        checkReleaseBuilds = false
-    }
-
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -74,16 +88,9 @@ android {
             useLegacyPackaging = true
         }
     }
-
-    // 👇 Настройка для libGDX нативных библиотек
-    sourceSets {
-        getByName("main") {
-            jniLibs.srcDirs("src/main/jniLibs")
-        }
-    }
 }
 
-// Копируем нативные библиотеки libGDX из зависимостей в jniLibs
+// Задача для копирования нативных библиотек libGDX в jniLibs
 tasks.register<Copy>("copyGdxNatives") {
     val natives = listOf(
         "natives-armeabi-v7a",
@@ -91,13 +98,21 @@ tasks.register<Copy>("copyGdxNatives") {
         "natives-x86",
         "natives-x86_64"
     )
-    from(configurations.runtimeClasspath.get().filter { it.name.contains("gdx-platform") }.map { zipTree(it) }) {
-        natives.forEach { native ->
-            include("com/badlogic/gdx/$native/*.so")
-        }
-    }
+
+    from(configurations.getByName("runtimeClasspath").flatMap { file ->
+        if (file.name.contains("gdx-platform")) {
+            zipTree(file).matching {
+                natives.forEach { nativeDir ->
+                    include("com/badlogic/gdx/$nativeDir/*.so")
+                }
+            }.files
+        } else emptySet()
+    })
+
     into("src/main/jniLibs")
 }
+
+// Убедимся, что task выполняется перед сборкой
 tasks.named("preBuild") {
     dependsOn("copyGdxNatives")
 }
@@ -121,9 +136,11 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.navigation:navigation-compose:2.8.0")
+
+    // Coil
     implementation("io.coil-kt:coil-compose:2.7.0")
 
-    // Media3
+    // Media3 / ExoPlayer
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
@@ -145,7 +162,7 @@ dependencies {
     implementation("com.google.firebase:firebase-storage-ktx")
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
 
-    // --- libGDX ---
+    // libGDX
     implementation("com.badlogicgames.gdx:gdx:1.12.1")
     implementation("com.badlogicgames.gdx:gdx-backend-android:1.12.1")
     implementation("com.badlogicgames.gdx:gdx-platform:1.12.1:natives-armeabi-v7a")
@@ -153,6 +170,7 @@ dependencies {
     implementation("com.badlogicgames.gdx:gdx-platform:1.12.1:natives-x86")
     implementation("com.badlogicgames.gdx:gdx-platform:1.12.1:natives-x86_64")
 
+    // Другие
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("io.getstream:stream-webrtc-android:1.2.0")
