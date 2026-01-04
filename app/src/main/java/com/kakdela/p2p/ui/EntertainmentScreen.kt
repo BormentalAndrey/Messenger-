@@ -24,10 +24,7 @@ import androidx.navigation.NavHostController
 import com.kakdela.p2p.ui.navigation.Routes
 
 enum class EntertainmentType {
-    WEB,
-    INTERNAL_CHAT,
-    GAME,
-    MUSIC
+    WEB, INTERNAL_CHAT, GAME, MUSIC
 }
 
 data class EntertainmentItem(
@@ -48,69 +45,15 @@ data class EntertainmentItem(
 }
 
 private val entertainmentItems = listOf(
-    EntertainmentItem(
-        id = "music",
-        title = "Музыка",
-        description = "MP3 проигрыватель",
-        type = EntertainmentType.MUSIC,
-        route = Routes.MUSIC
-    ),
-    EntertainmentItem(
-        id = "global_chat",
-        title = "ЧёКаВо?",
-        description = "Общий чат",
-        type = EntertainmentType.INTERNAL_CHAT,
-        route = "chat/global"
-    ),
-    EntertainmentItem(
-        id = "tictactoe",
-        title = "Крестики-нолики",
-        description = "Игра против ИИ",
-        type = EntertainmentType.GAME,
-        route = Routes.TIC_TAC_TOE
-    ),
-    EntertainmentItem(
-        id = "pacman",
-        title = "Pacman",
-        description = "Классическая аркада",
-        type = EntertainmentType.GAME,
-        route = Routes.PACMAN
-    ),
-    EntertainmentItem(
-        id = "jewels",
-        title = "Jewels Blast",
-        description = "Три в ряд",
-        type = EntertainmentType.GAME,
-        route = Routes.JEWELS
-    ),
-    EntertainmentItem(
-        id = "sudoku",
-        title = "Судоку",
-        description = "Головоломка 9x9",
-        type = EntertainmentType.GAME,
-        route = Routes.SUDOKU
-    ),
-    EntertainmentItem(
-        id = "tiktok",
-        title = "TikTok",
-        description = "Смотреть (ПК режим)",
-        type = EntertainmentType.WEB,
-        url = "https://www.tiktok.com"
-    ),
-    EntertainmentItem(
-        id = "pikabu",
-        title = "Пикабу",
-        description = "Юмор",
-        type = EntertainmentType.WEB,
-        url = "https://pikabu.ru"
-    ),
-    EntertainmentItem(
-        id = "crazygames",
-        title = "CrazyGames",
-        description = "Игры онлайн",
-        type = EntertainmentType.WEB,
-        url = "https://www.crazygames.com"
-    )
+    EntertainmentItem("music", "Музыка", "MP3 проигрыватель", EntertainmentType.MUSIC, Routes.MUSIC),
+    EntertainmentItem("global_chat", "ЧёКаВо?", "Общий чат", EntertainmentType.INTERNAL_CHAT, "chat/global"),
+    EntertainmentItem("tictactoe", "Крестики-нолики", "Игра против ИИ", EntertainmentType.GAME, Routes.TIC_TAC_TOE),
+    EntertainmentItem("pacman", "Pacman", "Классическая аркада", EntertainmentType.GAME, Routes.PACMAN),
+    EntertainmentItem("jewels", "Jewels Blast", "Три в ряд", EntertainmentType.GAME, Routes.JEWELS),
+    EntertainmentItem("sudoku", "Судоку", "Головоломка 9x9", EntertainmentType.GAME, Routes.SUDOKU),
+    EntertainmentItem("tiktok", "TikTok", "Смотреть (ПК режим)", EntertainmentType.WEB, url = "https://www.tiktok.com"),
+    EntertainmentItem("pikabu", "Пикабу", "Юмор", EntertainmentType.WEB, url = "https://pikabu.ru"),
+    EntertainmentItem("crazygames", "CrazyGames", "Игры онлайн", EntertainmentType.WEB, url = "https://www.crazygames.com")
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -119,26 +62,13 @@ fun EntertainmentScreen(navController: NavHostController) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = {
-                    Text(
-                        "Развлечения",
-                        fontWeight = FontWeight.Black,
-                        color = Color.Green,
-                        letterSpacing = 1.sp
-                    )
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = Color.Black
-                )
+                title = { Text("Развлечения", fontWeight = FontWeight.Black, color = Color.Green) },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black)
             )
         }
     ) { paddingValues ->
         LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black)
-                .padding(paddingValues)
-                .padding(16.dp),
+            modifier = Modifier.fillMaxSize().background(Color.Black).padding(paddingValues).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             items(entertainmentItems) { item ->
@@ -149,10 +79,7 @@ fun EntertainmentScreen(navController: NavHostController) {
 }
 
 @Composable
-fun EntertainmentNeonItem(
-    item: EntertainmentItem,
-    navController: NavHostController
-) {
+fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostController) {
     val neonColor = when (item.type) {
         EntertainmentType.GAME -> Color.Green
         EntertainmentType.INTERNAL_CHAT -> Color.Cyan
@@ -161,44 +88,50 @@ fun EntertainmentNeonItem(
     }
 
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(80.dp)
-            .shadow(8.dp, spotColor = neonColor),
+        modifier = Modifier.fillMaxWidth().height(85.dp).shadow(8.dp, spotColor = neonColor),
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, neonColor.copy(alpha = 0.8f)),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF121212)),
         onClick = {
-            when (item.type) {
-                EntertainmentType.WEB -> {
-                    item.url?.let { url ->
-                        val encodedUrl = Uri.encode(url)
-                        val encodedTitle = Uri.encode(item.title)
-                        navController.navigate("webview/$encodedUrl/$encodedTitle")
-                    }
+            if (item.type == EntertainmentType.WEB) {
+                item.url?.let { url ->
+                    navController.navigate("webview/${Uri.encode(url)}/${Uri.encode(item.title)}")
                 }
-                else -> item.route?.let { navController.navigate(it) }
+            } else {
+                item.route?.let { navController.navigate(it) }
             }
         }
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.horizontalGradient(
-                        listOf(Color.Transparent, neonColor.copy(alpha = 0.08f))
-                    )
-                )
-                .padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxSize().background(
+                Brush.horizontalGradient(listOf(Color.Transparent, neonColor.copy(alpha = 0.08f)))
+            ).padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(item.iconVector, contentDescription = null, tint = neonColor, modifier = Modifier.size(32.dp))
-            Spacer(Modifier.width(20.dp))
+            Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text(item.title.uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
-                Text(item.description, color = Color.Gray, fontSize = 12.sp)
+                Text(item.description, color = Color.Gray, fontSize = 11.sp)
             }
-            Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = neonColor)
+
+            if (item.type == EntertainmentType.MUSIC) {
+                // Блок кнопок управления для музыки
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { /* Логика назад */ }) {
+                        Icon(Icons.Filled.ChevronLeft, contentDescription = null, tint = neonColor)
+                    }
+                    IconButton(onClick = { /* Логика Плей */ }) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = neonColor, modifier = Modifier.size(30.dp))
+                    }
+                    IconButton(onClick = { /* Логика вперед */ }) {
+                        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = neonColor)
+                    }
+                }
+            } else {
+                Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = neonColor)
+            }
         }
     }
 }
+
