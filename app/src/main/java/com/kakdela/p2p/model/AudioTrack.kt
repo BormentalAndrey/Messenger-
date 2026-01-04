@@ -10,7 +10,8 @@ data class AudioTrack(
     val trackNumber: Int,
     val duration: Long,
     val uri: Uri,
-    val albumArt: Uri? = null
+    val albumArt: Uri? = null,
+    val albumId: Long
 )
 
 data class Album(
