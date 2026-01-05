@@ -11,115 +11,106 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         app:use_controller="false"
-        app:resize_mode="fit"
-        app:keep_content_on_player_reset="true" />
+        app:resize_mode="fit" />
 
-    <!-- Оверлей с кастомными контроллами -->
     <LinearLayout
         android:id="@+id/controls_root"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:visibility="visible">
+        android:background="#44000000">
 
-        <!-- Верхняя панель (заголовок) -->
-        <LinearLayout
-            android:id="@+id/top_controls"
+        <TextView
+            android:id="@+id/video_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
             android:padding="20dp"
-            android:gravity="start"
-            android:background="#66000000">
+            android:text="Loading..."
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:background="#66000000"
+            android:gravity="center" />
 
-            <TextView
-                android:id="@+id/video_title"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Neon Video Player"
-                android:textSize="22sp"
-                android:textColor="#FFFFFF"
-                android:shadowColor="#FF00FF"
-                android:shadowDx="0"
-                android:shadowDy="0"
-                android:shadowRadius="20" />
-        </LinearLayout>
+        <View android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
 
-        <!-- Нижняя панель -->
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:gravity="bottom">
+            android:padding="16dp"
+            android:background="#99000000">
 
-            <LinearLayout
-                android:id="@+id/bottom_controls"
+            <SeekBar
+                android:id="@+id/seek_bar"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:padding="16dp"
-                android:background="#66000000">
+                android:max="1000"
+                android:progressTint="#00FFFF"
+                android:thumbTint="#FF00FF" />
 
-                <ImageButton
-                    android:id="@+id/btn_play_pause"
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
-                    android:background="@null"
-                    android:src="@drawable/exo_icon_play"
-                    android:tint="#00FFFF"
-                    android:contentDescription="Play/Pause" />
-
-                <SeekBar
-                    android:id="@+id/seek_bar"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="16dp"
-                    android:layout_marginEnd="16dp"
-                    android:max="1000"
-                    android:progressTint="#00FFFF"
-                    android:thumbTint="#FF00FF"
-                    android:progressBackgroundTint="#33FFFFFF" />
+            <RelativeLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp">
 
                 <TextView
                     android:id="@+id/current_time"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="00:00"
-                    android:textColor="#FFFFFF"
-                    android:textSize="14sp"
-                    android:shadowColor="#00FFFF"
-                    android:shadowRadius="10" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text=" / "
-                    android:textColor="#FFFFFF"
-                    android:textSize="14sp" />
+                    android:textColor="#00FFFF" />
 
                 <TextView
                     android:id="@+id/total_time"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_alignParentEnd="true"
                     android:text="00:00"
-                    android:textColor="#FFFFFF"
-                    android:textSize="14sp"
-                    android:shadowColor="#00FFFF"
-                    android:shadowRadius="10" />
+                    android:textColor="#FFFFFF" />
+            </RelativeLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/btn_prev"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@androidx.media3.ui.R.drawable.exo_icon_previous"
+                    android:tint="#00FFFF" />
+
+                <ImageButton
+                    android:id="@+id/btn_play_pause"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:layout_marginHorizontal="20dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@androidx.media3.ui.R.drawable.exo_icon_play"
+                    android:tint="#00FFFF" />
+
+                <ImageButton
+                    android:id="@+id/btn_next"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@androidx.media3.ui.R.drawable.exo_icon_next"
+                    android:tint="#00FFFF" />
+
+                <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
 
                 <ImageButton
                     android:id="@+id/btn_fullscreen"
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
-                    android:layout_marginStart="16dp"
-                    android:background="@null"
-                    android:src="@drawable/exo_icon_fullscreen_enter"
-                    android:tint="#FF00FF"
-                    android:contentDescription="Fullscreen" />
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@androidx.media3.ui.R.drawable.exo_icon_fullscreen_enter"
+                    android:tint="#FF00FF" />
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>
+
