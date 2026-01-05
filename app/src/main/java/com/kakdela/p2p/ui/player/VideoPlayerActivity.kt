@@ -9,10 +9,10 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.animation.AlphaAnimation
+import android.widget.ImageButton // Используем стандартный ImageButton
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.appcompat.widget.AppCompatImageButton // Явный импорт исправлен
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -27,10 +27,10 @@ class VideoPlayerActivity : ComponentActivity() {
 
     private lateinit var player: ExoPlayer
     private lateinit var playerView: PlayerView
-    private lateinit var btnPlayPause: AppCompatImageButton
-    private lateinit var btnNext: AppCompatImageButton
-    private lateinit var btnPrev: AppCompatImageButton
-    private lateinit var btnFullscreen: AppCompatImageButton
+    private lateinit var btnPlayPause: ImageButton
+    private lateinit var btnNext: ImageButton
+    private lateinit var btnPrev: ImageButton
+    private lateinit var btnFullscreen: ImageButton
     private lateinit var seekBar: SeekBar
     private lateinit var currentTime: TextView
     private lateinit var totalTime: TextView
@@ -57,13 +57,13 @@ class VideoPlayerActivity : ComponentActivity() {
     }
 
     private fun initViews() {
-        // Указываем тип <Тип> явно, чтобы избежать ошибки "Not enough information to infer type variable T"
+        // Явно указываем findViewById<Тип>, чтобы убрать ошибку компиляции
         playerView = findViewById<PlayerView>(R.id.player_view)
         controlsRoot = findViewById<View>(R.id.controls_root)
-        btnPlayPause = findViewById<AppCompatImageButton>(R.id.btn_play_pause)
-        btnNext = findViewById<AppCompatImageButton>(R.id.btn_next)
-        btnPrev = findViewById<AppCompatImageButton>(R.id.btn_prev)
-        btnFullscreen = findViewById<AppCompatImageButton>(R.id.btn_fullscreen)
+        btnPlayPause = findViewById<ImageButton>(R.id.btn_play_pause)
+        btnNext = findViewById<ImageButton>(R.id.btn_next)
+        btnPrev = findViewById<ImageButton>(R.id.btn_prev)
+        btnFullscreen = findViewById<ImageButton>(R.id.btn_fullscreen)
         seekBar = findViewById<SeekBar>(R.id.seek_bar)
         currentTime = findViewById<TextView>(R.id.current_time)
         totalTime = findViewById<TextView>(R.id.total_time)
@@ -91,7 +91,6 @@ class VideoPlayerActivity : ComponentActivity() {
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                // Используем нативные иконки Android через android.R
                 btnPlayPause.setImageResource(
                     if (isPlaying) android.R.drawable.ic_media_pause
                     else android.R.drawable.ic_media_play
