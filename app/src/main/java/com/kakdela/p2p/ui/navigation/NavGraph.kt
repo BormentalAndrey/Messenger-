@@ -20,9 +20,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.kakdela.p2p.model.ChatMessage
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
-// Добавлен импорт плеера
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
-// Новый импорт для редактора
 import com.kakdela.p2p.ui.TextEditorScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,7 +41,6 @@ fun NavGraph(navController: NavHostController) {
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar(containerColor = Color(0xFF0A0A0A)) {
-
                     NavigationBarItem(
                         selected = currentRoute == Routes.CHATS,
                         onClick = {
@@ -63,9 +60,7 @@ fun NavGraph(navController: NavHostController) {
                     NavigationBarItem(
                         selected = currentRoute == Routes.DEALS,
                         onClick = {
-                            navController.navigate(Routes.DEALS) {
-                                launchSingleTop = true
-                            }
+                            navController.navigate(Routes.DEALS) { launchSingleTop = true }
                         },
                         icon = { Icon(Icons.Filled.Checklist, null) },
                         label = { Text("Дела") },
@@ -78,9 +73,7 @@ fun NavGraph(navController: NavHostController) {
                     NavigationBarItem(
                         selected = currentRoute == Routes.ENTERTAINMENT,
                         onClick = {
-                            navController.navigate(Routes.ENTERTAINMENT) {
-                                launchSingleTop = true
-                            }
+                            navController.navigate(Routes.ENTERTAINMENT) { launchSingleTop = true }
                         },
                         icon = { Icon(Icons.Outlined.PlayCircleOutline, null) },
                         label = { Text("Развлечения") },
@@ -93,9 +86,7 @@ fun NavGraph(navController: NavHostController) {
                     NavigationBarItem(
                         selected = currentRoute == Routes.SETTINGS,
                         onClick = {
-                            navController.navigate(Routes.SETTINGS) {
-                                launchSingleTop = true
-                            }
+                            navController.navigate(Routes.SETTINGS) { launchSingleTop = true }
                         },
                         icon = { Icon(Icons.Filled.Settings, null) },
                         label = { Text("Настройки") },
@@ -116,18 +107,14 @@ fun NavGraph(navController: NavHostController) {
                 .padding(padding)
                 .background(Color.Black)
         ) {
-
             composable(Routes.SPLASH) {
-                SplashScreen(
-                    onTimeout = {
-                        val next = if (FirebaseAuth.getInstance().currentUser != null)
-                            Routes.CHATS else Routes.CHOICE
-
-                        navController.navigate(next) {
-                            popUpTo(Routes.SPLASH) { inclusive = true }
-                        }
+                SplashScreen(onTimeout = {
+                    val next = if (FirebaseAuth.getInstance().currentUser != null)
+                        Routes.CHATS else Routes.CHOICE
+                    navController.navigate(next) {
+                        popUpTo(Routes.SPLASH) { inclusive = true }
                     }
-                )
+                })
             }
 
             composable(Routes.CHOICE) {
@@ -144,25 +131,15 @@ fun NavGraph(navController: NavHostController) {
             }
 
             composable(Routes.AUTH_PHONE) {
-                PhoneAuthScreen {
-                    navController.navigate(Routes.CHATS)
-                }
+                PhoneAuthScreen { navController.navigate(Routes.CHATS) }
             }
 
             composable(Routes.CHATS) { ChatsListScreen(navController) }
             composable(Routes.CONTACTS) { ContactsScreen { id -> navController.navigate("chat/$id") } }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
             composable(Routes.DEALS) { DealsScreen(navController) }
-
-            composable(Routes.ENTERTAINMENT) {
-                EntertainmentScreen(navController)
-            }
-
-            // 🎵 MP3 ПРОИГРЫВАТЕЛЬ
-            composable(Routes.MUSIC) {
-                MusicPlayerScreen()
-            }
-
+            composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
+            composable(Routes.MUSIC) { MusicPlayerScreen() }
             composable(Routes.CALCULATOR) { CalculatorScreen() }
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
@@ -170,7 +147,6 @@ fun NavGraph(navController: NavHostController) {
             composable(Routes.JEWELS) { JewelsBlastScreen() }
             composable(Routes.SUDOKU) { SudokuScreen() }
 
-            // Новый маршрут для текстового редактора
             composable("text_editor") {
                 TextEditorScreen(navController = navController)
             }
@@ -191,7 +167,6 @@ fun NavGraph(navController: NavHostController) {
 
             composable("chat/{chatId}") { backStack ->
                 val chatId = backStack.arguments?.getString("chatId") ?: "global"
-                // Предполагается, что ChatViewModel у вас уже есть, так как в логах ошибок по нему нет
                 val vm: ChatViewModel = viewModel()
                 val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
 
@@ -212,7 +187,6 @@ fun NavGraph(navController: NavHostController) {
                             it.senderId == uid
                         )
                     },
-                    // ИСПРАВЛЕНИЕ: Используем правильные имена параметров как в ChatScreen.kt
                     onSendMessage = { vm.sendMessage(it) },
                     onScheduleMessage = { text, time -> vm.scheduleMessage(text, time) }
                 )
@@ -220,3 +194,4 @@ fun NavGraph(navController: NavHostController) {
         }
     }
 }
+
