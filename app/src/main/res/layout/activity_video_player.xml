@@ -101,9 +101,18 @@
                 <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
 
                 <ImageButton
+                    android:id="@+id/btn_playlist"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:src="@android:drawable/ic_menu_agenda"
+                    android:tint="#00FFFF" />
+
+                <ImageButton
                     android:id="@+id/btn_fullscreen"
                     android:layout_width="48dp"
                     android:layout_height="48dp"
+                    android:layout_marginStart="8dp"
                     android:background="?android:attr/selectableItemBackgroundBorderless"
                     android:src="@android:drawable/ic_menu_zoom"
                     android:tint="#FF00FF" />
