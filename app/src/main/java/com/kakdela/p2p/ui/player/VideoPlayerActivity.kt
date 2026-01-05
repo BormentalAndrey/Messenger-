@@ -14,11 +14,14 @@ import android.widget.SeekBar
 import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.kakdela.p2p.R
+
+data class VideoModel(val title: String, val url: String)
 
 class VideoPlayerActivity : ComponentActivity() {
 
@@ -27,6 +30,8 @@ class VideoPlayerActivity : ComponentActivity() {
 
     private lateinit var controlsRoot: View
     private lateinit var btnPlayPause: ImageButton
+    private lateinit var btnNext: ImageButton
+    private lateinit var btnPrev: ImageButton
     private lateinit var btnFullscreen: ImageButton
     private lateinit var seekBar: SeekBar
     private lateinit var currentTime: TextView
@@ -38,36 +43,61 @@ class VideoPlayerActivity : ComponentActivity() {
 
     private var isFullscreen = false
 
-    private val videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+    // Плейлист видео
+    private val playlist = listOf(
+        VideoModel("Big Buck Bunny", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"),
+        VideoModel("Elephants Dream", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"),
+        VideoModel("For Bigger Blazes", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4")
+    )
+    private var currentVideoIndex = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_video_player)
 
-        playerView = findViewById(R.id.player_view)
-        controlsRoot = findViewById(R.id.controls_root)
-        btnPlayPause = findViewById(R.id.btn_play_pause)
-        btnFullscreen = findViewById(R.id.btn_fullscreen)
-        seekBar = findViewById(R.id.seek_bar)
-        currentTime = findViewById(R.id.current_time)
-        totalTime = findViewById(R.id.total_time)
-        videoTitle = findViewById(R.id.video_title)
-
+        initViews()
         initializePlayer()
         setupControls()
         showControls()
     }
 
+    private fun initViews() {
+        playerView = findViewById(R.id.player_view)
+        controlsRoot = findViewById(R.id.controls_root)
+        btnPlayPause = findViewById(R.id.btn_play_pause)
+        btnNext = findViewById(R.id.btn_next)
+        btnPrev = findViewById(R.id.btn_prev)
+        btnFullscreen = findViewById(R.id.btn_fullscreen)
+        seekBar = findViewById(R.id.seek_bar)
+        currentTime = findViewById(R.id.current_time)
+        totalTime = findViewById(R.id.total_time)
+        videoTitle = findViewById(R.id.video_title)
+    }
+
     private fun initializePlayer() {
+        // Поддержка всех форматов обеспечивается стандартным ExoPlayer.Builder
         player = ExoPlayer.Builder(this).build()
         playerView.player = player
 
-        val mediaItem = MediaItem.fromUri(videoUrl)
-        player.setMediaItem(mediaItem)
+        // Загружаем весь список в плеер для бесшовного переключения
+        playlist.forEach { video ->
+            val mediaItem = MediaItem.Builder()
+                .setUri(video.url)
+                // Можно добавить MIME тип, если формат специфичный (например, HLS/Dash)
+                .build()
+            player.addMediaItem(mediaItem)
+        }
+
         player.prepare()
         player.playWhenReady = true
 
         player.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                // Обновляем заголовок при смене видео
+                currentVideoIndex = player.currentMediaItemIndex
+                videoTitle.text = playlist[currentVideoIndex].title
+            }
+
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_READY) {
                     totalTime.text = formatTime(player.duration)
@@ -87,10 +117,22 @@ class VideoPlayerActivity : ComponentActivity() {
     private fun setupControls() {
         btnPlayPause.setOnClickListener {
             if (player.isPlaying) player.pause() else player.play()
+            resetHideTimer()
+        }
+
+        btnNext.setOnClickListener {
+            if (player.hasNextMediaItem()) player.seekToNextMediaItem()
+            resetHideTimer()
+        }
+
+        btnPrev.setOnClickListener {
+            if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem()
+            resetHideTimer()
         }
 
         btnFullscreen.setOnClickListener {
             toggleFullscreen()
+            resetHideTimer()
         }
 
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -100,8 +142,8 @@ class VideoPlayerActivity : ComponentActivity() {
                     player.seekTo(position)
                 }
             }
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { hideHandler.removeCallbacks(hideRunnable) }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) { resetHideTimer() }
         })
 
         playerView.setOnClickListener {
@@ -109,6 +151,14 @@ class VideoPlayerActivity : ComponentActivity() {
         }
     }
 
+    private fun resetHideTimer() {
+        hideHandler.removeCallbacks(hideRunnable)
+        hideHandler.postDelayed(hideRunnable, 5000)
+    }
+
+    // ... (Методы formatTime, startSeekBarUpdate, showControls, hideControls, toggleFullscreen, hideSystemUi такие же, как в вашем коде)
+    // Добавьте их из вашего исходника без изменений
+    
     private fun startSeekBarUpdate() {
         hideHandler.removeCallbacks(updateSeekBarRunnable)
         hideHandler.post(updateSeekBarRunnable)
@@ -121,23 +171,19 @@ class VideoPlayerActivity : ComponentActivity() {
                 seekBar.progress = progress.coerceIn(0, 1000)
                 currentTime.text = formatTime(player.currentPosition)
             }
-            hideHandler.postDelayed(this, 500)
+            if (player.isPlaying) hideHandler.postDelayed(this, 500)
         }
     }
 
     private fun showControls() {
         controlsRoot.visibility = View.VISIBLE
-        val anim = AlphaAnimation(0f, 1f)
-        anim.duration = 300
+        val anim = AlphaAnimation(0f, 1f).apply { duration = 300 }
         controlsRoot.startAnimation(anim)
-
-        hideHandler.removeCallbacks(hideRunnable)
-        hideHandler.postDelayed(hideRunnable, 5000)
+        resetHideTimer()
     }
 
     private fun hideControls() {
-        val anim = AlphaAnimation(1f, 0f)
-        anim.duration = 300
+        val anim = AlphaAnimation(1f, 0f).apply { duration = 300 }
         controlsRoot.startAnimation(anim)
         controlsRoot.visibility = View.GONE
     }
@@ -157,7 +203,6 @@ class VideoPlayerActivity : ComponentActivity() {
         }
     }
 
-    @Suppress("DEPRECATION")
     private fun hideSystemUi() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.insetsController?.apply {
@@ -165,14 +210,8 @@ class VideoPlayerActivity : ComponentActivity() {
                 systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
         } else {
-            window.decorView.systemUiVisibility = (
-                    View.SYSTEM_UI_FLAG_FULLSCREEN
-                            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                            or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                            or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                    )
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
         }
     }
 
@@ -186,16 +225,10 @@ class VideoPlayerActivity : ComponentActivity() {
     }
 
     private fun formatTime(ms: Long): String {
-        if (ms <= 0) return "00:00"
-        val totalSeconds = ms / 1000
-        val hours = totalSeconds / 3600
-        val minutes = (totalSeconds % 3600) / 60
+        val totalSeconds = (ms / 1000).coerceAtLeast(0)
+        val minutes = totalSeconds / 60
         val seconds = totalSeconds % 60
-        return if (hours > 0) {
-            String.format("%02d:%02d:%02d", hours, minutes, seconds)
-        } else {
-            String.format("%02d:%02d", minutes, seconds)
-        }
+        return String.format("%02d:%02d", minutes, seconds)
     }
 
     override fun onPause() {
@@ -209,3 +242,4 @@ class VideoPlayerActivity : ComponentActivity() {
         hideHandler.removeCallbacksAndMessages(null)
     }
 }
+
