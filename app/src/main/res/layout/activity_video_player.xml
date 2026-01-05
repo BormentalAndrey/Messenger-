@@ -79,26 +79,29 @@
                     android:id="@+id/btn_prev"
                     android:layout_width="48dp"
                     android:layout_height="48dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@androidx.media3.ui.R.drawable.exo_icon_previous"
-                    android:tint="#00FFFF" />
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/exo_styled_controls_previous"
+                    android:contentDescription="Previous"
+                    app:tint="#00FFFF" />
 
                 <ImageButton
                     android:id="@+id/btn_play_pause"
                     android:layout_width="64dp"
                     android:layout_height="64dp"
                     android:layout_marginHorizontal="20dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@androidx.media3.ui.R.drawable.exo_icon_play"
-                    android:tint="#00FFFF" />
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/exo_styled_controls_play"
+                    android:contentDescription="Play/Pause"
+                    app:tint="#00FFFF" />
 
                 <ImageButton
                     android:id="@+id/btn_next"
                     android:layout_width="48dp"
                     android:layout_height="48dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@androidx.media3.ui.R.drawable.exo_icon_next"
-                    android:tint="#00FFFF" />
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/exo_styled_controls_next"
+                    android:contentDescription="Next"
+                    app:tint="#00FFFF" />
 
                 <View android:layout_width="0dp" android:layout_height="0dp" android:layout_weight="1" />
 
@@ -106,9 +109,10 @@
                     android:id="@+id/btn_fullscreen"
                     android:layout_width="48dp"
                     android:layout_height="48dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@androidx.media3.ui.R.drawable.exo_icon_fullscreen_enter"
-                    android:tint="#FF00FF" />
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/exo_styled_controls_fullscreen_enter"
+                    android:contentDescription="Fullscreen"
+                    app:tint="#FF00FF" />
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>
