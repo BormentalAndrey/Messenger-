@@ -95,6 +95,11 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.fragment:fragment-ktx:1.8.1")
+    
+    // UI Components (НЕОБХОДИМЫ ДЛЯ ПЛЕЕРА И СПИСКА)
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
 
     // Compose
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
