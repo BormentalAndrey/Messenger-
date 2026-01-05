@@ -57,7 +57,7 @@ private val entertainmentItems = listOf(
     EntertainmentItem("global_chat", "ЧёКаВо?", "Общий чат", EntertainmentType.INTERNAL_CHAT, "chat/global"),
     EntertainmentItem("tictactoe", "Крестики-нолики", "Игра против ИИ", EntertainmentType.GAME, Routes.TIC_TAC_TOE),
     EntertainmentItem("pacman", "Pacman", "Классическая аркада", EntertainmentType.GAME, Routes.PACMAN),
-    EntertainmentItem("jewels", "Jewels Blast", "Три в ряд", EntertainmentType.GAME, Routes.JEWELS),
+    EntertainmentItem("jewels", "Кристаллы", "Три в ряд", EntertainmentType.GAME, Routes.JEWELS),
     EntertainmentItem("sudoku", "Судоку", "Головоломка 9x9", EntertainmentType.GAME, Routes.SUDOKU),
     EntertainmentItem("tiktok", "TikTok", "Смотреть (ПК режим)", EntertainmentType.WEB, url = "https://www.tiktok.com"),
     EntertainmentItem("pikabu", "Пикабу", "Юмор", EntertainmentType.WEB, url = "https://pikabu.ru"),
