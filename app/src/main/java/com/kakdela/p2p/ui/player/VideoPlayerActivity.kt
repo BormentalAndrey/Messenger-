@@ -1,18 +1,25 @@
 package com.kakdela.p2p.ui.player
 
+import android.Manifest
+import android.content.ContentUris
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.MediaStore
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.animation.AlphaAnimation
-import android.widget.ImageButton // Используем стандартный ImageButton
+import android.widget.ImageButton
 import android.widget.SeekBar
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -40,12 +47,19 @@ class VideoPlayerActivity : ComponentActivity() {
     private val hideHandler = Handler(Looper.getMainLooper())
     private val hideRunnable = Runnable { hideControls() }
     private var isFullscreen = false
+    
+    private var videoPlaylist = mutableListOf<VideoModel>()
 
-    private val playlist = listOf(
-        VideoModel("Big Buck Bunny", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"),
-        VideoModel("Elephants Dream", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"),
-        VideoModel("For Bigger Blazes", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4")
-    )
+    // Регистрация запроса разрешений
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            loadVideosFromDevice()
+        } else {
+            Toast.makeText(this, "Нужен доступ к файлам для поиска видео", Toast.LENGTH_LONG).show()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,10 +68,67 @@ class VideoPlayerActivity : ComponentActivity() {
         initViews()
         initializePlayer()
         setupControls()
+        checkPermissionsAndLoad()
+    }
+
+    private fun checkPermissionsAndLoad() {
+        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_VIDEO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+
+        when {
+            ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED -> {
+                loadVideosFromDevice()
+            }
+            else -> {
+                requestPermissionLauncher.launch(permission)
+            }
+        }
+    }
+
+    private fun loadVideosFromDevice() {
+        val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
+        } else {
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        }
+
+        val projection = arrayOf(
+            MediaStore.Video.Media._ID,
+            MediaStore.Video.Media.DISPLAY_NAME
+        )
+
+        val query = contentResolver.query(collection, projection, null, null, "${MediaStore.Video.Media.DISPLAY_NAME} ASC")
+        
+        query?.use { cursor ->
+            val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
+            val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
+
+            videoPlaylist.clear()
+            player.clearMediaItems()
+
+            while (cursor.moveToNext()) {
+                val id = cursor.getLong(idColumn)
+                val name = cursor.getString(nameColumn)
+                val contentUri = ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
+                
+                val video = VideoModel(name, contentUri.toString())
+                videoPlaylist.add(video)
+                player.addMediaItem(MediaItem.fromUri(contentUri))
+            }
+        }
+
+        if (videoPlaylist.isNotEmpty()) {
+            player.prepare()
+            videoTitle.text = videoPlaylist[0].title
+        } else {
+            videoTitle.text = "Видео не найдены"
+        }
     }
 
     private fun initViews() {
-        // Явно указываем findViewById<Тип>, чтобы убрать ошибку компиляции
         playerView = findViewById<PlayerView>(R.id.player_view)
         controlsRoot = findViewById<View>(R.id.controls_root)
         btnPlayPause = findViewById<ImageButton>(R.id.btn_play_pause)
@@ -77,17 +148,12 @@ class VideoPlayerActivity : ComponentActivity() {
         player = ExoPlayer.Builder(this, renderersFactory).build()
         playerView.player = player
 
-        playlist.forEach { video ->
-            player.addMediaItem(MediaItem.fromUri(video.url))
-        }
-
-        player.prepare()
-        player.playWhenReady = true
-
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 val index = player.currentMediaItemIndex
-                videoTitle.text = playlist.getOrNull(index)?.title ?: "Видео"
+                if (index < videoPlaylist.size) {
+                    videoTitle.text = videoPlaylist[index].title
+                }
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
