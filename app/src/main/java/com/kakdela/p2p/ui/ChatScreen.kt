@@ -1,5 +1,6 @@
 package com.kakdela.p2p.ui
 
+import android.content.Intent
 import android.media.MediaRecorder
 import android.net.Uri
 import android.widget.Toast
@@ -31,6 +32,7 @@ import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
 import com.kakdela.p2p.data.Message
 import com.kakdela.p2p.data.MessageType
+import com.kakdela.p2p.ui.call.CallActivity
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -54,6 +56,7 @@ fun ChatScreen(
     var showTimePicker by remember { mutableStateOf(false) }
     val datePickerState = rememberDatePickerState()
     val timePickerState = rememberTimePickerState()
+    val context = LocalContext.current
 
     fun scheduleWithSelectedTime() {
         val selectedDateMillis = datePickerState.selectedDateMillis
@@ -100,6 +103,13 @@ fun ChatScreen(
                 },
                 onSendAudio = { uri, duration ->
                     onSendAudio(uri, duration)
+                },
+                onStartCall = {
+                    // Запуск Activity звонка
+                    context.startActivity(
+                        Intent(context, CallActivity::class.java)
+                            .putExtra("targetId", chatId)
+                    )
                 }
             )
         },
@@ -210,7 +220,7 @@ fun ChatBubble(message: Message) {
                                 .size(200.dp)
                                 .clip(RoundedCornerShape(8.dp))
                         )
-                        MessageType.AUDIO -> AudioPlayerView(url = message.fileUrl ?: "", duration = message.durationSeconds)
+                        MessageType.AUDIO -> AudioPlayerView(message.fileUrl ?: "", message.durationSeconds)
                         MessageType.FILE -> Row(
                             modifier = Modifier
                                 .clickable { /* TODO: Скачать файл */ }
@@ -247,19 +257,14 @@ fun AudioPlayerView(url: String, duration: Int) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = {
             try {
-                if (isPlaying) {
-                    mediaPlayer.pause()
-                    isPlaying = false
-                } else {
-                    if (!mediaPlayer.isPlaying) {
-                        mediaPlayer.reset()
-                        mediaPlayer.setDataSource(url)
-                        mediaPlayer.prepareAsync()
-                        mediaPlayer.setOnPreparedListener { it.start() }
-                        mediaPlayer.setOnCompletionListener { isPlaying = false }
-                    } else mediaPlayer.start()
-                    isPlaying = true
+                if (isPlaying) mediaPlayer.pause() else {
+                    mediaPlayer.reset()
+                    mediaPlayer.setDataSource(url)
+                    mediaPlayer.prepareAsync()
+                    mediaPlayer.setOnPreparedListener { it.start() }
+                    mediaPlayer.setOnCompletionListener { isPlaying = false }
                 }
+                isPlaying = !isPlaying
             } catch (e: Exception) {
                 Toast.makeText(context, "Ошибка воспроизведения", Toast.LENGTH_SHORT).show()
                 e.printStackTrace()
@@ -284,7 +289,8 @@ fun ChatInputField(
     onSend: () -> Unit,
     onAttachFile: (Uri) -> Unit,
     onScheduleClick: () -> Unit,
-    onSendAudio: (Uri, Int) -> Unit
+    onSendAudio: (Uri, Int) -> Unit,
+    onStartCall: () -> Unit // Новый callback для звонка
 ) {
     val context = LocalContext.current
     var isRecording by remember { mutableStateOf(false) }
@@ -309,12 +315,12 @@ fun ChatInputField(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Кнопка выбора файла
+            // Файлы
             IconButton(onClick = { fileLauncher.launch("*/*") }) {
                 Icon(Icons.Filled.AttachFile, "Attach", tint = NeonCyan)
             }
 
-            // Текстовое поле
+            // Текст
             TextField(
                 value = text,
                 onValueChange = onTextChange,
@@ -333,10 +339,9 @@ fun ChatInputField(
                 shape = RoundedCornerShape(20.dp)
             )
 
-            // Кнопка записи аудио
+            // Аудио
             IconButton(onClick = {
                 if (!isRecording) {
-                    // Начать запись
                     outputFile = java.io.File(context.cacheDir, "audio_${System.currentTimeMillis()}.m4a")
                     recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
                     recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
@@ -346,13 +351,10 @@ fun ChatInputField(
                     recorder.start()
                     isRecording = true
                 } else {
-                    // Остановить и отправить
                     try { recorder.stop() } catch (e: Exception) {}
                     recorder.reset()
                     isRecording = false
-                    outputFile?.let { file ->
-                        onSendAudio(Uri.fromFile(file), 10) // TODO: вычислить реальную длительность
-                    }
+                    outputFile?.let { onSendAudio(Uri.fromFile(it), 10) }
                 }
             }) {
                 Icon(
@@ -362,12 +364,17 @@ fun ChatInputField(
                 )
             }
 
-            // Кнопка планирования
+            // Видеозвонок
+            IconButton(onClick = onStartCall) {
+                Icon(Icons.Default.VideoCall, contentDescription = "VideoCall", tint = NeonCyan)
+            }
+
+            // Планирование
             IconButton(onClick = onScheduleClick) {
                 Icon(Icons.Outlined.Schedule, "Schedule", tint = NeonMagenta)
             }
 
-            // Кнопка отправки текста
+            // Отправка
             Box(
                 modifier = Modifier
                     .size(44.dp)
