@@ -1,7 +1,6 @@
 package com.kakdela.p2p.ui.player
 
 import android.content.pm.ActivityInfo
-import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -10,13 +9,16 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.animation.AlphaAnimation
-import androidx.activity.ComponentActivity
-import androidx.media3.common.MediaItem
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
 import android.widget.ImageButton
 import android.widget.SeekBar
 import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
+import com.kakdela.p2p.R
 
 class VideoPlayerActivity : ComponentActivity() {
 
@@ -36,7 +38,6 @@ class VideoPlayerActivity : ComponentActivity() {
 
     private var isFullscreen = false
 
-    // Тестовое видео (можно заменить или передавать через Intent)
     private val videoUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,11 +67,10 @@ class VideoPlayerActivity : ComponentActivity() {
         player.prepare()
         player.playWhenReady = true
 
-        player.addListener(object : androidx.media3.common.Player.Listener {
+        player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
-                if (state == androidx.media3.common.Player.STATE_READY) {
+                if (state == Player.STATE_READY) {
                     totalTime.text = formatTime(player.duration)
-                    updateSeekBar()
                 }
             }
 
@@ -147,16 +147,17 @@ class VideoPlayerActivity : ComponentActivity() {
         if (isFullscreen) {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
             hideSystemUi()
-            playerView.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
+            playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
             btnFullscreen.setImageResource(androidx.media3.ui.R.drawable.exo_icon_fullscreen_exit)
         } else {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             showSystemUi()
-            playerView.resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+            playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
             btnFullscreen.setImageResource(androidx.media3.ui.R.drawable.exo_icon_fullscreen_enter)
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun hideSystemUi() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.insetsController?.apply {
@@ -164,7 +165,6 @@ class VideoPlayerActivity : ComponentActivity() {
                 systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
         } else {
-            @Suppress("DEPRECATION")
             window.decorView.systemUiVisibility = (
                     View.SYSTEM_UI_FLAG_FULLSCREEN
                             or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
