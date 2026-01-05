@@ -8,9 +8,9 @@ import com.google.firebase.auth.ktx.auth
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
-import com.kakdela.p2p.data.Message
-import com.kakdela.p2p.data.MessageType
-import com.kakdela.p2p.data.StorageService
+import com.kakdela.p2p.data.*
+import com.kakdela.p2p.data.local.ChatDatabase
+import com.kakdela.p2p.data.local.MessageEntity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -19,7 +19,7 @@ import java.util.Date
 /**
  * ViewModel для чата
  * Отправка текстов, файлов, аудио
- * Подписка на изменения сообщений (Firestore + P2P можно интегрировать в дальнейшем)
+ * Подписка на изменения сообщений (Firestore + P2P/DHT)
  */
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -32,6 +32,36 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private var listener: ListenerRegistration? = null
 
+    // --- Room DAO ---
+    private val dao = ChatDatabase.getDatabase(application).messageDao()
+
+    // --- Crypto / P2P ---
+    private val crypto = CryptoManager(application)
+    private val msgRepo = MessageRepository(crypto)
+    private val myPhone = application.getSharedPreferences("app_prefs", 0)
+        .getString("my_phone", "") ?: ""
+
+    init {
+        if (myPhone.isNotEmpty()) {
+            val myHash = crypto.hashPhoneNumber(myPhone)
+            // Слушаем свой инбокс в DHT
+            msgRepo.listenInbox(myHash) { msg ->
+                viewModelScope.launch {
+                    // Определяем chatId по senderId или создаем уникальный чат
+                    val chatIdForMsg = resolveChatId(msg.senderId)
+                    dao.insert(
+                        MessageEntity(
+                            chatId = chatIdForMsg,
+                            text = msg.text,
+                            senderId = msg.senderId,
+                            timestamp = msg.timestamp
+                        )
+                    )
+                }
+            }
+        }
+    }
+
     /**
      * Инициализация чата
      */
@@ -41,7 +71,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Подписка на изменения сообщений в чате
+     * Подписка на изменения сообщений в Firestore
      */
     private fun listenMessages() {
         listener = db.collection("chats").document(chatId)
@@ -133,6 +163,44 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 "timestamp" to Date()
             )
         )
+    }
+
+    /**
+     * Отправка зашифрованного сообщения в P2P/DHT
+     */
+    fun sendSecure(text: String, recipientPhone: String) {
+        viewModelScope.launch {
+            // 1. Ищем публичный ключ получателя
+            val contact = IdentityRepository(getApplication()).findPeerByPhone(recipientPhone)
+
+            if (contact?.publicKey != null) {
+                val recipientHash = crypto.hashPhoneNumber(recipientPhone)
+                val myId = crypto.getMyUserId()
+
+                // 2. Отправляем зашифрованный блоб
+                msgRepo.sendSecureMessage(myId, recipientHash, contact.publicKey, text)
+
+                // 3. Сохраняем локально в Room
+                val chatIdForMsg = resolveChatId(recipientPhone)
+                dao.insert(
+                    MessageEntity(
+                        chatId = chatIdForMsg,
+                        text = text,
+                        senderId = myId,
+                        timestamp = System.currentTimeMillis()
+                    )
+                )
+            }
+        }
+    }
+
+    /**
+     * Вспомогательная функция для определения chatId по собеседнику
+     */
+    private fun resolveChatId(peerId: String): String {
+        // Для простоты: chatId = отсортированные UID через "_"
+        val participants = listOf(currentUserId, peerId).sorted()
+        return participants.joinToString("_")
     }
 
     override fun onCleared() {
