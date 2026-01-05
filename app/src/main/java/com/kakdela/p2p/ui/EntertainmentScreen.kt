@@ -1,5 +1,6 @@
 package com.kakdela.p2p.ui
 
+import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -30,9 +31,10 @@ import coil.compose.AsyncImage
 import com.kakdela.p2p.R
 import com.kakdela.p2p.ui.navigation.Routes
 import com.kakdela.p2p.ui.player.MusicManager
+import com.kakdela.p2p.ui.player.VideoPlayerActivity
 
 enum class EntertainmentType {
-    WEB, INTERNAL_CHAT, GAME, MUSIC
+    WEB, INTERNAL_CHAT, GAME, MUSIC, VIDEO
 }
 
 data class EntertainmentItem(
@@ -49,11 +51,13 @@ data class EntertainmentItem(
             EntertainmentType.INTERNAL_CHAT -> Icons.Filled.Chat
             EntertainmentType.WEB -> Icons.Filled.Public
             EntertainmentType.MUSIC -> Icons.Filled.MusicNote
+            EntertainmentType.VIDEO -> Icons.Filled.Movie
         }
 }
 
 private val entertainmentItems = listOf(
     EntertainmentItem("music", "Музыка", "MP3 проигрыватель", EntertainmentType.MUSIC, Routes.MUSIC),
+    EntertainmentItem("video", "Видео", "Неоновый видео плеер", EntertainmentType.VIDEO),
     EntertainmentItem("global_chat", "ЧёКаВо?", "Общий чат", EntertainmentType.INTERNAL_CHAT, "chat/global"),
     EntertainmentItem("tictactoe", "Крестики-нолики", "Игра против ИИ", EntertainmentType.GAME, Routes.TIC_TAC_TOE),
     EntertainmentItem("pacman", "Pacman", "Классическая аркада", EntertainmentType.GAME, Routes.PACMAN),
@@ -98,6 +102,7 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
         EntertainmentType.INTERNAL_CHAT -> Color.Cyan
         EntertainmentType.WEB -> Color.Magenta
         EntertainmentType.MUSIC -> Color.Yellow
+        EntertainmentType.VIDEO -> Color(0xFFBA00FF) // Неоновый фиолетовый
     }
 
     Card(
@@ -109,12 +114,19 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
         border = BorderStroke(1.dp, neonColor.copy(alpha = 0.8f)),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF121212)),
         onClick = {
-            if (item.type == EntertainmentType.WEB) {
-                item.url?.let { url ->
-                    navController.navigate("webview/${Uri.encode(url)}/${Uri.encode(item.title)}")
+            when (item.type) {
+                EntertainmentType.WEB -> {
+                    item.url?.let { url ->
+                        navController.navigate("webview/\( {Uri.encode(url)}/ \){Uri.encode(item.title)}")
+                    }
                 }
-            } else {
-                item.route?.let { navController.navigate(it) }
+                EntertainmentType.VIDEO -> {
+                    val intent = Intent(context, VideoPlayerActivity::class.java)
+                    context.startActivity(intent)
+                }
+                else -> {
+                    item.route?.let { navController.navigate(it) }
+                }
             }
         }
     ) {
@@ -182,4 +194,3 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
         }
     }
 }
-
