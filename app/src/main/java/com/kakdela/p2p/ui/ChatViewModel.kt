@@ -1,154 +1,142 @@
 package com.kakdela.p2p.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.auth.ktx.auth
+import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
-import com.kakdela.p2p.data.WebRtcClient
-import com.kakdela.p2p.data.local.ChatDatabase
-import com.kakdela.p2p.data.local.MessageEntity
+import com.kakdela.p2p.data.Message
+import com.kakdela.p2p.data.MessageType
+import com.kakdela.p2p.data.StorageService
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.Date
 
+/**
+ * ViewModel для чата
+ * Отправка текстов, файлов, аудио
+ * Подписка на изменения сообщений (Firestore + P2P можно интегрировать в дальнейшем)
+ */
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
-    private val dao = ChatDatabase.getDatabase(application).messageDao()
+
     private val db = Firebase.firestore
-    
-    private var rtcClient: WebRtcClient? = null
-    private var currentChatId: String = ""
-    private var myUserId: String = ""
+    private val currentUserId = Firebase.auth.currentUser?.uid ?: ""
+    private var chatId: String = ""
 
-    private val _messages = MutableStateFlow<List<MessageEntity>>(emptyList())
-    val messages: StateFlow<List<MessageEntity>> = _messages.asStateFlow()
+    private val _messages = MutableStateFlow<List<Message>>(emptyList())
+    val messages = _messages.asStateFlow()
 
-    fun initChat(chatId: String, currentUserId: String) {
-        this.currentChatId = chatId
-        this.myUserId = currentUserId
-        
-        // Инициализация WebRTC клиента (для звонков и P2P данных)
-        rtcClient = WebRtcClient(getApplication(), chatId, currentUserId)
-        
-        // Подписка на локальную БД (источник правды для UI)
-        viewModelScope.launch {
-            dao.getMessagesForChat(chatId).collect { list ->
-                // Фильтруем отложенные сообщения (будущее время)
-                _messages.value = list.filter { it.timestamp <= System.currentTimeMillis() }
-            }
-        }
-        
-        // Подписка на Firestore (резервный канал/офлайн сообщения)
-        listenForFirestoreMessages()
+    private var listener: ListenerRegistration? = null
+
+    /**
+     * Инициализация чата
+     */
+    fun initChat(chatId: String) {
+        this.chatId = chatId
+        listenMessages()
     }
-    
-    // Слушаем облако на предмет сообщений, которые не дошли через P2P
-    private fun listenForFirestoreMessages() {
-        if (currentChatId.isEmpty()) return
-        
-        db.collection("chats").document(currentChatId)
+
+    /**
+     * Подписка на изменения сообщений в чате
+     */
+    private fun listenMessages() {
+        listener = db.collection("chats").document(chatId)
             .collection("messages")
             .orderBy("timestamp")
-            .addSnapshotListener { snapshot, _ ->
-                snapshot?.documentChanges?.forEach { change ->
-                    if (change.type == com.google.firebase.firestore.DocumentChange.Type.ADDED) {
-                        val data = change.document.data
-                        val senderId = data["senderId"] as? String ?: ""
-                        
-                        // Сохраняем только чужие сообщения (свои мы уже сохранили локально)
-                        if (senderId != myUserId) {
-                             val text = data["text"] as? String ?: ""
-                             val timestamp = (data["timestamp"] as? Long) ?: System.currentTimeMillis()
-                             val fileUrl = data["fileUrl"] as? String
-                             
-                             viewModelScope.launch {
-                                 // Простейшая дедупликация: Room с onConflict=REPLACE по ID не сработает,
-                                 // так как ID в базе и облаке разные. 
-                                 // Но так как UI берет из Room, дублирование возможно только если P2P и Cloud сработали одновременно.
-                                 // В данной реализации мы просто сохраняем.
-                                 dao.insert(
-                                     MessageEntity(
-                                         chatId = currentChatId,
-                                         text = text,
-                                         senderId = senderId,
-                                         timestamp = timestamp
-                                     )
-                                 )
-                             }
-                        }
-                    }
-                }
+            .addSnapshotListener { snapshot, e ->
+                if (e != null) return@addSnapshotListener
+                val msgs = snapshot?.toObjects(Message::class.java) ?: emptyList()
+                _messages.value = msgs
             }
     }
 
+    /**
+     * Отправка текстового сообщения
+     */
     fun sendMessage(text: String) {
-        val timestamp = System.currentTimeMillis()
-        
-        viewModelScope.launch {
-            // 1. Моментально сохраняем сообщение локально (Оптимистичный UI)
-            val msgEntity = MessageEntity(
-                chatId = currentChatId, 
-                text = text, 
-                senderId = myUserId, 
-                timestamp = timestamp
+        if (text.isBlank()) return
+        uploadMessage(
+            Message(
+                text = text,
+                senderId = currentUserId,
+                type = MessageType.TEXT
             )
-            dao.insert(msgEntity)
+        )
+    }
 
-            // 2. Пытаемся отправить через быстрый канал (WebRTC P2P)
+    /**
+     * Отправка файла или изображения
+     */
+    fun sendFile(uri: Uri, type: MessageType) {
+        viewModelScope.launch {
             try {
-                rtcClient?.sendP2P(text = text, bytes = null)
+                val folder = if (type == MessageType.IMAGE) "images" else "files"
+                val url = StorageService.uploadFile(uri, folder)
+
+                uploadMessage(
+                    Message(
+                        senderId = currentUserId,
+                        type = type,
+                        fileUrl = url,
+                        text = if (type == MessageType.IMAGE) "Фото" else "Файл"
+                    )
+                )
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-            
-            // 3. Дублируем в Firestore (гарантированная доставка)
-            // Это обновит lastMessage в списке чатов и доставит сообщение, если P2P упал
-            sendToFirestore(text, timestamp)
         }
     }
-    
-    private fun sendToFirestore(text: String, timestamp: Long) {
-        val messageData = mapOf(
-            "text" to text,
-            "senderId" to myUserId,
-            "timestamp" to timestamp
-        )
-        
-        // Добавляем в коллекцию сообщений чата
-        db.collection("chats").document(currentChatId)
-            .collection("messages")
-            .add(messageData)
-            
-        // Обновляем метаданные самого чата (для списка чатов)
-        db.collection("chats").document(currentChatId)
-            .update(
-                mapOf(
-                    "lastMessage" to text,
-                    "timestamp" to Date(timestamp)
+
+    /**
+     * Отправка голосового сообщения
+     */
+    fun sendAudio(uri: Uri, duration: Int) {
+        viewModelScope.launch {
+            try {
+                val url = StorageService.uploadFile(uri, "audio")
+                uploadMessage(
+                    Message(
+                        senderId = currentUserId,
+                        type = MessageType.AUDIO,
+                        fileUrl = url,
+                        durationSeconds = duration,
+                        text = "Голосовое сообщение"
+                    )
                 )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    /**
+     * Общий метод загрузки сообщения в Firestore и обновления превью чата
+     */
+    private fun uploadMessage(msg: Message) {
+        val ref = db.collection("chats").document(chatId).collection("messages").document()
+        val finalMsg = msg.copy(
+            id = ref.id,
+            timestamp = System.currentTimeMillis()
+        )
+
+        // Сохраняем сообщение
+        ref.set(finalMsg)
+
+        // Обновляем последнее сообщение чата
+        db.collection("chats").document(chatId).update(
+            mapOf(
+                "lastMessage" to finalMsg,
+                "timestamp" to Date()
             )
+        )
     }
 
-    fun scheduleMessage(text: String, timeMillis: Long) {
-        // Сохраняем локально с будущей меткой времени.
-        // UI (initChat) автоматически скроет его, пока время не наступит.
-        viewModelScope.launch {
-            dao.insert(MessageEntity(
-                chatId = currentChatId, 
-                text = text, 
-                senderId = myUserId, 
-                timestamp = timeMillis
-            ))
-        }
-    }
-
-    fun sendFile(bytes: ByteArray) {
-        // Для файлов используем пока только P2P (чтобы не забить квоту Firestore)
-        viewModelScope.launch {
-            rtcClient?.sendP2P(text = "[Файл]", bytes = bytes)
-        }
+    override fun onCleared() {
+        listener?.remove()
+        super.onCleared()
     }
 }
-
