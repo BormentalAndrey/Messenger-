@@ -11,7 +11,8 @@ android {
 
     defaultConfig {
         applicationId = "com.kakdela.p2p"
-        minSdk = 24
+        // Увеличение до 26 необходимо для корректной работы Apache POI 5.3.0 и Log4j
+        minSdk = 26 
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -21,7 +22,6 @@ android {
         }
 
         ndk {
-            // Строго ограничиваем архитектуры для стабильности
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
         }
     }
@@ -76,12 +76,10 @@ android {
             pickFirst("**/*.so")
         }
         jniLibs {
-            // Критично для корректной загрузки библиотек LibGDX на Android
             useLegacyPackaging = true
         }
     }
 
-    // Указываем путь к извлеченным нативным библиотекам
     sourceSets {
         getByName("main") {
             jniLibs.srcDirs(layout.buildDirectory.dir("gdx-natives/lib"))
@@ -96,7 +94,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.fragment:fragment-ktx:1.8.1")
     
-    // UI Components (НЕОБХОДИМЫ ДЛЯ ПЛЕЕРА И СПИСКА)
+    // UI Components
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
@@ -111,18 +109,16 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.navigation:navigation-compose:2.8.0")
 
-    // libGDX Core
+    // libGDX
     implementation("com.badlogicgames.gdx:gdx:1.12.1")
     implementation("com.badlogicgames.gdx:gdx-backend-android:1.12.1")
-
-    // Нативные библиотеки для извлечения
     val gdxVersion = "1.12.1"
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
     platforms.forEach { platform ->
         runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
     }
 
-    // Room Database
+    // Room
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
@@ -135,39 +131,31 @@ dependencies {
     implementation("com.google.firebase:firebase-storage")
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
 
-    // Сеть и медиа
+    // Utils & Media
     implementation("com.wireguard.android:tunnel:1.0.20230706")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
-    implementation("androidx.media3:media3-session:1.4.1")
-    // Apache POI для DOCX (чтение и запись)
+    
+    // Документы
     implementation("org.apache.poi:poi-ooxml:5.3.0")
-
-    // PdfBox-Android для извлечения текста из PDF
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
-    // Coroutines & DataStore
+
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
-    
-    // WebRTC
     implementation("io.getstream:stream-webrtc-android:1.2.0")
 }
-
-// РАЗДЕЛ ЗАДАЧ: Извлечение нативных библиотек и настройка зависимостей между задачами
 
 tasks.register<Copy>("copyAndroidNatives") {
     val gdxVersion = "1.12.1"
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-    
     platforms.forEach { platform ->
         val jarConfiguration = configurations.detachedConfiguration(
             dependencies.create("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
         )
-        
         from(jarConfiguration.map { zipTree(it) }) {
             include("*.so")
             into("lib/$platform")
@@ -176,18 +164,9 @@ tasks.register<Copy>("copyAndroidNatives") {
     into(layout.buildDirectory.dir("gdx-natives"))
 }
 
-// Решение проблемы Implicit Dependency для Gradle 8+
 tasks.withType<com.android.build.gradle.tasks.MergeSourceSetFolders>().configureEach {
-    if (name.contains("JniLibFolders")) {
-        dependsOn("copyAndroidNatives")
-    }
+    if (name.contains("JniLibFolders")) { dependsOn("copyAndroidNatives") }
 }
-
-tasks.withType<JavaCompile>().configureEach {
-    dependsOn("copyAndroidNatives")
-}
-
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-    dependsOn("copyAndroidNatives")
-}
+tasks.withType<JavaCompile>().configureEach { dependsOn("copyAndroidNatives") }
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach { dependsOn("copyAndroidNatives") }
 
