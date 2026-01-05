@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -25,14 +26,19 @@ import com.kakdela.p2p.ui.navigation.Routes
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
-enum class DealType { WEB, CALCULATOR }
+enum class DealType { WEB, CALCULATOR, TOOL }
 
 data class DealItem(val id: String, val title: String, val description: String, val type: DealType, val url: String? = null) {
-    val iconVector: ImageVector get() = if (type == DealType.CALCULATOR) Icons.Filled.Calculate else Icons.Filled.ShoppingBag
+    val iconVector: ImageVector get() = when (type) {
+        DealType.CALCULATOR -> Icons.Filled.Calculate
+        DealType.TOOL -> Icons.Filled.Edit
+        else -> Icons.Filled.ShoppingBag
+    }
 }
 
 private val dealItems = listOf(
     DealItem("calculator", "Калькулятор", "Быстрые расчёты", DealType.CALCULATOR),
+    DealItem("text_editor", "Текстовый редактор", "TXT, DOCX, PDF (чтение)", DealType.TOOL),
     DealItem("gosuslugi", "Госуслуги", "Госуслуги РФ", DealType.WEB, "https://www.gosuslugi.ru"),
     DealItem("ozon", "Ozon", "Маркетплейс", DealType.WEB, "https://www.ozon.ru"),
     DealItem("wb", "Wildberries", "Маркетплейс", DealType.WEB, "https://www.wildberries.ru"),
@@ -73,9 +79,12 @@ fun DealNeonItem(item: DealItem, navController: NavHostController) {
         onClick = {
             when (item.type) {
                 DealType.CALCULATOR -> navController.navigate(Routes.CALCULATOR)
+                DealType.TOOL -> when (item.id) {
+                    "text_editor" -> navController.navigate("text_editor")
+                }
                 DealType.WEB -> item.url?.let {
                     val encoded = URLEncoder.encode(it, StandardCharsets.UTF_8.toString())
-                    navController.navigate("webview/$encoded/${item.title}")
+                    navController.navigate("webview/\( encoded/ \){item.title}")
                 }
             }
         }
@@ -94,4 +103,3 @@ fun DealNeonItem(item: DealItem, navController: NavHostController) {
         }
     }
 }
-
