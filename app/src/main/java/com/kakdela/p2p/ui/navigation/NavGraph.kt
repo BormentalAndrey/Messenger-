@@ -22,6 +22,8 @@ import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
 // Добавлен импорт плеера
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
+// Новый импорт для редактора
+import com.kakdela.p2p.ui.TextEditorScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -168,6 +170,11 @@ fun NavGraph(navController: NavHostController) {
             composable(Routes.JEWELS) { JewelsBlastScreen() }
             composable(Routes.SUDOKU) { SudokuScreen() }
 
+            // Новый маршрут для текстового редактора
+            composable("text_editor") {
+                TextEditorScreen(navController = navController)
+            }
+
             composable(
                 route = "webview/{url}/{title}",
                 arguments = listOf(
@@ -213,4 +220,3 @@ fun NavGraph(navController: NavHostController) {
         }
     }
 }
-
