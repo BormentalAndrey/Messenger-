@@ -143,7 +143,11 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
+    // Apache POI для DOCX (чтение и запись)
+    implementation("org.apache.poi:poi-ooxml:5.3.0")
 
+    // PdfBox-Android для извлечения текста из PDF
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
     // Coroutines & DataStore
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
