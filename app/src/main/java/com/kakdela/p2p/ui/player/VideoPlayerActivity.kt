@@ -12,7 +12,7 @@ import android.view.animation.AlphaAnimation
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.appcompat.widget.AppCompatImageButton
+import androidx.appcompat.widget.AppCompatImageButton // Явный импорт исправлен
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -41,7 +41,6 @@ class VideoPlayerActivity : ComponentActivity() {
     private val hideRunnable = Runnable { hideControls() }
     private var isFullscreen = false
 
-    // Плейлист видео
     private val playlist = listOf(
         VideoModel("Big Buck Bunny", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"),
         VideoModel("Elephants Dream", "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"),
@@ -58,27 +57,26 @@ class VideoPlayerActivity : ComponentActivity() {
     }
 
     private fun initViews() {
-        playerView = findViewById(R.id.player_view)
-        controlsRoot = findViewById(R.id.controls_root)
-        btnPlayPause = findViewById(R.id.btn_play_pause)
-        btnNext = findViewById(R.id.btn_next)
-        btnPrev = findViewById(R.id.btn_prev)
-        btnFullscreen = findViewById(R.id.btn_fullscreen)
-        seekBar = findViewById(R.id.seek_bar)
-        currentTime = findViewById(R.id.current_time)
-        totalTime = findViewById(R.id.total_time)
-        videoTitle = findViewById(R.id.video_title)
+        // Указываем тип <Тип> явно, чтобы избежать ошибки "Not enough information to infer type variable T"
+        playerView = findViewById<PlayerView>(R.id.player_view)
+        controlsRoot = findViewById<View>(R.id.controls_root)
+        btnPlayPause = findViewById<AppCompatImageButton>(R.id.btn_play_pause)
+        btnNext = findViewById<AppCompatImageButton>(R.id.btn_next)
+        btnPrev = findViewById<AppCompatImageButton>(R.id.btn_prev)
+        btnFullscreen = findViewById<AppCompatImageButton>(R.id.btn_fullscreen)
+        seekBar = findViewById<SeekBar>(R.id.seek_bar)
+        currentTime = findViewById<TextView>(R.id.current_time)
+        totalTime = findViewById<TextView>(R.id.total_time)
+        videoTitle = findViewById<TextView>(R.id.video_title)
     }
 
     private fun initializePlayer() {
-        // Поддержка расширенных форматов видео через программные декодеры
         val renderersFactory = DefaultRenderersFactory(this)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
 
         player = ExoPlayer.Builder(this, renderersFactory).build()
         playerView.player = player
 
-        // Добавление плейлиста в плеер
         playlist.forEach { video ->
             player.addMediaItem(MediaItem.fromUri(video.url))
         }
@@ -88,13 +86,12 @@ class VideoPlayerActivity : ComponentActivity() {
 
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                // Обновление заголовка при переключении
                 val index = player.currentMediaItemIndex
                 videoTitle.text = playlist.getOrNull(index)?.title ?: "Видео"
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                // Использование системных иконок для предотвращения ошибок AAPT
+                // Используем нативные иконки Android через android.R
                 btnPlayPause.setImageResource(
                     if (isPlaying) android.R.drawable.ic_media_pause
                     else android.R.drawable.ic_media_play
