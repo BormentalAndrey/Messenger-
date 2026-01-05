@@ -1,34 +1,41 @@
 package com.kakdela.p2p.ui
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.outlined.AttachFile
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kakdela.p2p.model.ChatMessage
-import java.util.Calendar
+import coil.compose.AsyncImage
+import com.google.firebase.auth.ktx.auth
+import com.google.firebase.ktx.Firebase
+import com.kakdela.p2p.data.Message
+import com.kakdela.p2p.data.MessageType
+import java.text.SimpleDateFormat
+import java.util.*
 
-// Константы неоновых цветов
 private val NeonCyan = Color(0xFF00FFFF)
 private val NeonMagenta = Color(0xFFFF00FF)
 private val DarkBackground = Color(0xFF0A0A0A)
@@ -38,19 +45,18 @@ private val SurfaceGray = Color(0xFF1A1A1A)
 @Composable
 fun ChatScreen(
     chatId: String,
-    messages: List<ChatMessage>,
+    messages: List<Message>,
     onSendMessage: (String) -> Unit,
+    onSendFile: (Uri, MessageType) -> Unit,
     onScheduleMessage: (String, Long) -> Unit
 ) {
     var textState by remember { mutableStateOf("") }
 
-    // --- Состояния для диалогов выбора даты и времени ---
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
     val datePickerState = rememberDatePickerState()
     val timePickerState = rememberTimePickerState()
-    
-    // Вспомогательная функция для обработки полного времени
+
     fun scheduleWithSelectedTime() {
         val selectedDateMillis = datePickerState.selectedDateMillis
         if (selectedDateMillis != null && textState.isNotBlank()) {
@@ -58,9 +64,6 @@ fun ChatScreen(
             calendar.timeInMillis = selectedDateMillis
             calendar.set(Calendar.HOUR_OF_DAY, timePickerState.hour)
             calendar.set(Calendar.MINUTE, timePickerState.minute)
-            
-            // Если время уже прошло, добавляем 1 день (опционально, или просто отправляем как есть)
-            // Здесь отправляем именно на выбранное время
             onScheduleMessage(textState, calendar.timeInMillis)
             textState = ""
         }
@@ -77,9 +80,7 @@ fun ChatScreen(
                         letterSpacing = 2.sp
                     )
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = Color.Black
-                ),
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black),
                 modifier = Modifier.shadow(8.dp, spotColor = NeonCyan)
             )
         },
@@ -94,30 +95,26 @@ fun ChatScreen(
                     }
                 },
                 onAttachFile = { uri ->
-                    // Отправляем URI файла как сообщение (или здесь можно добавить логику загрузки)
-                    onSendMessage("Файл: $uri")
+                    // Здесь можно добавить выбор типа файла, пока просто FILE
+                    onSendFile(uri, MessageType.FILE)
                 },
                 onScheduleClick = {
-                    if (textState.isNotBlank()) {
-                        showDatePicker = true
-                    }
+                    if (textState.isNotBlank()) showDatePicker = true
                 }
             )
         },
         containerColor = DarkBackground
     ) { paddingValues ->
-        
-        // --- Диалоги выбора даты и времени ---
+
+        // Диалоги выбора даты и времени
         if (showDatePicker) {
             DatePickerDialog(
                 onDismissRequest = { showDatePicker = false },
                 confirmButton = {
                     TextButton(onClick = {
                         showDatePicker = false
-                        showTimePicker = true // После даты открываем время
-                    }) {
-                        Text("Далее", color = NeonCyan)
-                    }
+                        showTimePicker = true
+                    }) { Text("Далее", color = NeonCyan) }
                 },
                 colors = DatePickerDefaults.colors(
                     containerColor = SurfaceGray,
@@ -127,9 +124,7 @@ fun ChatScreen(
                     selectedDayContainerColor = NeonCyan,
                     selectedDayContentColor = Color.Black
                 )
-            ) {
-                DatePicker(state = datePickerState)
-            }
+            ) { DatePicker(state = datePickerState) }
         }
 
         if (showTimePicker) {
@@ -140,14 +135,10 @@ fun ChatScreen(
                     TextButton(onClick = {
                         showTimePicker = false
                         scheduleWithSelectedTime()
-                    }) {
-                        Text("Запланировать", color = NeonCyan)
-                    }
+                    }) { Text("Запланировать", color = NeonCyan) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showTimePicker = false }) {
-                        Text("Отмена", color = Color.Gray)
-                    }
+                    TextButton(onClick = { showTimePicker = false }) { Text("Отмена", color = Color.Gray) }
                 },
                 text = {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -182,14 +173,13 @@ fun ChatScreen(
 }
 
 @Composable
-fun ChatBubble(message: ChatMessage) {
-    val isMe = message.isMine
+fun ChatBubble(message: Message) {
+    val isMe = message.senderId == Firebase.auth.currentUser?.uid
     val neonColor = if (isMe) NeonCyan else NeonMagenta
-    
     val boxAlignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
     val columnAlignment = if (isMe) Alignment.End else Alignment.Start
 
-    val bubbleShape: Shape = if (isMe) {
+    val bubbleShape = if (isMe) {
         RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 2.dp)
     } else {
         RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = 2.dp, bottomEnd = 16.dp)
@@ -211,24 +201,79 @@ fun ChatBubble(message: ChatMessage) {
                 shape = bubbleShape
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
+                    when (message.type) {
+                        MessageType.TEXT -> Text(message.text, color = Color.White)
+                        MessageType.IMAGE -> AsyncImage(
+                            model = message.fileUrl,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(200.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                        )
+                        MessageType.AUDIO -> AudioPlayerView(url = message.fileUrl ?: "", duration = message.durationSeconds)
+                        MessageType.FILE -> Row(
+                            modifier = Modifier
+                                .clickable { /* TODO: Скачать файл через Intent */ }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.AttachFile, contentDescription = null, tint = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                            Text(message.fileName ?: "Файл", color = Color.White)
+                        }
+                        else -> Text("Неподдерживаемый формат", color = Color.Red)
+                    }
+
                     Text(
-                        text = message.text,
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        lineHeight = 20.sp
-                    )
-                    
-                    Text(
-                        text = "12:00", 
-                        color = neonColor.copy(alpha = 0.6f),
+                        text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp)),
                         fontSize = 10.sp,
-                        modifier = Modifier
-                            .align(Alignment.End)
-                            .padding(top = 4.dp)
+                        color = Color.Gray,
+                        modifier = Modifier.align(Alignment.End)
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+fun AudioPlayerView(url: String, duration: Int) {
+    val context = LocalContext.current
+    var isPlaying by remember { mutableStateOf(false) }
+    val mediaPlayer = remember { android.media.MediaPlayer() }
+
+    DisposableEffect(url) { onDispose { mediaPlayer.release() } }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = {
+            try {
+                if (isPlaying) {
+                    mediaPlayer.pause()
+                    isPlaying = false
+                } else {
+                    if (!mediaPlayer.isPlaying) {
+                        mediaPlayer.reset()
+                        mediaPlayer.setDataSource(url)
+                        mediaPlayer.prepareAsync()
+                        mediaPlayer.setOnPreparedListener { it.start() }
+                        mediaPlayer.setOnCompletionListener { isPlaying = false }
+                    } else mediaPlayer.start()
+                    isPlaying = true
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Ошибка воспроизведения", Toast.LENGTH_SHORT).show()
+                e.printStackTrace()
+            }
+        }) {
+            Icon(
+                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                contentDescription = null,
+                tint = Color.White
+            )
+        }
+        LinearProgressIndicator(progress = 0.5f, modifier = Modifier.width(100.dp))
+        Spacer(Modifier.width(8.dp))
+        Text("$duration с.", color = Color.White, fontSize = 12.sp)
     }
 }
 
@@ -240,10 +285,7 @@ fun ChatInputField(
     onAttachFile: (Uri) -> Unit,
     onScheduleClick: () -> Unit
 ) {
-    // Лаунчер для выбора файлов из системы
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { onAttachFile(it) }
     }
 
@@ -261,9 +303,8 @@ fun ChatInputField(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Кнопка скрепки: открывает выбор файла
             IconButton(onClick = { launcher.launch("*/*") }) {
-                Icon(Icons.Outlined.AttachFile, "Attach", tint = NeonCyan)
+                Icon(Icons.Filled.AttachFile, "Attach", tint = NeonCyan)
             }
 
             TextField(
@@ -284,12 +325,10 @@ fun ChatInputField(
                 shape = RoundedCornerShape(20.dp)
             )
 
-            // Кнопка отложенной отправки: вызывает колбэк для открытия календаря
             IconButton(onClick = onScheduleClick) {
                 Icon(Icons.Outlined.Schedule, "Schedule", tint = NeonMagenta)
             }
 
-            // Кнопка отправки
             Box(
                 modifier = Modifier
                     .size(44.dp)
@@ -304,4 +343,3 @@ fun ChatInputField(
         }
     }
 }
-
