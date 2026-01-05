@@ -40,7 +40,7 @@ fun JewelsBlastScreen() {
         // 1. Фоновое изображение во весь экран
         // Используем rememberAsyncImagePainter для загрузки из assets
         Image(
-            painter = rememberAsyncImagePainter("file:///android_asset/video.png"),
+            painter = rememberAsyncImagePainter("file:///android_asset/splash.png"),
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop // Заполнение всего экрана без искажений
