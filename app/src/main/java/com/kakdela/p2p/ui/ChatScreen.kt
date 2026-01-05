@@ -1,5 +1,6 @@
 package com.kakdela.p2p.ui
 
+import android.media.MediaRecorder
 import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -13,10 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -48,10 +46,10 @@ fun ChatScreen(
     messages: List<Message>,
     onSendMessage: (String) -> Unit,
     onSendFile: (Uri, MessageType) -> Unit,
+    onSendAudio: (Uri, Int) -> Unit,
     onScheduleMessage: (String, Long) -> Unit
 ) {
     var textState by remember { mutableStateOf("") }
-
     var showDatePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
     val datePickerState = rememberDatePickerState()
@@ -95,11 +93,13 @@ fun ChatScreen(
                     }
                 },
                 onAttachFile = { uri ->
-                    // Здесь можно добавить выбор типа файла, пока просто FILE
                     onSendFile(uri, MessageType.FILE)
                 },
                 onScheduleClick = {
                     if (textState.isNotBlank()) showDatePicker = true
+                },
+                onSendAudio = { uri, duration ->
+                    onSendAudio(uri, duration)
                 }
             )
         },
@@ -213,7 +213,7 @@ fun ChatBubble(message: Message) {
                         MessageType.AUDIO -> AudioPlayerView(url = message.fileUrl ?: "", duration = message.durationSeconds)
                         MessageType.FILE -> Row(
                             modifier = Modifier
-                                .clickable { /* TODO: Скачать файл через Intent */ }
+                                .clickable { /* TODO: Скачать файл */ }
                                 .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -283,9 +283,15 @@ fun ChatInputField(
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
     onAttachFile: (Uri) -> Unit,
-    onScheduleClick: () -> Unit
+    onScheduleClick: () -> Unit,
+    onSendAudio: (Uri, Int) -> Unit
 ) {
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val context = LocalContext.current
+    var isRecording by remember { mutableStateOf(false) }
+    val recorder = remember { MediaRecorder() }
+    var outputFile: java.io.File? by remember { mutableStateOf(null) }
+
+    val fileLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { onAttachFile(it) }
     }
 
@@ -303,10 +309,12 @@ fun ChatInputField(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = { launcher.launch("*/*") }) {
+            // Кнопка выбора файла
+            IconButton(onClick = { fileLauncher.launch("*/*") }) {
                 Icon(Icons.Filled.AttachFile, "Attach", tint = NeonCyan)
             }
 
+            // Текстовое поле
             TextField(
                 value = text,
                 onValueChange = onTextChange,
@@ -325,10 +333,41 @@ fun ChatInputField(
                 shape = RoundedCornerShape(20.dp)
             )
 
+            // Кнопка записи аудио
+            IconButton(onClick = {
+                if (!isRecording) {
+                    // Начать запись
+                    outputFile = java.io.File(context.cacheDir, "audio_${System.currentTimeMillis()}.m4a")
+                    recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+                    recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                    recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                    recorder.setOutputFile(outputFile!!.absolutePath)
+                    recorder.prepare()
+                    recorder.start()
+                    isRecording = true
+                } else {
+                    // Остановить и отправить
+                    try { recorder.stop() } catch (e: Exception) {}
+                    recorder.reset()
+                    isRecording = false
+                    outputFile?.let { file ->
+                        onSendAudio(Uri.fromFile(file), 10) // TODO: вычислить реальную длительность
+                    }
+                }
+            }) {
+                Icon(
+                    imageVector = if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
+                    tint = if (isRecording) Color.Red else NeonCyan,
+                    contentDescription = "Mic"
+                )
+            }
+
+            // Кнопка планирования
             IconButton(onClick = onScheduleClick) {
                 Icon(Icons.Outlined.Schedule, "Schedule", tint = NeonMagenta)
             }
 
+            // Кнопка отправки текста
             Box(
                 modifier = Modifier
                     .size(44.dp)
