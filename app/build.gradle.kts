@@ -1,5 +1,3 @@
-// Файл: /app/build.gradle.kts
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -17,18 +15,14 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables {
-            useSupportLibrary = true
-        }
-
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas")
         }
 
         ndk {
-            // Поддержка всех актуальных архитектур для WebRTC и libGDX
-            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
+            abiFilters.addAll(
+                listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            )
         }
     }
 
@@ -43,7 +37,7 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false // Для P2P лучше сначала собрать без сжатия, чтобы не "отрезало" нативные методы
+            isMinifyEnabled = false
             if ((System.getenv("KEYSTORE_PASSWORD") ?: "").isNotEmpty()) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -77,27 +71,55 @@ android {
             excludes += "META-INF/DEPENDENCIES"
             excludes += "META-INF/INDEX.LIST"
             excludes += "META-INF/kotlinx-coroutines-core.kotlin_module"
-            pickFirst("**/*.so") // Важно для конфликтов WebRTC/libGDX
+            pickFirst("**/*.so")
+        }
+        jniLibs {
+            useLegacyPackaging = true
+            // Исправление ошибки "Unable to strip": разрешаем хранить символы для тяжелых P2P библиотек
+            keepDebugSymbols += "**/libjingle_peerconnection_so.so"
+            keepDebugSymbols += "**/libsqlcipher.so"
+        }
+    }
+
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDirs(layout.buildDirectory.dir("gdx-natives/lib"))
         }
     }
 }
 
 dependencies {
-    /* ===================== Core & UI ===================== */
+    /* ===================== Core ===================== */
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.2")
+    implementation("androidx.fragment:fragment-ktx:1.8.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+
+    /* ===================== Compose UI ===================== */
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.foundation:foundation")
     implementation("androidx.navigation:navigation-compose:2.8.0")
 
-    /* ===================== Cryptography (E2EE) ===================== */
-    // Соответствие ТЗ п.10.1
+    /* ===================== Permissions ===================== */
+    implementation("com.google.accompanist:accompanist-permissions:0.32.0")
+
+    /* ===================== CameraX ===================== */
+    val cameraxVersion = "1.3.0-rc01"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
+
+    /* ===================== Cryptography ===================== */
     implementation("com.google.crypto.tink:tink-android:1.8.0")
 
-    /* ===================== Database (E2EE Storage) ===================== */
-    // Соответствие ТЗ п.5.4
+    /* ===================== Database (Encrypted) ===================== */
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
@@ -105,33 +127,42 @@ dependencies {
     ksp("androidx.room:room-compiler:$roomVersion")
 
     /* ===================== Networking / P2P ===================== */
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
-    
-    // WebRTC для P2P звонков (ТЗ п.8)
-    // Используем актуальную версию, совместимую с Maven GetStream
+
+    /* ===================== WebRTC (Исправлено) ===================== */
+    // Обновленный путь для соответствия ТЗ и репозиторию GetStream
     implementation("io.getstream:stream-webrtc-android:1.1.2")
 
-    /* ===================== Firebase (Dumb Transport) ===================== */
-    // Используется ТОЛЬКО как Relay (п.3.1 ТЗ)
+    /* ===================== Media (Исправлено) ===================== */
+    val media3Version = "1.4.1"
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
+    implementation("androidx.media3:media3-ui:$media3Version")
+    // Добавлено для исправления ошибки LinkApplicationAndroidResources (атрибуты)
+    implementation("androidx.media3:media3-common:$media3Version")
+    implementation("androidx.media3:media3-session:$media3Version")
+    implementation("io.coil-kt:coil-compose:2.7.0")
+
+    /* ===================== Firebase ===================== */
     implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
 
     /* ===================== libGDX ===================== */
+    implementation("com.badlogicgames.gdx:gdx:1.12.1")
+    implementation("com.badlogicgames.gdx:gdx-backend-android:1.12.1")
     val gdxVersion = "1.12.1"
-    implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
-    implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
     listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64").forEach {
         runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$it")
     }
 
-    /* ===================== Misc ===================== */
+    /* ===================== Coroutines & Background ===================== */
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation("io.coil-kt:coil-compose:2.7.0")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 }
 
-/* ===================== libGDX Native Copy Task ===================== */
-// Эта часть гарантирует, что нативные библиотеки (.so) будут встроены в APK
+/* ===================== libGDX Native Copy ===================== */
+
 tasks.register<Copy>("copyAndroidNatives") {
     val gdxVersion = "1.12.1"
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
@@ -148,11 +179,11 @@ tasks.register<Copy>("copyAndroidNatives") {
     into(layout.buildDirectory.dir("gdx-natives"))
 }
 
-// Связываем копирование нативов с процессом компиляции
-android.applicationVariants.all {
-    val variantName = name.replaceFirstChar { it.uppercase() }
-    tasks.named("merge${variantName}JniLibFolders") {
-        dependsOn("copyAndroidNatives")
-    }
+tasks.withType<com.android.build.gradle.tasks.MergeSourceSetFolders>().configureEach {
+    if (name.contains("JniLibFolders")) dependsOn("copyAndroidNatives")
+}
+tasks.withType<JavaCompile>().configureEach { dependsOn("copyAndroidNatives") }
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    dependsOn("copyAndroidNatives")
 }
 
