@@ -3,7 +3,6 @@ package com.kakdela.p2p.ui
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -117,7 +116,8 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
             when (item.type) {
                 EntertainmentType.WEB -> {
                     item.url?.let { url ->
-                        navController.navigate("webview/\( {Uri.encode(url)}/ \){Uri.encode(item.title)}")
+                        // ИСПРАВЛЕНО: Использование ${} для интерполяции строк
+                        navController.navigate("webview/${Uri.encode(url)}/${Uri.encode(item.title)}")
                     }
                 }
                 EntertainmentType.VIDEO -> {
@@ -193,3 +193,4 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
         }
     }
 }
+
