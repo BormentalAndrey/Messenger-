@@ -13,12 +13,12 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // КРИТИЧЕСКИ ВАЖНО для WebRTC:
+        // Добавлено для WebRTC (ТЗ п. 8)
         maven { url = uri("https://getstream.io/maven") }
         maven { url = uri("https://jitpack.io") }
     }
 }
 
-rootProject.name = "Messenger-P2P"
+rootProject.name = "Messenger-"
 include(":app")
 
