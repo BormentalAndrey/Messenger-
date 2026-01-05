@@ -1,29 +1,42 @@
 package com.kakdela.p2p.service
 
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
 class MusicPlaybackService : MediaSessionService() {
 
-    private lateinit var player: ExoPlayer
-    private lateinit var session: MediaSession
+    private var player: ExoPlayer? = null
+    private var mediaSession: MediaSession? = null
 
     override fun onCreate() {
         super.onCreate()
-
+        
+        // Инициализируем ExoPlayer
         player = ExoPlayer.Builder(this)
             .setHandleAudioBecomingNoisy(true)
             .build()
 
-        session = MediaSession.Builder(this, player).build()
+        // Инициализируем MediaSession
+        player?.let {
+            mediaSession = MediaSession.Builder(this, it).build()
+        }
     }
 
-    override fun onGetSession(info: MediaSession.ControllerInfo) = session
+    // Метод возвращает текущую сессию для контроллеров (например, уведомлений или UI)
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
+        return mediaSession
+    }
 
     override fun onDestroy() {
-        session.release()
-        player.release()
+        mediaSession?.run {
+            player.release()
+            release()
+        }
+        mediaSession = null
+        player = null
         super.onDestroy()
     }
 }
+
