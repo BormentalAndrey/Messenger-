@@ -1,18 +1,28 @@
 package com.kakdela.p2p.data
 
-import com.google.firebase.firestore.ServerTimestamp
-import java.util.Date
-
 /**
- * Модель чата для списка чатов (как в WhatsApp)
+ * Модель чата (личного или группового)
+ * Используется для списка чатов и навигации
  */
 data class Chat(
-    val id: String = "",                    // Уникальный ID чата (sorted uid1_uid2 или "global")
-    val title: String = "Новый чат",        // Название (имя собеседника или "Глобальный чат")
-    val lastMessage: String = "",           // Текст последнего сообщения
-    val lastMessageSenderId: String = "",   // Кто отправил последнее
-    @ServerTimestamp
-    val timestamp: Date? = null,            // Время последнего сообщения
-    val unreadCount: Int = 0,               // Количество непрочитанных (для будущего)
-    val participantIds: List<String> = emptyList()  // UID участников (для личных чатов — 2 человека)
+    val id: String = "",
+
+    // UI
+    val title: String = "",
+    val iconUrl: String? = null,
+
+    // Тип чата
+    val isGroup: Boolean = false,
+
+    // Администраторы (только для групп)
+    val adminIds: List<String> = emptyList(),
+
+    // Участники чата
+    val participantIds: List<String> = emptyList(),
+
+    // Последнее сообщение (для списка чатов)
+    val lastMessage: Message? = null,
+
+    // Время последней активности (для сортировки)
+    val timestamp: Long = System.currentTimeMillis()
 )
