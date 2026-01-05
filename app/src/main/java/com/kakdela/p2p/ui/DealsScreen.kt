@@ -79,12 +79,11 @@ fun DealNeonItem(item: DealItem, navController: NavHostController) {
         onClick = {
             when (item.type) {
                 DealType.CALCULATOR -> navController.navigate(Routes.CALCULATOR)
-                DealType.TOOL -> when (item.id) {
-                    "text_editor" -> navController.navigate("text_editor")
-                }
+                DealType.TOOL -> if (item.id == "text_editor") navController.navigate("text_editor")
                 DealType.WEB -> item.url?.let {
                     val encoded = URLEncoder.encode(it, StandardCharsets.UTF_8.toString())
-                    navController.navigate("webview/\( encoded/ \){item.title}")
+                    // ИСПРАВЛЕНО: Правильная интерполяция строк в Kotlin ${}
+                    navController.navigate("webview/${encoded}/${item.title}")
                 }
             }
         }
@@ -103,3 +102,4 @@ fun DealNeonItem(item: DealItem, navController: NavHostController) {
         }
     }
 }
+
