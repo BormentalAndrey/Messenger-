@@ -16,86 +16,90 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
-import com.tomroush.pdfbox.android.PDFBoxResourceLoader
-import com.tomroush.pdfbox.pdmodel.PDDocument
-import com.tomroush.pdfbox.text.PDFTextStripper
+import org.apache.poi.xwpf.usermodel.XWPFDocument
 import java.io.InputStream
+import java.io.OutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TextEditorScreen(navController: NavHostController) {
     val context = LocalContext.current
-    
-    // Инициализация ресурсов PDFBox (необходимо для работы библиотеки на Android)
-    LaunchedEffect(Unit) {
-        PDFBoxResourceLoader.init(context)
+    var textContent by remember { mutableStateOf("Откройте .txt или .docx файл") }
+    var currentUri by remember { mutableStateOf<Uri?>(null) }
+
+    val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            currentUri = it
+            textContent = readDocument(context, it)
+        }
     }
 
-    var textContent by remember { mutableStateOf("Откройте файл для чтения...") }
-    
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            textContent = readTextFromUri(context, it)
-        }
+    // Лаунчер для сохранения (создания файла)
+    val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        uri?.let { saveDocument(context, it, textContent) }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Редактор") },
+                title = { Text("Редактор DOCX/TXT") },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
+                        Icon(Icons.Default.ArrowBack, "Назад")
                     }
                 },
                 actions = {
-                    IconButton(onClick = { filePickerLauncher.launch("*/*") }) {
-                        Icon(Icons.Default.FileOpen, contentDescription = "Открыть")
+                    IconButton(onClick = { openLauncher.launch("*/*") }) {
+                        Icon(Icons.Default.FileOpen, "Открыть")
                     }
-                    IconButton(onClick = { /* Логика сохранения (для TXT) */ }) {
-                        Icon(Icons.Default.Save, contentDescription = "Сохранить")
+                    IconButton(onClick = {
+                        if (currentUri != null) saveDocument(context, currentUri!!, textContent)
+                        else saveLauncher.launch("document.txt")
+                    }) {
+                        Icon(Icons.Default.Save, "Сохранить")
                     }
                 }
             )
         }
     ) { padding ->
-        Column(modifier = Modifier.padding(padding).fillMaxSize().background(Color.White)) {
-            TextField(
-                value = textContent,
-                onValueChange = { textContent = it },
-                modifier = Modifier.fillMaxSize(),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent
-                )
-            )
-        }
+        TextField(
+            value = textContent,
+            onValueChange = { textContent = it },
+            modifier = Modifier.fillMaxSize().padding(padding).background(Color.White),
+            colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent)
+        )
     }
 }
 
-private fun readTextFromUri(context: Context, uri: Uri): String {
+private fun readDocument(context: Context, uri: Uri): String {
     return try {
-        val contentResolver = context.contentResolver
-        val inputStream: InputStream? = contentResolver.openInputStream(uri)
-        val mimeType = contentResolver.getType(uri)
-        
-        // Проверяем, является ли файл PDF по расширению или MIME-типу
-        if (mimeType == "application/pdf" || uri.path?.endsWith(".pdf", ignoreCase = true) == true) {
-            inputStream.use { stream ->
-                val document = PDDocument.load(stream)
-                val stripper = PDFTextStripper()
-                val text = stripper.getText(document)
-                document.close()
-                text
+        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+            val fileName = uri.path?.lowercase() ?: ""
+            val mimeType = context.contentResolver.getType(uri) ?: ""
+
+            if (mimeType.contains("wordprocessingml") || fileName.endsWith(".docx")) {
+                // Чтение DOCX через Apache POI
+                val doc = XWPFDocument(inputStream)
+                val sb = StringBuilder()
+                doc.paragraphs.forEach { sb.append(it.text).append("\n") }
+                sb.toString()
+            } else {
+                // Чтение обычного текста
+                inputStream.bufferedReader().readText()
             }
-        } else {
-            // Для обычных текстовых файлов
-            inputStream?.bufferedReader()?.use { it.readText() } ?: "Файл пуст или недоступен"
+        } ?: "Ошибка доступа"
+    } catch (e: Exception) {
+        "Ошибка чтения: ${e.message}"
+    }
+}
+
+private fun saveDocument(context: Context, uri: Uri, content: String) {
+    try {
+        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+            outputStream.write(content.toByteArray())
         }
     } catch (e: Exception) {
-        "Ошибка при чтении: ${e.localizedMessage}"
+        e.printStackTrace()
     }
 }
 
