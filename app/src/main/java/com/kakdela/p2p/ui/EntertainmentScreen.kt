@@ -139,7 +139,6 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Иконка типа или Обложка/Логотип для музыки
             if (item.type == EntertainmentType.MUSIC && MusicManager.currentTrack != null) {
                 AsyncImage(
                     model = MusicManager.currentTrack!!.albumArt,
