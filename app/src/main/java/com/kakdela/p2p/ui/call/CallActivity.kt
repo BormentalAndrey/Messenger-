@@ -15,8 +15,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-
-// ВАЖНО: Импорт для Compose версии WebRTC (требует зависимости stream-webrtc-android-compose)
 import io.getstream.webrtc.android.compose.VideoRenderer
 
 class CallActivity : ComponentActivity() {
@@ -38,14 +36,7 @@ class CallActivity : ComponentActivity() {
                     Spacer(modifier = Modifier.height(50.dp))
                     
                     Box(modifier = Modifier.size(300.dp).padding(16.dp)) {
-                        // Здесь будет реальный VideoRenderer, когда будет stream
-                        // Пример использования (раскомментировать при наличии трека):
-                        // VideoRenderer(
-                        //      modifier = Modifier.fillMaxSize(),
-                        //      videoTrack = remoteVideoTrack,
-                        //      videoScalingType = VideoScalingType.SCALE_ASPECT_FILL
-                        // )
-                        Text("Ожидание видео...", color = Color.Gray, modifier = Modifier.align(Alignment.Center))
+                        Text("Ожидание потока...", color = Color.Gray, modifier = Modifier.align(Alignment.Center))
                     }
 
                     Row(
