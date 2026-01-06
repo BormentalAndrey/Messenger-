@@ -161,6 +161,13 @@ dependencies {
     platforms.forEach { platform ->
         runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
     }
+
+    // 🔹 Добавленные зависимости для текстового редактора
+    // Apache POI для чтения/записи DOCX
+    implementation("org.apache.poi:poi-ooxml:5.3.0")
+
+    // pdfbox-android для чтения PDF (оптимизированная версия для Android)
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 }
 
 // 🔹 Задача для извлечения нативных библиотек libGDX
