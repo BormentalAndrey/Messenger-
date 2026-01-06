@@ -10,34 +10,40 @@ import java.util.Base64
 object CryptoManager {
 
     init {
-        // Регистрация конфигурации гибридного шифрования
         HybridConfig.register()
     }
 
-    /**
-     * Генерирует новую пару ключей (приватный + публичный)
-     */
     fun generateKeysetHandle(): KeysetHandle {
         return KeysetHandle.generateNew(HybridKeyTemplates.ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM)
     }
 
-    /**
-     * Шифрование текста с использованием публичного ключа получателя
-     */
-    fun encrypt(plainText: String, publicKeysetHandle: KeysetHandle): String {
-        val hybridEncrypt = publicKeysetHandle.getPrimitive(HybridEncrypt::class.java)
+    // Метод для Репозитория (работает с байтами)
+    fun encryptMessage(text: String, publicKeyStr: String): ByteArray {
+        // В реальном ТЗ тут должен быть десериализатор ключа, пока используем заглушку генерации для теста связи
+        val handle = generateKeysetHandle() 
+        val hybridEncrypt = handle.publicKeysetHandle.getPrimitive(HybridEncrypt::class.java)
+        return hybridEncrypt.encrypt(text.toByteArray(Charsets.UTF_8), null)
+    }
+
+    fun decryptMessage(cipherBytes: ByteArray): String {
+        // Здесь должен использоваться ваш сохраненный приватный ключ
+        val handle = generateKeysetHandle()
+        val hybridDecrypt = handle.getPrimitive(HybridDecrypt::class.java)
+        val decryptedBytes = hybridDecrypt.decrypt(cipherBytes, null)
+        return String(decryptedBytes, Charsets.UTF_8)
+    }
+
+    // Методы для ViewModel (работают со строками)
+    fun encrypt(plainText: String, handle: KeysetHandle): String {
+        val hybridEncrypt = handle.getPrimitive(HybridEncrypt::class.java)
         val ciphertext = hybridEncrypt.encrypt(plainText.toByteArray(Charsets.UTF_8), null)
         return Base64.getEncoder().encodeToString(ciphertext)
     }
 
-    /**
-     * Дешифрование текста с использованием своего приватного ключа
-     */
-    fun decrypt(cipherText: String, privateKeysetHandle: KeysetHandle): String {
-        val hybridDecrypt = privateKeysetHandle.getPrimitive(HybridDecrypt::class.java)
+    fun decrypt(cipherText: String, handle: KeysetHandle): String {
+        val hybridDecrypt = handle.getPrimitive(HybridDecrypt::class.java)
         val decodedBytes = Base64.getDecoder().decode(cipherText)
-        val decryptedBytes = hybridDecrypt.decrypt(decodedBytes, null)
-        return String(decryptedBytes, Charsets.UTF_8)
+        return String(hybridDecrypt.decrypt(decodedBytes, null), Charsets.UTF_8)
     }
 }
 
