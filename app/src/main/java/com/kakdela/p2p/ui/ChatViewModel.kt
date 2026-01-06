@@ -4,22 +4,20 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.auth.ktx.auth
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.ListenerRegistration
-import com.google.firebase.firestore.ktx.firestore
-import com.google.firebase.ktx.Firebase
+import com.google.firebase.firestore.FirebaseFirestore
 import com.kakdela.p2p.data.*
 import com.kakdela.p2p.data.local.ChatDatabase
-import com.kakdela.p2p.security.CryptoManager
-import com.kakdela.p2p.data.repository.MessageRepository
+import com.kakdela.p2p.data.local.MessageEntity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val db = Firebase.firestore
-    private val currentUserId = Firebase.auth.currentUser?.uid ?: ""
+    private val db = FirebaseFirestore.getInstance()
+    private val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: ""
     private var chatId: String = ""
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
@@ -27,11 +25,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private var listener: ListenerRegistration? = null
     
-    // CryptoManager теперь object, передаем его экземпляр если нужно или используем напрямую
-    private val msgRepo = MessageRepository(CryptoManager) 
+    // Исправлено создание репозитория (без аргументов)
+    private val msgRepo = MessageRepository() 
     private val dao = ChatDatabase.getDatabase(application).messageDao()
 
-    fun initChat(id: String, uid: String) { // Добавлен uid для соответствия NavGraph
+    fun initChat(id: String, uid: String) {
         this.chatId = id
         listenMessages()
     }
@@ -52,8 +50,17 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 _messages.value = processedMsgs
                 
+                // Сохранение в локальную БД Room
                 viewModelScope.launch {
-                    dao.insertAll(processedMsgs)
+                    val entities = processedMsgs.map { msg ->
+                        MessageEntity(
+                            chatId = chatId,
+                            text = msg.text,
+                            senderId = msg.senderId,
+                            timestamp = msg.timestamp
+                        )
+                    }
+                    dao.insertAll(entities)
                 }
             }
     }
