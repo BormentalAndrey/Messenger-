@@ -3,8 +3,8 @@ package com.kakdela.p2p.data
 import android.content.Context
 import com.kakdela.p2p.data.local.ChatDatabase
 import com.kakdela.p2p.data.local.MessageEntity
-import com.google.firebase.firestore.ktx.firestore
-import com.google.firebase.ktx.Firebase
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.*
 import org.webrtc.*
 import java.nio.ByteBuffer
@@ -14,7 +14,8 @@ class WebRtcClient(
     private val chatId: String,
     private val currentUserId: String
 ) {
-    private val db = Firebase.firestore
+    // Используем прямой доступ к Instance для стабильности сборки на CI
+    private val db = FirebaseFirestore.getInstance()
     private val dao = ChatDatabase.getDatabase(context).messageDao()
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var peerConnection: PeerConnection? = null
@@ -22,9 +23,13 @@ class WebRtcClient(
 
     private val factory: PeerConnectionFactory by lazy {
         PeerConnectionFactory.initialize(
-            PeerConnectionFactory.InitializationOptions.builder(context).createInitializationOptions()
+            PeerConnectionFactory.InitializationOptions.builder(context)
+                .createInitializationOptions()
         )
-        PeerConnectionFactory.builder().createPeerConnectionFactory()
+        val options = PeerConnectionFactory.Options()
+        PeerConnectionFactory.builder()
+            .setOptions(options)
+            .createPeerConnectionFactory()
     }
 
     init {
@@ -33,7 +38,9 @@ class WebRtcClient(
     }
 
     private fun setupPeerConnection() {
-        val iceServers = listOf(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
+        val iceServers = listOf(
+            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
+        )
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers)
 
         peerConnection = factory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
@@ -44,18 +51,23 @@ class WebRtcClient(
                     "sdp" to candidate.sdp,
                     "sender" to currentUserId
                 )
-                db.collection("chats").document(chatId).collection("candidates").add(data)
+                db.collection("chats").document(chatId)
+                    .collection("candidates").add(data)
             }
-            override fun onDataChannel(dc: DataChannel) { setupDataChannel(dc) }
-            override fun onSignalingChange(p0: PeerConnection.SignalingState?) {}
-            override fun onIceConnectionChange(p0: PeerConnection.IceConnectionState?) {}
-            override fun onIceConnectionReceivingChange(p0: Boolean) {}
-            override fun onIceGatheringChange(p0: PeerConnection.IceGatheringState?) {}
-            override fun onIceCandidatesRemoved(p0: Array<out IceCandidate>?) {}
-            override fun onAddStream(p0: MediaStream?) {}
-            override fun onRemoveStream(p0: MediaStream?) {}
+
+            override fun onDataChannel(dc: DataChannel) {
+                setupDataChannel(dc)
+            }
+
+            override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
+            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {}
+            override fun onIceConnectionReceivingChange(receiving: Boolean) {}
+            override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {}
+            override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) {}
+            override fun onAddStream(stream: MediaStream?) {}
+            override fun onRemoveStream(stream: MediaStream?) {}
             override fun onRenegotiationNeeded() {}
-            override fun onAddTrack(p0: RtpReceiver?, p1: Array<out MediaStream>?) {}
+            override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {}
         })
     }
 
@@ -67,24 +79,50 @@ class WebRtcClient(
                 buffer.data.get(bytes)
                 scope.launch {
                     val entity = if (buffer.binary) {
-                        MessageEntity(chatId = chatId, text = "", fileBytes = bytes, senderId = "remote", timestamp = System.currentTimeMillis())
+                        MessageEntity(
+                            chatId = chatId,
+                            text = "",
+                            fileBytes = bytes,
+                            senderId = "remote",
+                            timestamp = System.currentTimeMillis()
+                        )
                     } else {
-                        MessageEntity(chatId = chatId, text = String(bytes, Charsets.UTF_8), senderId = "remote", timestamp = System.currentTimeMillis())
+                        MessageEntity(
+                            chatId = chatId,
+                            text = String(bytes, Charsets.UTF_8),
+                            fileBytes = null,
+                            senderId = "remote",
+                            timestamp = System.currentTimeMillis()
+                        )
                     }
                     dao.insert(entity)
                 }
             }
+
             override fun onStateChange() {}
-            override fun onBufferedAmountChange(p0: Long) {}
+            override fun onBufferedAmountChange(amount: Long) {}
         })
     }
 
     fun sendP2P(text: String, bytes: ByteArray? = null) {
         scope.launch {
-            dao.insert(MessageEntity(chatId = chatId, text = text, fileBytes = bytes, senderId = currentUserId, timestamp = System.currentTimeMillis()))
+            // Сохраняем в локальную БД через Entity
+            dao.insert(
+                MessageEntity(
+                    chatId = chatId,
+                    text = text,
+                    fileBytes = bytes,
+                    senderId = currentUserId,
+                    timestamp = System.currentTimeMillis()
+                )
+            )
+
             if (dataChannel?.state() == DataChannel.State.OPEN) {
-                val buffer = if (bytes != null) DataChannel.Buffer(ByteBuffer.wrap(bytes), true)
-                else DataChannel.Buffer(ByteBuffer.wrap(text.toByteArray(Charsets.UTF_8)), false)
+                val buffer = if (bytes != null) {
+                    DataChannel.Buffer(ByteBuffer.wrap(bytes), true)
+                } else {
+                    DataChannel.Buffer(ByteBuffer.wrap(text.toByteArray(Charsets.UTF_8)), false)
+                }
                 dataChannel?.send(buffer)
             } else {
                 startConnection()
@@ -101,7 +139,8 @@ class WebRtcClient(
             override fun onCreateSuccess(desc: SessionDescription?) {
                 desc?.let {
                     peerConnection?.setLocalDescription(SdpAdapter(), it)
-                    db.collection("chats").document(chatId).set(mapOf("offer" to it.description), com.google.firebase.firestore.SetOptions.merge())
+                    val data = mapOf("offer" to it.description)
+                    db.collection("chats").document(chatId).set(data, SetOptions.merge())
                 }
             }
         }, MediaConstraints())
@@ -114,22 +153,34 @@ class WebRtcClient(
             if (offer != null && peerConnection?.remoteDescription == null) {
                 handleOffer(offer)
             } else if (answer != null) {
-                peerConnection?.setRemoteDescription(SdpAdapter(), SessionDescription(SessionDescription.Type.ANSWER, answer))
+                peerConnection?.setRemoteDescription(
+                    SdpAdapter(),
+                    SessionDescription(SessionDescription.Type.ANSWER, answer)
+                )
             }
         }
-        db.collection("chats").document(chatId).collection("candidates").addSnapshotListener { snapshot, _ ->
-            snapshot?.documentChanges?.forEach { change ->
-                val d = change.document.data
-                if (d["sender"] != currentUserId) {
-                    val candidate = IceCandidate(d["sdpMid"] as String, (d["sdpMLineIndex"] as Long).toInt(), d["sdp"] as String)
-                    peerConnection?.addIceCandidate(candidate)
+
+        db.collection("chats").document(chatId).collection("candidates")
+            .addSnapshotListener { snapshot, _ ->
+                snapshot?.documentChanges?.forEach { change ->
+                    val d = change.document.data
+                    if (d["sender"] != currentUserId) {
+                        val candidate = IceCandidate(
+                            d["sdpMid"] as String,
+                            (d["sdpMLineIndex"] as Long).toInt(),
+                            d["sdp"] as String
+                        )
+                        peerConnection?.addIceCandidate(candidate)
+                    }
                 }
             }
-        }
     }
 
     private fun handleOffer(offer: String) {
-        peerConnection?.setRemoteDescription(SdpAdapter(), SessionDescription(SessionDescription.Type.OFFER, offer))
+        peerConnection?.setRemoteDescription(
+            SdpAdapter(),
+            SessionDescription(SessionDescription.Type.OFFER, offer)
+        )
         peerConnection?.createAnswer(object : SdpAdapter() {
             override fun onCreateSuccess(desc: SessionDescription?) {
                 desc?.let {
@@ -141,10 +192,11 @@ class WebRtcClient(
     }
 }
 
+// Адаптер для уменьшения шаблонного кода WebRTC
 open class SdpAdapter : SdpObserver {
-    override fun onCreateSuccess(p0: SessionDescription?) {}
+    override fun onCreateSuccess(desc: SessionDescription?) {}
     override fun onSetSuccess() {}
-    override fun onCreateFailure(p0: String?) {}
-    override fun onSetFailure(p0: String?) {}
+    override fun onCreateFailure(error: String?) {}
+    override fun onSetFailure(error: String?) {}
 }
 
