@@ -1,10 +1,8 @@
 package com.kakdela.p2p.ui
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
@@ -14,234 +12,71 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavHostController
+import androidx.navigation.NavController
 import coil.compose.AsyncImage
-import com.google.firebase.auth.EmailAuthProvider
-import com.google.firebase.auth.ktx.auth
-import com.google.firebase.firestore.SetOptions
-import com.google.firebase.firestore.ktx.firestore
-import com.google.firebase.ktx.Firebase
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.storage.FirebaseStorage // Важно!
 import com.google.firebase.storage.ktx.storage
+import com.google.firebase.ktx.Firebase
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(navController: NavHostController) {
-    val context = LocalContext.current
-    val auth = remember { Firebase.auth }
-    val db = remember { Firebase.firestore }
-    val storage = remember { Firebase.storage }
-    val user = auth.currentUser
-
-    val hasPhone = user?.phoneNumber != null
-    val hasEmail = user?.email != null
-
-    var avatarUrl by remember { mutableStateOf<String?>(null) }
-    var isUploading by remember { mutableStateOf(false) }
-
-    val scope = rememberCoroutineScope()
-    var linkError by remember { mutableStateOf<String?>(null) }
-    var showEmailDialog by remember { mutableStateOf(false) }
-
-    LaunchedEffect(user?.uid) {
-        user?.uid?.let { uid ->
-            db.collection("users").document(uid).get()
-                .addOnSuccessListener {
-                    avatarUrl = it.getString("avatarUrl")
+fun SettingsScreen(navController: NavController) {
+    val user = FirebaseAuth.getInstance().currentUser
+    var photoUrl by remember { mutableStateOf(user?.photoUrl?.toString()) }
+    val storage = Firebase.storage
+    
+    val photoPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val ref = storage.reference.child("avatars/${user?.uid}.jpg")
+            ref.putFile(it).addOnSuccessListener {
+                ref.downloadUrl.addOnSuccessListener { downloadUri ->
+                    photoUrl = downloadUri.toString()
                 }
+            }
         }
     }
 
-    // ==== Аватар ====
-    val photoPickerLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null && user != null) {
-            isUploading = true
-            val ref = storage.reference.child("avatars/${user.uid}.jpg")
-            ref.putFile(uri)
-                .addOnSuccessListener {
-                    ref.downloadUrl.addOnSuccessListener { download ->
-                        avatarUrl = download.toString()
-                        db.collection("users")
-                            .document(user.uid)
-                            .set(
-                                mapOf("avatarUrl" to avatarUrl),
-                                SetOptions.merge()
-                            )
-                        isUploading = false
-                    }
-                }
-                .addOnFailureListener {
-                    isUploading = false
-                }
-        }
-    }
-
-    // ==== Привязка Email ====
-    fun linkEmail(email: String, pass: String) {
-        if (user == null) return
-        val credential = EmailAuthProvider.getCredential(email, pass)
-        user.linkWithCredential(credential)
-            .addOnSuccessListener {
-                db.collection("users")
-                    .document(user.uid)
-                    .set(
-                        mapOf("hasEmailAuth" to true),
-                        SetOptions.merge()
-                    )
-                linkError = null
-                showEmailDialog = false
-            }
-            .addOnFailureListener {
-                linkError = it.localizedMessage
-            }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-
-        Text(
-            "Настройки",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.primary
-        )
-
-        Spacer(Modifier.height(32.dp))
-
-        Box(
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("Настройки", color = Color.Cyan) }) },
+        containerColor = Color.Black
+    ) { padding ->
+        Column(
             modifier = Modifier
-                .size(120.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
-                .clickable {
-                    photoPickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
-                },
-            contentAlignment = Alignment.Center
+                .fillMaxSize()
+                .padding(padding),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (avatarUrl != null) {
+            Spacer(Modifier.height(20.dp))
+            
+            Box(contentAlignment = Alignment.BottomEnd) {
                 AsyncImage(
-                    model = avatarUrl,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
+                    model = photoUrl,
+                    contentDescription = "Avatar",
+                    modifier = Modifier
+                        .size(120.dp)
+                        .clip(CircleShape),
                     contentScale = ContentScale.Crop
                 )
-            } else {
-                Text(
-                    "Нажмите,\nчтобы выбрать\nаватар",
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Button(onClick = { photoPicker.launch("image/*") }) {
+                    Text("Изменить")
+                }
             }
-            if (isUploading) CircularProgressIndicator(color = Color.White)
-        }
-
-        Spacer(Modifier.height(32.dp))
-
-        InfoRow(
-            label = "📱 Телефон",
-            isConfirmed = hasPhone,
-            actionText = "Добавить номер"
-        ) {
-            navController.navigate("auth_phone")
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        InfoRow(
-            label = "✉️ Email",
-            isConfirmed = hasEmail,
-            actionText = "Привязать Email"
-        ) {
-            showEmailDialog = true
-        }
-
-        if (linkError != null) {
-            Spacer(Modifier.height(8.dp))
-            Text(linkError!!, color = Color.Red)
-        }
-
-        Spacer(Modifier.height(32.dp))
-
-        OutlinedButton(
-            onClick = {
-                auth.signOut()
+            
+            Text(user?.email ?: "P2P User", color = Color.White, modifier = Modifier.padding(16.dp))
+            
+            Button(onClick = {
+                FirebaseAuth.getInstance().signOut()
                 navController.navigate("choice") {
-                    popUpTo(0) { inclusive = true }
+                    popUpTo(0)
                 }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = MaterialTheme.colorScheme.error
-            )
-        ) {
-            Text("Выйти из аккаунта")
-        }
-    }
-
-    // ==== Диалог привязки Email ====
-    if (showEmailDialog) {
-        var email by remember { mutableStateOf("") }
-        var pass by remember { mutableStateOf("") }
-
-        AlertDialog(
-            onDismissRequest = { showEmailDialog = false },
-            title = { Text("Привязать Email") },
-            text = {
-                Column {
-                    OutlinedTextField(
-                        value = email,
-                        onValueChange = { email = it },
-                        label = { Text("Email") },
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = pass,
-                        onValueChange = { pass = it },
-                        label = { Text("Пароль") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(onClick = { linkEmail(email, pass) }) {
-                    Text("Привязать")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showEmailDialog = false }) {
-                    Text("Отмена")
-                }
+            }) {
+                Text("Выйти из аккаунта", color = Color.Red)
             }
-        )
-    }
-}
-
-@Composable
-fun InfoRow(
-    label: String,
-    isConfirmed: Boolean,
-    actionText: String,
-    onAction: () -> Unit
-) {
-    if (isConfirmed) {
-        Text("$label подтверждён", color = Color.Green)
-    } else {
-        Button(
-            onClick = onAction,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(actionText)
         }
     }
 }
+
