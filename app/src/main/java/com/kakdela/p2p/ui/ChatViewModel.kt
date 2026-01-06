@@ -10,13 +10,11 @@ import com.google.firebase.firestore.ktx.firestore
 import com.google.firebase.ktx.Firebase
 import com.kakdela.p2p.data.*
 import com.kakdela.p2p.data.local.ChatDatabase
-import com.kakdela.p2p.data.local.MessageEntity
 import com.kakdela.p2p.security.CryptoManager
 import com.kakdela.p2p.data.repository.MessageRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.util.Date
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -28,53 +26,58 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val messages = _messages.asStateFlow()
 
     private var listener: ListenerRegistration? = null
-    private val dao = ChatDatabase.getDatabase(application).messageDao()
     
-    // Инициализация будет зависеть от ваших путей к файлам
-    private val crypto = CryptoManager(application)
-    private val msgRepo = MessageRepository(crypto)
+    // Инициализация компонентов (исправленные пути)
+    private val msgRepo = MessageRepository(CryptoManager) 
+    private val dao = ChatDatabase.getDatabase(application).messageDao()
 
-    fun initChat(chatId: String, uid: String) {
-        this.chatId = chatId
+    fun initChat(id: String) {
+        this.chatId = id
         listenMessages()
     }
 
     private fun listenMessages() {
+        if (chatId.isEmpty()) return
         listener?.remove()
         listener = db.collection("chats").document(chatId)
             .collection("messages")
             .orderBy("timestamp")
             .addSnapshotListener { snapshot, e ->
                 if (e != null) return@addSnapshotListener
-                val msgs = snapshot?.toObjects(Message::class.java) ?: emptyList()
-                _messages.value = msgs
+                
+                val rawMsgs = snapshot?.toObjects(Message::class.java) ?: emptyList()
+                
+                // Расшифровка сообщений перед показом в UI
+                val processedMsgs = rawMsgs.map { msg ->
+                    if (msg.type == MessageType.TEXT) {
+                        msg.copy(text = msgRepo.decryptMessage(msg.text), isMe = msg.senderId == currentUserId)
+                    } else {
+                        msg.copy(isMe = msg.senderId == currentUserId)
+                    }
+                }
+                _messages.value = processedMsgs
+                
+                // Сохранение в локальную зашифрованную БД Room
+                viewModelScope.launch {
+                    dao.insertAll(processedMsgs)
+                }
             }
     }
 
     fun sendMessage(text: String) {
         if (text.isBlank()) return
-        uploadMessage(Message(text = text, senderId = currentUserId, type = MessageType.TEXT))
-    }
-
-    fun scheduleMessage(text: String, timeMillis: Long) {
-        // Логика планирования через WorkManager
-        uploadMessage(Message(text = "[Запланировано]: $text", senderId = currentUserId, timestamp = timeMillis))
-    }
-
-    fun sendFile(uri: Uri, type: MessageType) {
-        viewModelScope.launch {
-            // Временная заглушка, так как StorageService должен быть реализован вами
-            uploadMessage(Message(senderId = currentUserId, type = type, text = "Файл отправлен"))
-        }
-    }
-
-    fun sendAudio(uri: Uri, duration: Int) {
-        uploadMessage(Message(senderId = currentUserId, type = MessageType.AUDIO, durationSeconds = duration))
+        // Шифруем текст перед отправкой в Firebase
+        val encryptedText = msgRepo.encryptMessage(text)
+        uploadMessage(Message(text = encryptedText, senderId = currentUserId, type = MessageType.TEXT))
     }
 
     private fun uploadMessage(msg: Message) {
+        if (chatId.isEmpty()) return
         val ref = db.collection("chats").document(chatId).collection("messages").document()
-        val finalMsg = msg.copy(id = ref.id, timestamp = if(msg.timestamp == 0L) System.currentTimeMillis() else msg.timestamp)
+        val finalMsg = msg.copy(
+            id = ref.id, 
+            timestamp = if(msg.timestamp == 0L) System.currentTimeMillis() else msg.timestamp
+        )
         ref.set(finalMsg)
     }
 
