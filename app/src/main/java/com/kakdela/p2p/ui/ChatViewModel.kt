@@ -27,11 +27,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private var listener: ListenerRegistration? = null
     
-    // Инициализация компонентов (исправленные пути)
+    // CryptoManager теперь object, передаем его экземпляр если нужно или используем напрямую
     private val msgRepo = MessageRepository(CryptoManager) 
     private val dao = ChatDatabase.getDatabase(application).messageDao()
 
-    fun initChat(id: String) {
+    fun initChat(id: String, uid: String) { // Добавлен uid для соответствия NavGraph
         this.chatId = id
         listenMessages()
     }
@@ -47,17 +47,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 
                 val rawMsgs = snapshot?.toObjects(Message::class.java) ?: emptyList()
                 
-                // Расшифровка сообщений перед показом в UI
                 val processedMsgs = rawMsgs.map { msg ->
-                    if (msg.type == MessageType.TEXT) {
-                        msg.copy(text = msgRepo.decryptMessage(msg.text), isMe = msg.senderId == currentUserId)
-                    } else {
-                        msg.copy(isMe = msg.senderId == currentUserId)
-                    }
+                    msg.copy(isMe = msg.senderId == currentUserId)
                 }
                 _messages.value = processedMsgs
                 
-                // Сохранение в локальную зашифрованную БД Room
                 viewModelScope.launch {
                     dao.insertAll(processedMsgs)
                 }
@@ -66,18 +60,25 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun sendMessage(text: String) {
         if (text.isBlank()) return
-        // Шифруем текст перед отправкой в Firebase
-        val encryptedText = msgRepo.encryptMessage(text)
-        uploadMessage(Message(text = encryptedText, senderId = currentUserId, type = MessageType.TEXT))
+        uploadMessage(Message(text = text, senderId = currentUserId, type = MessageType.TEXT))
+    }
+
+    fun sendFile(uri: Uri, type: MessageType) {
+        uploadMessage(Message(text = "Файл: ${uri.lastPathSegment}", senderId = currentUserId, type = type))
+    }
+
+    fun sendAudio(uri: Uri, duration: Int) {
+        uploadMessage(Message(senderId = currentUserId, type = MessageType.AUDIO, durationSeconds = duration))
+    }
+
+    fun scheduleMessage(text: String, timeMillis: Long) {
+        uploadMessage(Message(text = text, senderId = currentUserId, timestamp = timeMillis))
     }
 
     private fun uploadMessage(msg: Message) {
         if (chatId.isEmpty()) return
         val ref = db.collection("chats").document(chatId).collection("messages").document()
-        val finalMsg = msg.copy(
-            id = ref.id, 
-            timestamp = if(msg.timestamp == 0L) System.currentTimeMillis() else msg.timestamp
-        )
+        val finalMsg = msg.copy(id = ref.id)
         ref.set(finalMsg)
     }
 
