@@ -114,6 +114,7 @@ dependencies {
     // ВАЖНО: SQLite нужен для корректной работы SQLCipher с Room
     implementation("androidx.sqlite:sqlite:2.4.0")
     implementation("androidx.sqlite:sqlite-ktx:2.4.0")
+    // Используем Zetetic SQLCipher
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
 
     // Media3
@@ -129,6 +130,8 @@ dependencies {
 
     // WebRTC
     implementation("io.getstream:stream-webrtc-android:1.1.2")
+    // ВАЖНО: Добавлена библиотека для Compose UI компонентов WebRTC
+    implementation("io.getstream:stream-webrtc-android-compose:1.1.2")
 
     // libGDX
     val gdxVersion = "1.12.1"
