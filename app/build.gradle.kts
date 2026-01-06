@@ -162,9 +162,6 @@ dependencies {
 
     // Apache POI для DOCX
     implementation("org.apache.poi:poi-ooxml:5.3.0")
-
-    // RichEditor Compose — стабильная версия JitPack
-    implementation("com.github.mohamed-rejeb:richeditor-compose:1.0.0")
 }
 
 // Задача для извлечения нативных библиотек libGDX
