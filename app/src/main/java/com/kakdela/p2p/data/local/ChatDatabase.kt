@@ -2,14 +2,24 @@ package com.kakdela.p2p.data.local
 
 import android.content.Context
 import androidx.room.*
-// ИСПРАВЛЕНО: Импорты для версии net.zetetic 4.5.4
+import kotlinx.coroutines.flow.Flow
 import net.zetetic.database.sqlcipher.SQLiteDatabase
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
+@Entity(tableName = "messages")
+data class MessageEntity(
+    @PrimaryKey val id: String,
+    val chatId: String,
+    val senderId: String,
+    val text: String,
+    val timestamp: Long
+)
+
 @Dao
 interface MessageDao {
-    @Query("SELECT * FROM messages ORDER BY timestamp ASC")
-    fun getAllMessages(): kotlinx.coroutines.flow.Flow<List<MessageEntity>>
+
+    @Query("SELECT * FROM messages WHERE chatId = :chatId ORDER BY timestamp ASC")
+    fun observeMessages(chatId: String): Flow<List<MessageEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(message: MessageEntity)
@@ -18,34 +28,38 @@ interface MessageDao {
     suspend fun insertAll(messages: List<MessageEntity>)
 }
 
-@Database(entities = [MessageEntity::class], version = 2, exportSchema = false)
+@Database(
+    entities = [MessageEntity::class],
+    version = 1,
+    exportSchema = false
+)
 abstract class ChatDatabase : RoomDatabase() {
+
     abstract fun messageDao(): MessageDao
 
     companion object {
-        @Volatile private var INSTANCE: ChatDatabase? = null
+        @Volatile
+        private var INSTANCE: ChatDatabase? = null
 
-        fun getDatabase(context: Context): ChatDatabase {
+        fun getInstance(context: Context): ChatDatabase {
             return INSTANCE ?: synchronized(this) {
-                // Инициализация нативных библиотек SQLCipher
                 SQLiteDatabase.loadLibs(context)
-                
-                // ВАЖНО: Используйте безопасный способ хранения пароля в реальном приложении
-                val factory = SupportOpenHelperFactory("secure_password".toByteArray())
-                
+
+                val passphrase = "secure_password".toByteArray()
+                val factory = SupportOpenHelperFactory(passphrase)
+
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     ChatDatabase::class.java,
                     "chat_secure_db"
                 )
-                .openHelperFactory(factory)
-                .fallbackToDestructiveMigration()
-                .build()
-                
+                    .openHelperFactory(factory)
+                    .fallbackToDestructiveMigration()
+                    .build()
+
                 INSTANCE = instance
                 instance
             }
         }
     }
 }
-
