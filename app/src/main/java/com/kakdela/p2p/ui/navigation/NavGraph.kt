@@ -17,7 +17,6 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.google.firebase.auth.FirebaseAuth
-import com.kakdela.p2p.model.ChatMessage
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
@@ -30,6 +29,7 @@ fun NavGraph(navController: NavHostController) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
+    // Определяем, на каких экранах показывать нижнюю панель
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS,
         Routes.DEALS,
@@ -107,6 +107,7 @@ fun NavGraph(navController: NavHostController) {
                 .padding(padding)
                 .background(Color.Black)
         ) {
+            // --- Сплеш и Авторизация ---
             composable(Routes.SPLASH) {
                 SplashScreen(onTimeout = {
                     val next = if (FirebaseAuth.getInstance().currentUser != null)
@@ -134,11 +135,14 @@ fun NavGraph(navController: NavHostController) {
                 PhoneAuthScreen { navController.navigate(Routes.CHATS) }
             }
 
+            // --- Основные разделы ---
             composable(Routes.CHATS) { ChatsListScreen(navController) }
             composable(Routes.CONTACTS) { ContactsScreen { id -> navController.navigate("chat/$id") } }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
+            
+            // --- Инструменты и Игры ---
             composable(Routes.MUSIC) { MusicPlayerScreen() }
             composable(Routes.CALCULATOR) { CalculatorScreen() }
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
@@ -146,11 +150,9 @@ fun NavGraph(navController: NavHostController) {
             composable(Routes.PACMAN) { PacmanScreen() }
             composable(Routes.JEWELS) { JewelsBlastScreen() }
             composable(Routes.SUDOKU) { SudokuScreen() }
+            composable("text_editor") { TextEditorScreen(navController = navController) }
 
-            composable("text_editor") {
-                TextEditorScreen(navController = navController)
-            }
-
+            // --- WebView ---
             composable(
                 route = "webview/{url}/{title}",
                 arguments = listOf(
@@ -165,29 +167,25 @@ fun NavGraph(navController: NavHostController) {
                 )
             }
 
+            // --- Экран чата (Исправленный) ---
             composable("chat/{chatId}") { backStack ->
-                val chatId = backStack.arguments?.getString("chatId") ?: "global"
+                val chatId = backStack.arguments?.getString("chatId") ?: ""
                 val vm: ChatViewModel = viewModel()
                 val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
 
+                // Инициализируем данные чата при входе
                 LaunchedEffect(chatId) {
                     vm.initChat(chatId, uid)
                 }
 
-                val msgs by vm.messages.collectAsState()
+                val messages by vm.messages.collectAsState()
 
                 ChatScreen(
                     chatId = chatId,
-                    messages = msgs.map {
-                        ChatMessage(
-                            it.id.toString(),
-                            it.text,
-                            it.senderId,
-                            it.timestamp,
-                            it.senderId == uid
-                        )
-                    },
-                    onSendMessage = { vm.sendMessage(it) },
+                    messages = messages, // Передаем List<Message> напрямую
+                    onSendMessage = { text -> vm.sendMessage(text) },
+                    onSendFile = { uri, type -> vm.sendFile(uri, type) },
+                    onSendAudio = { uri, duration -> vm.sendAudio(uri, duration) },
                     onScheduleMessage = { text, time -> vm.scheduleMessage(text, time) }
                 )
             }
