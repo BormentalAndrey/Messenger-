@@ -162,12 +162,12 @@ dependencies {
         runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
     }
 
-    // 🔹 Добавленные зависимости для текстового редактора
-    // Apache POI для чтения/записи DOCX
+    // 🔹 Точечные исправления для TextEditorScreen
+    // Apache POI для работы с DOCX
     implementation("org.apache.poi:poi-ooxml:5.3.0")
 
-    // pdfbox-android для чтения PDF (оптимизированная версия для Android)
-    implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.1.0")  // Актуальная версия на 2026 год
+    // RichEditor Compose (Material3)
+    implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.1.0")
 }
 
 // 🔹 Задача для извлечения нативных библиотек libGDX
