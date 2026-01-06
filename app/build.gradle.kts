@@ -101,7 +101,7 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
 
-    // Security (Tink)
+    // Security
     implementation("com.google.crypto.tink:tink-android:1.20.0")
 
     // Database (Room + SQLCipher)
@@ -110,9 +110,9 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
     
-    // ВАЖНО: Связка для корректной работы SQLCipher с Room
+    // ИСПРАВЛЕНО: Правильная конфигурация для шифрования базы данных
+    implementation("net.zetetic:android-database-sqlcipher:4.5.4")
     implementation("androidx.sqlite:sqlite-ktx:2.4.0")
-    implementation("net.zetetic:android-database-sqlcipher:4.5.4@aar") 
 
     // Media3
     val media3Version = "1.4.1"
@@ -135,7 +135,6 @@ dependencies {
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
 }
 
-// Tasks for natives
 val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
     val gdxVersion = "1.12.1"
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
