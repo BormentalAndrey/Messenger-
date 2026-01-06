@@ -9,11 +9,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -47,7 +52,7 @@ fun TextEditorScreen(navController: NavHostController) {
                     val extension = u.lastPathSegment?.substringAfterLast(".")?.lowercase()
                     val content: String = when (extension) {
                         "docx" -> {
-                            context.contentResolver.openInputStream(u)?.use { input: java.io.InputStream ->
+                            context.contentResolver.openInputStream(u)?.use { input ->
                                 XWPFDocument(input).use { doc ->
                                     doc.paragraphs.joinToString("\n") { it.text }
                                 }
@@ -55,7 +60,7 @@ fun TextEditorScreen(navController: NavHostController) {
                         }
                         else -> {
                             var result: String? = null
-                            context.contentResolver.openInputStream(u)?.use { input: java.io.InputStream ->
+                            context.contentResolver.openInputStream(u)?.use { input ->
                                 for (charset in charsets) {
                                     try {
                                         result = input.bufferedReader(charset).readText()
@@ -66,7 +71,6 @@ fun TextEditorScreen(navController: NavHostController) {
                             result ?: ""
                         }
                     }
-
                     textContent = content
                     currentUri = u
                     fileName = u.lastPathSegment ?: "Файл"
@@ -82,14 +86,22 @@ fun TextEditorScreen(navController: NavHostController) {
         contract = ActivityResultContracts.CreateDocument("*/*")
     ) { uri: Uri? ->
         uri?.let {
-            saveFile(context, it, textContent, it.lastPathSegment?.endsWith(".docx", true) == true, snackbarHostState)
+            saveFile(
+                context, it, textContent,
+                it.lastPathSegment?.endsWith(".docx", ignoreCase = true) == true,
+                snackbarHostState
+            )
             isModified = false
         }
     }
 
     fun saveCurrent() {
         currentUri?.let { uri ->
-            saveFile(context, uri, textContent, uri.lastPathSegment?.endsWith(".docx", true) == true, snackbarHostState)
+            saveFile(
+                context, uri, textContent,
+                uri.lastPathSegment?.endsWith(".docx", ignoreCase = true) == true,
+                snackbarHostState
+            )
             isModified = false
         } ?: saveLauncher.launch(fileName)
     }
@@ -101,10 +113,8 @@ fun TextEditorScreen(navController: NavHostController) {
                 actionLabel = "Сохранить",
                 withDismissAction = true
             )
-            when (result) {
-                SnackbarResult.ActionPerformed -> saveCurrent()
-                else -> navController.popBackStack()
-            }
+            if (result == SnackbarResult.ActionPerformed) saveCurrent()
+            else navController.popBackStack()
         }
     }
 
@@ -152,7 +162,7 @@ fun TextEditorScreen(navController: NavHostController) {
                 .verticalScroll(rememberScrollState())
                 .background(Color.White)
                 .padding(16.dp),
-            textStyle = LocalTextStyle.current.copy(color = Color.Black, fontSize = 16.sp),
+            textStyle = TextStyle(color = Color.Black, fontSize = 16.sp),
             singleLine = false
         )
     }
