@@ -9,22 +9,23 @@ import java.util.Base64
 
 object CryptoManager {
     init {
+        // Регистрация в 1.20.0 обязательна
         HybridConfig.register()
     }
 
     fun generateKeysetHandle(): KeysetHandle = 
         KeysetHandle.generateNew(HybridKeyTemplates.ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM)
 
-    fun encrypt(text: String, handle: KeysetHandle): String {
-        val primitive = handle.getPrimitive(HybridEncrypt::class.java)
-        val encrypted = primitive.encrypt(text.toByteArray(), null)
-        return Base64.getEncoder().encodeToString(encrypted)
+    fun encrypt(plainText: String, publicHandle: KeysetHandle): String {
+        val hybridEncrypt = publicHandle.getPrimitive(HybridEncrypt::class.java)
+        val ciphertext = hybridEncrypt.encrypt(plainText.toByteArray(Charsets.UTF_8), null)
+        return Base64.getEncoder().encodeToString(ciphertext)
     }
 
-    fun decrypt(base64Text: String, handle: KeysetHandle): String {
-        val primitive = handle.getPrimitive(HybridDecrypt::class.java)
-        val decrypted = primitive.decrypt(Base64.getDecoder().decode(base64Text), null)
-        return String(decrypted)
+    fun decrypt(cipherText: String, privateHandle: KeysetHandle): String {
+        val hybridDecrypt = privateHandle.getPrimitive(HybridDecrypt::class.java)
+        val decodedBytes = Base64.getDecoder().decode(cipherText)
+        return String(hybridDecrypt.decrypt(decodedBytes, null), Charsets.UTF_8)
     }
 }
 
