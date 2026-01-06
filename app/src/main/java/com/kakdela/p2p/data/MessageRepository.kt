@@ -5,7 +5,8 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.kakdela.p2p.security.CryptoManager
 import kotlinx.coroutines.tasks.await
 
-class MessageRepository(private val crypto: CryptoManager) {
+// Убрали (private val crypto: CryptoManager) из конструктора, так как это Object
+class MessageRepository {
 
     private val db = FirebaseFirestore.getInstance()
 
@@ -15,8 +16,8 @@ class MessageRepository(private val crypto: CryptoManager) {
         recipientPublicKey: String,
         text: String
     ) {
-        // Вызов метода шифрования у экземпляра crypto
-        val encryptedBytes = crypto.encryptMessage(text, recipientPublicKey)
+        // Используем Singleton объект напрямую
+        val encryptedBytes = CryptoManager.encryptMessage(text, recipientPublicKey)
         val encryptedBase64 = Base64.encodeToString(encryptedBytes, Base64.NO_WRAP)
 
         val envelope = mapOf(
@@ -45,7 +46,8 @@ class MessageRepository(private val crypto: CryptoManager) {
                     
                     try {
                         val cipherBytes = Base64.decode(payload, Base64.NO_WRAP)
-                        val decryptedText = crypto.decryptMessage(cipherBytes)
+                        // Используем Singleton объект напрямую
+                        val decryptedText = CryptoManager.decryptMessage(cipherBytes)
                         
                         onMessage(Message(
                             text = decryptedText,
