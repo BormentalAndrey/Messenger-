@@ -1,22 +1,21 @@
 pluginManagement {
     repositories {
         google()
-        mavenCentral() // KSP и плагины
+        mavenCentral() // обязательно для KSP и других плагинов
         gradlePluginPortal()
-        maven { url = uri("https://jitpack.io") } // RichEditor
-        maven { url = uri("https://maven.aliyun.com/repository/google") }
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
     }
 }
 
 dependencyResolutionManagement {
+    // Запрет добавлять репозитории в build.gradle.kts
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    
     repositories {
         google()
         mavenCentral()
-        maven { url = uri("https://jitpack.io") }       // RichEditor
-        maven { url = uri("https://getstream.io/maven") } // WebRTC
-        maven { url = uri("https://maven.aliyun.com/repository/public") }
+        maven("https://jitpack.io")        // Для RichEditor
+        maven("https://getstream.io/maven") // Для WebRTC Stream SDK
+        maven("https://maven.aliyun.com/repository/public") // зеркало Maven (опционально)
     }
 }
 
