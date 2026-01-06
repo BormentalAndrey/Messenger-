@@ -4,6 +4,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,7 +37,6 @@ class CallActivity : ComponentActivity() {
                     
                     Spacer(modifier = Modifier.height(50.dp))
                     
-                    // Контейнер для видео (GetStream WebRTC)
                     Box(modifier = Modifier.size(300.dp).padding(16.dp)) {
                         Text("Ожидание подключения...", color = Color.Gray, modifier = Modifier.align(Alignment.Center))
                     }
@@ -43,7 +47,7 @@ class CallActivity : ComponentActivity() {
                     ) {
                         IconButton(onClick = { isMuted = !isMuted }) {
                             Icon(
-                                imageVector = if (isMuted) androidx.compose.material.icons.Icons.Default.MicOff else androidx.compose.material.icons.Icons.Default.Mic,
+                                imageVector = if (isMuted) Icons.Default.MicOff else Icons.Default.Mic,
                                 contentDescription = null,
                                 tint = if (isMuted) Color.Red else Color.White
                             )
@@ -58,7 +62,7 @@ class CallActivity : ComponentActivity() {
 
                         IconButton(onClick = { isCameraOn = !isCameraOn }) {
                             Icon(
-                                imageVector = if (isCameraOn) androidx.compose.material.icons.Icons.Default.Videocam else androidx.compose.material.icons.Icons.Default.VideocamOff,
+                                imageVector = if (isCameraOn) Icons.Default.Videocam else Icons.Default.VideocamOff,
                                 contentDescription = null,
                                 tint = Color.White
                             )
@@ -69,3 +73,4 @@ class CallActivity : ComponentActivity() {
         }
     }
 }
+
