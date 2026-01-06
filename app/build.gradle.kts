@@ -79,7 +79,8 @@ android {
                 "META-INF/LICENSE*",
                 "META-INF/kotlinx-coroutines-core.kotlin_module"
             )
-            pickFirst("**/*.so")
+            // устаревший pickFirst заменяем на pickFirsts.add()
+            jniLibs.pickFirsts.add("**/*.so")
         }
         jniLibs {
             useLegacyPackaging = true
@@ -92,6 +93,12 @@ android {
             jniLibs.srcDirs(layout.buildDirectory.dir("gdx-natives/lib"))
         }
     }
+}
+
+repositories {
+    google()
+    mavenCentral()
+    maven("https://jitpack.io") // 🔹 Для RichEditor
 }
 
 dependencies {
@@ -166,8 +173,8 @@ dependencies {
     // Apache POI для работы с DOCX
     implementation("org.apache.poi:poi-ooxml:5.3.0")
 
-    // RichEditor Compose (Material3)
-    implementation("com.mohamedrejeb.richeditor:richeditor-compose:1.1.0")
+    // RichEditor Compose через JitPack
+    implementation("com.github.mohamed-rejeb:richeditor:master-SNAPSHOT")
 }
 
 // 🔹 Задача для извлечения нативных библиотек libGDX
