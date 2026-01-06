@@ -6,34 +6,26 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavHostController
-import com.google.firebase.auth.ktx.auth
-import com.google.firebase.firestore.SetOptions
-import com.google.firebase.firestore.ktx.firestore
-import com.google.firebase.ktx.Firebase
+import com.kakdela.p2p.data.IdentityRepository
+import kotlinx.coroutines.launch
 
 @Composable
 fun EmailAuthScreen(
-    navController: NavHostController,
     onAuthSuccess: () -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val identityRepo = remember { IdentityRepository(context) }
+
     var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var isLogin by remember { mutableStateOf(true) }
-    var loading by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var success by remember { mutableStateOf(false) } // Флаг успешного входа
 
-    val auth = Firebase.auth
-    val db = Firebase.firestore
-
-    // Если авторизация прошла успешно, вызываем callback перехода
-    LaunchedEffect(success) {
-        if (success) {
-            onAuthSuccess()
-        }
+    // Проверяем, есть ли уже привязанный номер телефона
+    val myPhone = remember { 
+        context.getSharedPreferences("identity_prefs", 0).getString("my_phone", null) 
     }
 
     Column(
@@ -43,33 +35,42 @@ fun EmailAuthScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+        Text(
+            text = "Привязка Email",
+            style = MaterialTheme.typography.headlineMedium,
+            color = Color.Cyan // Неоновый стиль вашего приложения
+        )
 
         Text(
-            text = if (isLogin) "Вход по Email" else "Регистрация Email",
-            style = MaterialTheme.typography.headlineMedium,
-            color = Color.White
+            text = "Ваш Email будет использоваться как вторичный ID в P2P сети",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.Gray,
+            modifier = Modifier.padding(top = 8.dp)
         )
 
         Spacer(Modifier.height(32.dp))
 
+        if (myPhone == null) {
+            // Предупреждение, если номер еще не подтвержден
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.padding(bottom = 16.dp)
+            ) {
+                Text(
+                    "Внимание: Сначала подтвердите номер телефона для создания ключей безопасности.",
+                    modifier = Modifier.padding(8.dp),
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+
         OutlinedTextField(
             value = email,
-            onValueChange = { email = it.trim() },
-            label = { Text("Email") },
+            onValueChange = { email = it.trim().lowercase() },
+            label = { Text("Введите Email") },
             modifier = Modifier.fillMaxWidth(),
-            enabled = !loading,
-            singleLine = true
-        )
-
-        Spacer(Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("Пароль") },
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !loading,
+            enabled = !isLoading && myPhone != null,
             singleLine = true
         )
 
@@ -77,95 +78,47 @@ fun EmailAuthScreen(
 
         Button(
             modifier = Modifier.fillMaxWidth(),
-            enabled = !loading,
+            enabled = !isLoading && myPhone != null && email.contains("@"),
             onClick = {
-                if (email.isBlank() || password.isBlank()) {
-                    error = "Заполните все поля"
-                    return@Button
-                }
-
-                if (password.length < 6) {
-                    error = "Пароль минимум 6 символов"
-                    return@Button
-                }
-
-                loading = true
+                isLoading = true
                 error = null
 
-                fun saveUserToFirestore() {
-                    val user = auth.currentUser
-                    if (user == null) {
-                        loading = false
-                        error = "Пользователь не найден"
-                        return
+                scope.launch {
+                    try {
+                        // 1. Привязываем email к существующей личности локально
+                        // 2. Генерируем анонс для DHT (Hash(Email) -> MyPublicKey)
+                        val success = identityRepo.updateEmail(email)
+                        
+                        if (success) {
+                            isLoading = false
+                            onAuthSuccess()
+                        } else {
+                            error = "Не удалось обновить локальный профиль"
+                            isLoading = false
+                        }
+                    } catch (e: Exception) {
+                        error = "Ошибка: ${e.localizedMessage}"
+                        isLoading = false
                     }
-
-                    val userData = mapOf(
-                        "uid" to user.uid,
-                        "email" to user.email,
-                        "hasEmailAuth" to true
-                    )
-
-                    db.collection("users")
-                        .document(user.uid)
-                        .set(userData, SetOptions.merge())
-                        .addOnSuccessListener {
-                            loading = false
-                            success = true // Триггер для LaunchedEffect
-                        }
-                        .addOnFailureListener {
-                            loading = false
-                            error = "Ошибка профиля: ${it.localizedMessage}"
-                        }
-                }
-
-                if (isLogin) {
-                    auth.signInWithEmailAndPassword(email, password)
-                        .addOnSuccessListener { saveUserToFirestore() }
-                        .addOnFailureListener {
-                            loading = false
-                            error = "Ошибка входа: ${it.localizedMessage}"
-                        }
-                } else {
-                    auth.createUserWithEmailAndPassword(email, password)
-                        .addOnSuccessListener { saveUserToFirestore() }
-                        .addOnFailureListener {
-                            loading = false
-                            error = "Ошибка регистрации: ${it.localizedMessage}"
-                        }
                 }
             }
         ) {
-            if (loading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    color = Color.White,
-                    strokeWidth = 2.dp
-                )
+            if (isLoading) {
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
             } else {
-                Text(if (isLogin) "Войти" else "Зарегистрироваться")
+                Text("Привязать к личности")
             }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        TextButton(
-            onClick = { isLogin = !isLogin },
-            enabled = !loading
-        ) {
-            Text(
-                if (isLogin) "Нет аккаунта? Регистрация" else "Уже есть аккаунт? Войти",
-                color = MaterialTheme.colorScheme.primary
-            )
         }
 
         error?.let {
             Spacer(Modifier.height(12.dp))
-            Text(
-                text = it,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall
-            )
+            Text(text = it, color = MaterialTheme.colorScheme.error)
+        }
+        
+        Spacer(Modifier.height(16.dp))
+        
+        TextButton(onClick = { onAuthSuccess() }) {
+            Text("Пропустить", color = Color.Gray)
         }
     }
 }
