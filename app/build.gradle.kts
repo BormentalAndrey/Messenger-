@@ -17,7 +17,6 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        
         vectorDrawables { useSupportLibrary = true }
 
         ksp {
@@ -111,11 +110,9 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
     
-    // ВАЖНО: SQLite нужен для корректной работы SQLCipher с Room
-    implementation("androidx.sqlite:sqlite:2.4.0")
+    // ВАЖНО: Связка для корректной работы SQLCipher с Room
     implementation("androidx.sqlite:sqlite-ktx:2.4.0")
-    // Используем Zetetic SQLCipher
-    implementation("net.zetetic:android-database-sqlcipher:4.5.4")
+    implementation("net.zetetic:android-database-sqlcipher:4.5.4@aar") 
 
     // Media3
     val media3Version = "1.4.1"
@@ -130,7 +127,6 @@ dependencies {
 
     // WebRTC
     implementation("io.getstream:stream-webrtc-android:1.1.2")
-    // ВАЖНО: Добавлена библиотека для Compose UI компонентов WebRTC
     implementation("io.getstream:stream-webrtc-android-compose:1.1.2")
 
     // libGDX
