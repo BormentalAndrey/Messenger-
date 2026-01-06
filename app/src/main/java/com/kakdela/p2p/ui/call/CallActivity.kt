@@ -15,7 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-// ИСПРАВЛЕНО: Путь к рендереру
+// ВАЖНО: Если этот импорт не находится, убедитесь, что библиотека io.getstream:stream-webrtc-android подключена
 import io.getstream.webrtc.android.ui.VideoRenderer
 
 class CallActivity : ComponentActivity() {
@@ -37,8 +37,11 @@ class CallActivity : ComponentActivity() {
                     Spacer(modifier = Modifier.height(50.dp))
                     
                     Box(modifier = Modifier.size(300.dp).padding(16.dp)) {
-                        // Здесь будет VideoRenderer при установке связи
                         Text("Ожидание...", color = Color.Gray, modifier = Modifier.align(Alignment.Center))
+                        // VideoRenderer(
+                        //    modifier = Modifier.fillMaxSize(),
+                        //    videoTrack = remoteVideoTrack
+                        // )
                     }
 
                     Row(
