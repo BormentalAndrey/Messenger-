@@ -24,7 +24,6 @@ android {
         }
 
         ndk {
-            // Ограничиваем архитектуры для стабильности
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
         }
     }
@@ -86,12 +85,17 @@ android {
         }
     }
 
-    // Путь к извлеченным нативным библиотекам (для libGDX)
     sourceSets {
         getByName("main") {
             jniLibs.srcDirs(layout.buildDirectory.dir("gdx-natives/lib"))
         }
     }
+}
+
+repositories {
+    google()
+    mavenCentral()
+    maven("https://jitpack.io") // Для RichEditor
 }
 
 dependencies {
@@ -162,11 +166,12 @@ dependencies {
         runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
     }
 
-    // Apache POI для DOCX
+    // 🔹 Исправления для TextEditorScreen
+    // Apache POI для работы с DOCX
     implementation("org.apache.poi:poi-ooxml:5.3.0")
 
-    // RichEditor Compose через JitPack
-    implementation("com.github.mohamed-rejeb:richeditor:master-SNAPSHOT")
+    // RichEditor Compose — стабильная версия
+    implementation("com.github.mohamed-rejeb:richeditor:1.0.0")
 }
 
 // 🔹 Задача для извлечения нативных библиотек libGDX
@@ -188,7 +193,7 @@ val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
     into(layout.buildDirectory.dir("gdx-natives"))
 }
 
-// Обеспечиваем зависимость mergeJniLibFolders от копирования нативных библиотек
+// Зависимости mergeJniLibFolders от копирования нативных библиотек
 tasks.matching {
     it.name.contains("merge") && it.name.contains("JniLibFolders")
 }.configureEach {
