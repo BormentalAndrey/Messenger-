@@ -92,6 +92,12 @@ android {
     }
 }
 
+repositories {
+    google()
+    mavenCentral()
+    maven("https://jitpack.io")
+}
+
 dependencies {
     // Core & Lifecycle
     implementation("androidx.core:core-ktx:1.13.1")
@@ -163,11 +169,11 @@ dependencies {
     // Apache POI для DOCX
     implementation("org.apache.poi:poi-ooxml:5.3.0")
 
-    // RichEditor Compose — стабильная версия JitPack
-    implementation("com.github.mohamed-rejeb:richeditor-compose:1.0.0") 
+    // RichEditor Compose — стабильная версия
+    implementation("com.mohamedrejeb.richeditor:richeditor-compose-android:1.0.0-rc13")
 }
 
-// Задача для извлечения нативных библиотек libGDX
+// 🔹 Задача для извлечения нативных библиотек libGDX
 val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
     val gdxVersion = "1.12.1"
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
