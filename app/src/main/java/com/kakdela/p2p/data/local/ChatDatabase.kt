@@ -4,7 +4,8 @@ import android.content.Context
 import androidx.room.*
 import com.kakdela.p2p.data.Message
 import kotlinx.coroutines.flow.Flow
-import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
+import net.sqlcipher.database.SQLiteDatabase
+import net.sqlcipher.database.SupportOpenHelperFactory
 
 @Dao
 interface MessageDao {
@@ -27,7 +28,9 @@ abstract class ChatDatabase : RoomDatabase() {
 
         fun getDatabase(context: Context): ChatDatabase {
             return INSTANCE ?: synchronized(this) {
-                // Шифрование БД паролем
+                // Инициализация библиотеки SQLCipher
+                SQLiteDatabase.loadLibs(context)
+                
                 val factory = SupportOpenHelperFactory("secure_db_password".toByteArray())
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
