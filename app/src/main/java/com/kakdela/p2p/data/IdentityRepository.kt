@@ -1,47 +1,37 @@
 package com.kakdela.p2p.data
 
 import android.content.Context
-import com.google.firebase.auth.ktx.auth
-import com.google.firebase.firestore.ktx.firestore
-import com.google.firebase.ktx.Firebase
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import com.kakdela.p2p.security.CryptoManager
 import kotlinx.coroutines.tasks.await
 
-/**
- * Реализация Identity Layer (Пункты 4 и 5 ТЗ).
- * Отвечает за публикацию анонимного профиля в сеть.
- */
-class IdentityRepository(context: Context) {
+class IdentityRepository(private val context: Context) {
     private val crypto = CryptoManager(context)
-    private val db = Firebase.firestore
-    private val auth = Firebase.auth
+    private val db = FirebaseFirestore.getInstance()
+    private val auth = FirebaseAuth.getInstance()
 
-    // 1. "Регистрация" - это публикация ключа в DHT
     suspend fun publishIdentity(phoneNumber: String, name: String): Boolean {
         return try {
-            // Анонимный вход в сеть (чтобы иметь право писать в DHT)
             if (auth.currentUser == null) {
                 auth.signInAnonymously().await()
             }
 
-            // Генерируем ID и Хеш номера
             val userId = crypto.getMyUserId()
             val phoneHash = crypto.hashPhoneNumber(phoneNumber)
             
-            // Сериализуем публичный ключ для публикации
-            // (В реальном коде это JSON от Tink public keyset)
+            // В Tink 2026/1.20.0 получение дескриптора может отличаться
+            // Убедитесь, что метод getMyKeys() возвращает объект, у которого есть publicKeysetHandle
             val publicKeyset = crypto.getMyKeys().publicKeysetHandle.toString()
 
             val dhtRecord = mapOf(
                 "user_id" to userId,
                 "phone_hash" to phoneHash,
-                "public_key" to publicKeyset, // Для E2EE
-                "display_name" to name, // Опционально, можно шифровать
+                "public_key" to publicKeyset,
+                "display_name" to name,
                 "last_seen" to System.currentTimeMillis()
             )
 
-            // Публикуем в "DHT" (коллекция identities)
-            // Ключом документа делаем Хеш Номера, чтобы искать O(1)
             db.collection("dht_identities")
                 .document(phoneHash)
                 .set(dhtRecord)
@@ -54,17 +44,15 @@ class IdentityRepository(context: Context) {
         }
     }
 
-    // 2. Поиск контакта по номеру (Пункт 5.2 и 5.3)
     suspend fun findPeerByPhone(phone: String): AppContact? {
         val phoneHash = crypto.hashPhoneNumber(phone)
-        
         val doc = db.collection("dht_identities").document(phoneHash).get().await()
         
         return if (doc.exists()) {
             AppContact(
                 name = doc.getString("display_name") ?: "Unknown",
                 phoneNumber = phone,
-                uid = doc.getString("user_id"), // Это ID на основе ключа
+                uid = doc.getString("user_id"),
                 publicKey = doc.getString("public_key"),
                 isRegistered = true
             )
@@ -73,3 +61,4 @@ class IdentityRepository(context: Context) {
         }
     }
 }
+
