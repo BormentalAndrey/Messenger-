@@ -2,8 +2,9 @@ package com.kakdela.p2p.data.local
 
 import android.content.Context
 import androidx.room.*
-import net.sqlcipher.database.SQLiteDatabase
-import net.sqlcipher.database.SupportOpenHelperFactory
+// ВАЖНО: Правильные импорты для версии 4.5.4
+import net.zetetic.database.sqlcipher.SQLiteDatabase
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 @Dao
 interface MessageDao {
@@ -26,19 +27,21 @@ abstract class ChatDatabase : RoomDatabase() {
 
         fun getDatabase(context: Context): ChatDatabase {
             return INSTANCE ?: synchronized(this) {
-                // Инициализация нативных библиотек SQLCipher
-                // ВАЖНО: Это должно вызываться до создания базы
+                // Загружаем нативные библиотеки Zetetic
                 System.loadLibrary("sqlcipher")
                 
+                // Создаем фабрику с паролем
                 val factory = SupportOpenHelperFactory("secure_password".toByteArray())
+                
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     ChatDatabase::class.java,
                     "chat_secure_db"
                 )
-                .openHelperFactory(factory)
+                .openHelperFactory(factory) // Подключаем шифрование
                 .fallbackToDestructiveMigration()
                 .build()
+                
                 INSTANCE = instance
                 instance
             }
