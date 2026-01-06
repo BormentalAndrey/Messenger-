@@ -5,10 +5,10 @@ import androidx.room.PrimaryKey
 
 @Entity(tableName = "messages")
 data class MessageEntity(
-    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    @PrimaryKey val id: String,
     val chatId: String,
-    val text: String,
     val senderId: String,
+    val text: String,
     val timestamp: Long,
     val fileBytes: ByteArray? = null
 )
