@@ -20,9 +20,12 @@ android {
         
         vectorDrawables { useSupportLibrary = true }
 
-        ksp { arg("room.schemaLocation", "$projectDir/schemas") }
+        ksp {
+            arg("room.schemaLocation", "$projectDir/schemas")
+        }
 
         ndk {
+            // Ограничиваем ABI для уменьшения размера и стабильности нативных либ
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
         }
     }
@@ -42,11 +45,18 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions { jvmTarget = "17" }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+    }
 
-    composeOptions { kotlinCompilerExtensionVersion = "1.5.11" }
+    composeOptions {
+        // Версия 1.5.11 совместима с Kotlin 1.9.23
+        kotlinCompilerExtensionVersion = "1.5.11"
+    }
 
     packaging {
         resources {
@@ -58,39 +68,42 @@ android {
         }
         jniLibs {
             useLegacyPackaging = true
-            // ИСПРАВЛЕНИЕ: Новый синтаксис для AGP 8.x+
+            // Исправлено: pickFirsts (множественное число) для AGP 8.6.0
             pickFirsts.add("**/*.so")
         }
     }
 
     sourceSets {
         getByName("main") {
+            // Путь для подхвата нативных библиотек libGDX
             jniLibs.srcDirs(layout.buildDirectory.dir("gdx-natives/lib"))
         }
     }
 }
 
 dependencies {
-    // Core
+    // Core & Lifecycle
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.appcompat:appcompat:1.7.0")
 
-    // UI & Compose
+    // UI & Jetpack Compose
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.navigation:navigation-compose:2.8.0")
 
-    // Firebase
+    // Firebase (Auth, Firestore, Storage)
     implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
 
-    // Security (Google Tink)
+    // Security (Google Tink для E2EE)
     implementation("com.google.crypto.tink:tink-android:1.20.0")
 
     // Database (Room + SQLCipher)
@@ -98,27 +111,31 @@ dependencies {
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
-    // ИСПРАВЛЕНИЕ: Версия 4.5.4 доступна во всех репозиториях стабильно
+    // Используем 4.5.4 как самую доступную в зеркалах версию
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
 
-    // Media & Docs
+    // Media & Documents
     implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
     implementation("org.apache.poi:poi-ooxml:5.2.3")
-    implementation("io.coil-kt:coil-compose:2.7.0")
+    // Понижаем Coil до 2.6.0 для стабильной загрузки с Aliyun/Central
+    implementation("io.coil-kt:coil-compose:2.6.0")
 
     // Networking & WebRTC
     implementation("io.getstream:stream-webrtc-android:1.1.2")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // libGDX
+    // libGDX (Game Engine)
     val gdxVersion = "1.12.1"
     implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
 }
 
+// Таск для извлечения нативных .so файлов из jar-платформ libGDX
 tasks.register<Copy>("copyAndroidNatives") {
     val gdxVersion = "1.12.1"
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+    
     platforms.forEach { platform ->
         val jarConfiguration = configurations.detachedConfiguration(
             dependencies.create("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
@@ -131,6 +148,7 @@ tasks.register<Copy>("copyAndroidNatives") {
     into(layout.buildDirectory.dir("gdx-natives"))
 }
 
+// Запуск копирования перед компиляцией Kotlin
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     dependsOn("copyAndroidNatives")
 }
