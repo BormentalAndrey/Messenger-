@@ -24,6 +24,7 @@ android {
         }
 
         ndk {
+            // Ограничиваем архитектуры для стабильности
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
         }
     }
@@ -78,6 +79,7 @@ android {
                 "META-INF/LICENSE*",
                 "META-INF/kotlinx-coroutines-core.kotlin_module"
             )
+            // Используем современный метод для .so файлов
             jniLibs.pickFirsts.add("**/*.so")
         }
         jniLibs {
@@ -85,17 +87,12 @@ android {
         }
     }
 
+    // Путь к извлеченным нативным библиотекам (для libGDX)
     sourceSets {
         getByName("main") {
             jniLibs.srcDirs(layout.buildDirectory.dir("gdx-natives/lib"))
         }
     }
-}
-
-repositories {
-    google()
-    mavenCentral()
-    maven("https://jitpack.io") // Для RichEditor
 }
 
 dependencies {
@@ -166,15 +163,14 @@ dependencies {
         runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
     }
 
-    // 🔹 Исправления для TextEditorScreen
-    // Apache POI для работы с DOCX
+    // Apache POI для TextEditor
     implementation("org.apache.poi:poi-ooxml:5.3.0")
 
-    // RichEditor Compose — стабильная версия
-    implementation("com.github.mohamed-rejeb:richeditor:1.0.0")
+    // RichEditor Compose через JitPack
+    implementation("com.github.mohamed-rejeb:richeditor:master-SNAPSHOT")
 }
 
-// 🔹 Задача для извлечения нативных библиотек libGDX
+// Задача для извлечения нативных библиотек libGDX
 val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
     val gdxVersion = "1.12.1"
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
@@ -193,7 +189,7 @@ val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
     into(layout.buildDirectory.dir("gdx-natives"))
 }
 
-// Зависимости mergeJniLibFolders от копирования нативных библиотек
+// Обеспечиваем зависимость mergeJniLibFolders от копирования нативных библиотек
 tasks.matching {
     it.name.contains("merge") && it.name.contains("JniLibFolders")
 }.configureEach {
