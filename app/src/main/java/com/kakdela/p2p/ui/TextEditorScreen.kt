@@ -1,9 +1,7 @@
 package com.kakdela.p2p.ui
 
-import android.graphics.Bitmap
-import android.graphics.pdf.PdfRenderer
+import android.content.Context
 import android.net.Uri
-import android.os.ParcelFileDescriptor
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -11,42 +9,29 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.Text
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.mohamedrejeb.richeditor.model.RichTextState
+import com.mohamedrejeb.richeditor.model.rememberRichTextState
+import com.mohamedrejeb.richeditor.ui.material3.RichTextEditor
+import com.mohamedrejeb.richeditor.ui.material3.RichTextEditorDefaults
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import org.apache.poi.xwpf.usermodel.XWPFDocument
 import java.nio.charset.Charset
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-
-private suspend fun recognizeTextFromImage(
-    recognizer: com.google.mlkit.vision.text.TextRecognizer,
-    image: InputImage
-): Text = suspendCancellableCoroutine { continuation ->
-    recognizer.process(image)
-        .addOnSuccessListener { result -> continuation.resume(result) }
-        .addOnFailureListener { exception -> continuation.resumeWithException(exception) }
-        .addOnCanceledListener { continuation.cancel() }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,15 +40,21 @@ fun TextEditorScreen(navController: NavHostController) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var text by remember { mutableStateOf("") }
+    val richTextState: RichTextState = rememberRichTextState()
+
     var currentUri by remember { mutableStateOf<Uri?>(null) }
     var fileName by remember { mutableStateOf("Новый файл.txt") }
     var isModified by remember { mutableStateOf(false) }
-    var fontSize by remember { mutableStateOf(16.sp) }
 
     val charsets = listOf(Charsets.UTF_8, Charset.forName("windows-1251"), Charsets.ISO_8859_1)
 
-    val recognizer = remember { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+    // Цвета для выбора (можно расширить)
+    val availableColors = listOf(
+        Color.Black, Color.Red, Color.Blue, Color.Green, Color(0xFFFF5722), Color(0xFF9C27B0)
+    )
+
+    // Размеры шрифта
+    val availableSizes = listOf(12.sp, 14.sp, 16.sp, 18.sp, 20.sp, 24.sp, 28.sp, 32.sp)
 
     val openLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -76,40 +67,9 @@ fun TextEditorScreen(navController: NavHostController) {
                         "docx" -> {
                             context.contentResolver.openInputStream(u)?.use { input ->
                                 XWPFDocument(input).use { doc ->
-                                    doc.paragraphs.joinToString("\n") { p -> p.text }
+                                    doc.paragraphs.joinToString("\n") { it.text }
                                 }
                             } ?: ""
-                        }
-                        "pdf" -> {
-                            val pfd = context.contentResolver.openFileDescriptor(u, "r")
-                                ?: return@let snackbarHostState.showSnackbar("Не удалось открыть PDF")
-                            val renderer = PdfRenderer(pfd)
-                            val fullText = StringBuilder()
-
-                            for (i in 0 until renderer.pageCount) {
-                                val page = renderer.openPage(i)
-                                val bitmap = Bitmap.createBitmap(
-                                    page.width,
-                                    page.height,
-                                    Bitmap.Config.ARGB_8888
-                                )
-                                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-
-                                val image = InputImage.fromBitmap(bitmap, 0)
-                                try {
-                                    val result = recognizeTextFromImage(recognizer, image)
-                                    fullText.append(result.text).append("\n\n")
-                                } catch (e: Exception) {
-                                    fullText.append("[Ошибка распознавания страницы ${i + 1}]\n\n")
-                                }
-
-                                bitmap.recycle()
-                                page.close()
-                            }
-                            renderer.close()
-                            pfd.close()
-
-                            fullText.toString()
                         }
                         else -> {
                             var result: String? = null
@@ -125,12 +85,12 @@ fun TextEditorScreen(navController: NavHostController) {
                         }
                     }
 
-                    text = content.trim()
+                    richTextState.setPlainText(content)
                     currentUri = u
                     fileName = u.lastPathSegment ?: "Файл"
                     isModified = false
                 } catch (e: Exception) {
-                    snackbarHostState.showSnackbar("Ошибка открытия файла: ${e.localizedMessage}")
+                    snackbarHostState.showSnackbar("Ошибка открытия: ${e.localizedMessage}")
                 }
             }
         }
@@ -140,14 +100,14 @@ fun TextEditorScreen(navController: NavHostController) {
         contract = ActivityResultContracts.CreateDocument("*/*")
     ) { uri ->
         uri?.let {
-            saveFile(context, it, text, it.lastPathSegment?.endsWith(".docx", ignoreCase = true) == true, snackbarHostState)
+            saveFile(context, it, richTextState.toPlainText(), it.lastPathSegment?.endsWith(".docx", ignoreCase = true) == true, snackbarHostState)
             isModified = false
         }
     }
 
     fun saveCurrent() {
         currentUri?.let { uri ->
-            saveFile(context, uri, text, uri.lastPathSegment?.endsWith(".docx", ignoreCase = true) == true, snackbarHostState)
+            saveFile(context, uri, richTextState.toPlainText(), uri.lastPathSegment?.endsWith(".docx", ignoreCase = true) == true, snackbarHostState)
             isModified = false
         } ?: saveLauncher.launch(fileName)
     }
@@ -169,83 +129,96 @@ fun TextEditorScreen(navController: NavHostController) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(fileName, color = Color.White) },
+                title = { Text(fileName, color = Color.Black) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = null, tint = Color.White)
+                        Icon(Icons.Filled.ArrowBack, contentDescription = null, tint = Color.Black)
                     }
                 },
                 actions = {
                     IconButton(onClick = { openLauncher.launch(arrayOf("*/*")) }) {
-                        Icon(Icons.Filled.FolderOpen, contentDescription = null, tint = Color.Cyan)
+                        Icon(Icons.Filled.FolderOpen, contentDescription = null, tint = Color.Black)
                     }
                     IconButton(onClick = { saveCurrent() }) {
-                        Icon(Icons.Filled.Save, contentDescription = null, tint = Color.Magenta)
+                        Icon(Icons.Filled.Save, contentDescription = null, tint = Color.Black)
                     }
-                    var menuExpanded by remember { mutableStateOf(false) }
-                    IconButton(onClick = { menuExpanded = true }) {
-                        Icon(Icons.Filled.TextFields, contentDescription = null, tint = Color.Green)
-                    }
-                    DropdownMenu(
-                        expanded = menuExpanded,
-                        onDismissRequest = { menuExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Сохранить как...") },
-                            onClick = {
-                                saveLauncher.launch(fileName)
-                                menuExpanded = false
+
+                    // Toolbar с форматированием
+                    Row {
+                        IconButton(onClick = { richTextState.toggleSpanStyle(SpanStyle(fontWeight = FontWeight.Bold)) }) {
+                            Icon(Icons.Filled.FormatBold, contentDescription = "Жирный")
+                        }
+                        IconButton(onClick = { richTextState.toggleSpanStyle(SpanStyle(fontStyle = FontStyle.Italic)) }) {
+                            Icon(Icons.Filled.FormatItalic, contentDescription = "Курсив")
+                        }
+                        IconButton(onClick = { richTextState.toggleSpanStyle(SpanStyle(textDecoration = TextDecoration.Underline)) }) {
+                            Icon(Icons.Filled.FormatUnderlined, contentDescription = "Подчёркивание")
+                        }
+
+                        var colorExpanded by remember { mutableStateOf(false) }
+                        IconButton(onClick = { colorExpanded = true }) {
+                            Icon(Icons.Filled.FormatColorText, contentDescription = "Цвет текста")
+                        }
+                        DropdownMenu(expanded = colorExpanded, onDismissRequest = { colorExpanded = false }) {
+                            availableColors.forEach { color ->
+                                DropdownMenuItem(
+                                    text = { Box(modifier = Modifier.size(24.dp).background(color)) },
+                                    onClick = {
+                                        richTextState.toggleSpanStyle(SpanStyle(color = color))
+                                        colorExpanded = false
+                                    }
+                                )
                             }
-                        )
-                        Divider()
-                        listOf(12, 14, 16, 18, 20, 24).forEach { size ->
-                            DropdownMenuItem(
-                                text = { Text("$size sp") },
-                                onClick = {
-                                    fontSize = size.sp
-                                    menuExpanded = false
-                                }
-                            )
+                        }
+
+                        var sizeExpanded by remember { mutableStateOf(false) }
+                        IconButton(onClick = { sizeExpanded = true }) {
+                            Icon(Icons.Filled.TextFields, contentDescription = "Размер шрифта")
+                        }
+                        DropdownMenu(expanded = sizeExpanded, onDismissRequest = { sizeExpanded = false }) {
+                            availableSizes.forEach { size ->
+                                DropdownMenuItem(
+                                    text = { Text("${size.value.toInt()} sp") },
+                                    onClick = {
+                                        richTextState.toggleSpanStyle(SpanStyle(fontSize = size))
+                                        sizeExpanded = false
+                                    }
+                                )
+                            }
                         }
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black)
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.White)
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            Surface(
-                color = Color(0xFF111111),
-                border = BorderStroke(1.dp, Color.Magenta.copy(alpha = 0.3f))
-            ) {
+            Surface(color = Color(0xFFF0F0F0), border = BorderStroke(1.dp, Color.Gray.copy(alpha = 0.3f))) {
                 Text(
-                    text = "Символов: ${text.length} • ${if (isModified) "Изменено" else "Сохранено"}",
-                    color = Color.White.copy(alpha = 0.7f),
+                    text = "Символов: ${richTextState.toPlainText().length} • ${if (isModified) "Изменено" else "Сохранено"}",
+                    color = Color.Black.copy(alpha = 0.7f),
                     fontSize = 12.sp,
                     modifier = Modifier.fillMaxWidth().padding(8.dp)
                 )
             }
         }
     ) { paddingValues ->
-        BasicTextField(
-            value = text,
-            onValueChange = {
-                text = it
-                isModified = true
-            },
-            textStyle = TextStyle(color = Color.White, fontSize = fontSize),
+        RichTextEditor(
+            state = richTextState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(Color.Black)
+                .background(Color.White)
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp)
+                .padding(16.dp),
+            textStyle = RichTextEditorDefaults.textStyle(color = Color.Black, fontSize = 16.sp),
+            onValueChange = { isModified = true }
         )
     }
 }
 
 private fun saveFile(
-    context: android.content.Context,
+    context: Context,
     uri: Uri,
     content: String,
     isDocx: Boolean,
