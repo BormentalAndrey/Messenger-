@@ -1,4 +1,9 @@
+// Путь: app/src/main/java/com/kakdela/p2p/data/Message.kt
+
 package com.kakdela.p2p.data
+
+import com.google.firebase.auth.ktx.auth
+import com.google.firebase.ktx.Firebase
 
 /**
  * Типы сообщений внутри чатов
@@ -16,7 +21,8 @@ enum class MessageType {
 }
 
 /**
- * Универсальная модель сообщения
+ * Универсальная модель сообщения.
+ * Используется как для Firestore, так и для локальной БД Room.
  */
 data class Message(
     val id: String = "",
@@ -38,5 +44,19 @@ data class Message(
     val callSdp: String? = null,
 
     // Read receipts
-    val readBy: List<String> = emptyList()
-)
+    val readBy: List<String> = emptyList(),
+
+    // Флаг для DHT/P2P очереди
+    val isP2P: Boolean = false
+) {
+    /**
+     * Вычисляемое свойство для Compose UI.
+     * Позволяет не передавать UID пользователя в каждый Bubble вручную.
+     */
+    val isMe: Boolean
+        get() {
+            val currentUid = Firebase.auth.currentUser?.uid
+            return currentUid != null && senderId == currentUid
+        }
+}
+
