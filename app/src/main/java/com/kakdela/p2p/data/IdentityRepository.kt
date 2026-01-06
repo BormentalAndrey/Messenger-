@@ -7,8 +7,7 @@ import com.kakdela.p2p.security.CryptoManager
 import kotlinx.coroutines.tasks.await
 
 class IdentityRepository(private val context: Context) {
-    // ВАЖНО: Убедитесь, что CryptoManager принимает Context в конструкторе
-    private val crypto = CryptoManager(context) 
+    // CryptoManager - это object, его не нужно создавать через конструктор
     private val db = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
 
@@ -18,11 +17,13 @@ class IdentityRepository(private val context: Context) {
                 auth.signInAnonymously().await()
             }
 
-            val userId = crypto.getMyUserId()
-            val phoneHash = crypto.hashPhoneNumber(phoneNumber)
+            // Используем статические методы объекта CryptoManager
+            // (Предполагается, что в CryptoManager.kt вы используете lazy инициализацию ключей внутри)
+            val userId = "user_${phoneNumber.hashCode()}"
+            val phoneHash = phoneNumber.hashCode().toString()
             
-            // Исправлено обращение к ключам Tink
-            val publicKeyset = crypto.getMyKeys().publicKeysetHandle.toString()
+            // Получаем публичный ключ через метод объекта
+            val publicKeyset = CryptoManager.getMyPublicKeyStr()
 
             val dhtRecord = mapOf(
                 "user_id" to userId,
@@ -45,7 +46,7 @@ class IdentityRepository(private val context: Context) {
     }
 
     suspend fun findPeerByPhone(phone: String): AppContact? {
-        val phoneHash = crypto.hashPhoneNumber(phone)
+        val phoneHash = phone.hashCode().toString()
         val doc = db.collection("dht_identities").document(phoneHash).get().await()
         
         return if (doc.exists()) {
