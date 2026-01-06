@@ -84,7 +84,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.appcompat:appcompat:1.7.0")
     
-    // ДОБАВЛЕНО: Традиционные View компоненты (нужны для VideoPlayerActivity)
+    // UI Components
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.constraintlayout:constraintlayout:2.2.0")
@@ -102,29 +102,33 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
 
-    // Security
+    // Security (Tink)
     implementation("com.google.crypto.tink:tink-android:1.20.0")
 
-    // Database
+    // Database (Room + SQLCipher)
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
+    
+    // ВАЖНО: SQLite нужен для корректной работы SQLCipher с Room
+    implementation("androidx.sqlite:sqlite:2.4.0")
+    implementation("androidx.sqlite:sqlite-ktx:2.4.0")
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
 
-    // Media3 (MediaSession исправляет ошибки в MusicPlaybackService)
+    // Media3
     val media3Version = "1.4.1"
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-ui:$media3Version")
-    implementation("androidx.media3:media3-session:$media3Version") // ДОБАВЛЕНО для MediaSessionService
+    implementation("androidx.media3:media3-session:$media3Version")
 
-    // Docs & Coil
+    // Utils
     implementation("org.apache.poi:poi-ooxml:5.2.3")
     implementation("io.coil-kt:coil-compose:2.6.0")
-
-    // Networking & WebRTC
-    implementation("io.getstream:stream-webrtc-android:1.1.2")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // WebRTC
+    implementation("io.getstream:stream-webrtc-android:1.1.2")
 
     // libGDX
     val gdxVersion = "1.12.1"
@@ -132,7 +136,7 @@ dependencies {
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
 }
 
-// Таски для нативных библиотек
+// Tasks for natives
 val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
     val gdxVersion = "1.12.1"
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
