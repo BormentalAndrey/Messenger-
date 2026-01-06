@@ -2,119 +2,123 @@ package com.kakdela.p2p.ui
 
 import android.content.Context
 import android.net.Uri
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.FontDownload
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.SaveAs
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.tomroush.pdfbox.android.PDFBoxResourceLoader
+import com.tomroush.pdfbox.pdmodel.PDDocument
+import com.tomroush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.launch
-import org.apache.pdfbox.pdmodel.PDDocument
-import org.apache.pdfbox.text.PDFTextStripper
 import org.apache.poi.xwpf.usermodel.XWPFDocument
 import java.nio.charset.Charset
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TextEditorScreen(navController: NavHostController) {
-    var text by remember { mutableStateOf(TextFieldValue("")) }
-    var currentUri by remember { mutableStateOf<Uri?>(null) }
-    var fileName by remember { mutableStateOf("Новый файл") }
-    var isModified by remember { mutableStateOf(false) }
-    var fontSize by remember { mutableStateOf(16.sp) }
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    val charsets = listOf(Charsets.UTF_8, Charset.forName("windows-1251"), Charset.forName("KOI8-R"), Charsets.ISO_8859_1)
+    var text by remember { mutableStateOf("") }
+    var currentUri by remember { mutableStateOf<Uri?>(null) }
+    var fileName by remember { mutableStateOf("Новый файл.txt") }
+    var isModified by remember { mutableStateOf(false) }
+    var fontSize by remember { mutableStateOf(16.sp) }
 
-    val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let {
+    val charsets = listOf(Charsets.UTF_8, Charset.forName("windows-1251"), Charsets.ISO_8859_1)
+
+    // Инициализация PDFBox для Android
+    LaunchedEffect(Unit) {
+        PDFBoxResourceLoader.init(context)
+    }
+
+    val openLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let { u ->
             scope.launch {
                 try {
-                    val content = when (uri.pathSegments.last().substringAfterLast(".", "").lowercase()) {
-                        "docx" -> {
-                            navController.context.contentResolver.openInputStream(uri)?.use { input ->
+                    val content: String = context.contentResolver.openInputStream(u)?.use { input ->
+                        when (u.lastPathSegment?.substringAfterLast(".")?.lowercase()) {
+                            "docx" -> {
                                 XWPFDocument(input).use { doc ->
                                     doc.paragraphs.joinToString("\n") { it.text }
                                 }
-                            } ?: ""
-                        }
-                        "pdf" -> {
-                            navController.context.contentResolver.openInputStream(uri)?.use { input ->
+                            }
+                            "pdf" -> {
                                 PDDocument.load(input).use { doc ->
                                     PDFTextStripper().getText(doc)
                                 }
-                            } ?: ""
-                        }
-                        else -> { // txt и другие
-                            var content: String?
-                            for (charset in charsets) {
-                                try {
-                                    content = navController.context.contentResolver.openInputStream(uri)?.bufferedReader(charset)?.readText()
-                                    if (content != null) break
-                                } catch (e: Exception) {
-                                    continue
-                                }
                             }
-                            content ?: ""
+                            else -> {
+                                var result: String? = null
+                                for (charset in charsets) {
+                                    try {
+                                        result = input.bufferedReader(charset).readText()
+                                        break
+                                    } catch (_: Exception) { }
+                                }
+                                result ?: ""
+                            }
                         }
-                    }
-                    text = TextFieldValue(content)
-                    currentUri = uri
-                    fileName = uri.pathSegments.last()
+                    } ?: ""
+
+                    text = content
+                    currentUri = u
+                    fileName = u.lastPathSegment ?: "Файл"
                     isModified = false
                 } catch (e: Exception) {
-                    snackbarHostState.showSnackbar("Ошибка открытия: ${e.message ?: ""}")
+                    snackbarHostState.showSnackbar("Ошибка открытия: ${e.localizedMessage}")
                 }
             }
         }
     }
 
-    val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
-        uri?.let { saveFile(navController.context, it, text.text, isDocx = false, snackbarHostState) }
-    }
-
-    val saveAsDocxLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.wordprocessingml.document")) { uri ->
-        uri?.let { saveFile(navController.context, it, text.text, isDocx = true, snackbarHostState) }
+    val saveLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("*/*")
+    ) { uri ->
+        uri?.let {
+            saveFile(context, it, text, it.lastPathSegment?.endsWith(".docx", ignoreCase = true) == true, snackbarHostState)
+            isModified = false
+        }
     }
 
     fun saveCurrent() {
         currentUri?.let { uri ->
-            if (uri.pathSegments.last().endsWith(".docx", ignoreCase = true)) {
-                saveFile(navController.context, uri, text.text, isDocx = true, snackbarHostState)
-            } else {
-                saveFile(navController.context, uri, text.text, isDocx = false, snackbarHostState)
-            }
+            saveFile(context, uri, text, uri.lastPathSegment?.endsWith(".docx", ignoreCase = true) == true, snackbarHostState)
             isModified = false
-        } ?: saveLauncher.launch("Новый файл.txt")
+        } ?: saveLauncher.launch(fileName)
     }
 
-    BackHandler(isModified) {
+    BackHandler(enabled = isModified) {
         scope.launch {
             val result = snackbarHostState.showSnackbar(
-                "Сохранить изменения?",
+                message = "Сохранить изменения?",
                 actionLabel = "Сохранить",
                 withDismissAction = true
             )
             when (result) {
                 SnackbarResult.ActionPerformed -> saveCurrent()
-                SnackbarResult.Dismissed -> navController.popBackStack()
+                else -> navController.popBackStack()
             }
         }
     }
@@ -122,46 +126,43 @@ fun TextEditorScreen(navController: NavHostController) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(fileName, modifier = Modifier.basicMarquee(), color = Color.White) },
+                title = { Text(fileName, color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Filled.ArrowBack, null, tint = Color.White)
+                        Icon(Icons.Filled.ArrowBack, contentDescription = null, tint = Color.White)
                     }
                 },
                 actions = {
                     IconButton(onClick = { openLauncher.launch(arrayOf("*/*")) }) {
-                        Icon(Icons.Filled.FolderOpen, null, tint = Color.Cyan)
+                        Icon(Icons.Filled.FolderOpen, contentDescription = null, tint = Color.Cyan)
                     }
                     IconButton(onClick = { saveCurrent() }) {
-                        Icon(Icons.Filled.Save, null, tint = Color.Magenta)
+                        Icon(Icons.Filled.Save, contentDescription = null, tint = Color.Magenta)
                     }
-                    var expanded by remember { mutableStateOf(false) }
-                    IconButton(onClick = { expanded = true }) {
-                        Icon(Icons.Filled.SaveAs, null, tint = Color.Green)
-                        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                            DropdownMenuItem(text = { Text("Сохранить как TXT") }, onClick = {
-                                saveLauncher.launch(fileName.ifEmpty { "Новый файл.txt" })
-                                expanded = false
-                            })
-                            DropdownMenuItem(text = { Text("Сохранить как DOCX") }, onClick = {
-                                saveAsDocxLauncher.launch(fileName.replace(".txt", ".docx", ignoreCase = true))
-                                expanded = false
-                            })
-                            DropdownMenuItem(text = { Text("Размер шрифта") }, onClick = { expanded = false }) {
-                                // Можно расширить отдельным диалогом со списком размеров
-                                var sizeExpanded by remember { mutableStateOf(false) }
-                                DropdownMenu(expanded = sizeExpanded, onDismissRequest = { sizeExpanded = false }) {
-                                    listOf(12, 14, 16, 18, 20, 24).forEach { size ->
-                                        DropdownMenuItem(text = { Text("${size} sp") }, onClick = {
-                                            fontSize = size.sp
-                                            sizeExpanded = false
-                                        })
-                                    }
-                                }
-                                IconButton(onClick = { sizeExpanded = !sizeExpanded }) {
-                                    Icon(Icons.Filled.FontDownload, null)
-                                }
+                    var menuExpanded by remember { mutableStateOf(false) }
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Filled.TextFields, contentDescription = null, tint = Color.Green)
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Сохранить как...") },
+                            onClick = {
+                                saveLauncher.launch(fileName)
+                                menuExpanded = false
                             }
+                        )
+                        Divider()
+                        listOf(12, 14, 16, 18, 20, 24).forEach { size ->
+                            DropdownMenuItem(
+                                text = { Text("$size sp") },
+                                onClick = {
+                                    fontSize = size.sp
+                                    menuExpanded = false
+                                }
+                            )
                         }
                     }
                 },
@@ -170,39 +171,53 @@ fun TextEditorScreen(navController: NavHostController) {
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            Surface(color = Color(0xFF111111), border = BorderStroke(1.dp, Color.Magenta.copy(0.3f))) {
+            Surface(
+                color = Color(0xFF111111),
+                border = BorderStroke(1.dp, Color.Magenta.copy(alpha = 0.3f))
+            ) {
                 Text(
-                    "Символов: ${text.text.length} | Изменено: $isModified",
-                    color = Color.White.copy(0.7f),
-                    modifier = Modifier.padding(8.dp).fillMaxWidth(),
-                    fontSize = 12.sp
+                    text = "Символов: ${text.length} • ${if (isModified) "Изменено" else "Сохранено"}",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp)
                 )
             }
         }
-    ) { padding ->
+    ) { paddingValues ->
         BasicTextField(
             value = text,
             onValueChange = {
                 text = it
                 isModified = true
             },
-            textStyle = TextStyle(fontSize = fontSize, color = Color.White),
+            textStyle = TextStyle(color = Color.White, fontSize = fontSize),
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
+                .padding(paddingValues)
                 .background(Color.Black)
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         )
     }
 }
 
-private fun saveFile(context: Context, uri: Uri, content: String, isDocx: Boolean, snackbar: SnackbarHostState) {
-    kotlinx.coroutines.runBlocking {
+private fun saveFile(
+    context: Context,
+    uri: Uri,
+    content: String,
+    isDocx: Boolean,
+    snackbarHostState: SnackbarHostState
+) {
+    val scope = kotlinx.coroutines.MainScope()
+    scope.launch {
         try {
             context.contentResolver.openOutputStream(uri)?.use { output ->
                 if (isDocx) {
                     XWPFDocument().use { doc ->
-                        content.split("\n").forEach { line ->
+                        val lines = content.split("\n")
+                        for (line in lines) {
                             if (line.isNotBlank()) {
                                 doc.createParagraph().createRun().setText(line)
                             } else {
@@ -215,9 +230,9 @@ private fun saveFile(context: Context, uri: Uri, content: String, isDocx: Boolea
                     output.write(content.toByteArray(Charsets.UTF_8))
                 }
             }
-            snackbar.showSnackbar("Сохранено")
+            snackbarHostState.showSnackbar("Сохранено успешно")
         } catch (e: Exception) {
-            snackbar.showSnackbar("Ошибка сохранения: ${e.message}")
+            snackbarHostState.showSnackbar("Ошибка сохранения: ${e.localizedMessage}")
         }
     }
 }
