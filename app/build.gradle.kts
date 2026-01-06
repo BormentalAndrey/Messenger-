@@ -79,7 +79,6 @@ android {
                 "META-INF/LICENSE*",
                 "META-INF/kotlinx-coroutines-core.kotlin_module"
             )
-            // устаревший pickFirst заменяем на pickFirsts.add()
             jniLibs.pickFirsts.add("**/*.so")
         }
         jniLibs {
@@ -93,12 +92,6 @@ android {
             jniLibs.srcDirs(layout.buildDirectory.dir("gdx-natives/lib"))
         }
     }
-}
-
-repositories {
-    google()
-    mavenCentral()
-    maven("https://jitpack.io") // 🔹 Для RichEditor
 }
 
 dependencies {
@@ -169,8 +162,7 @@ dependencies {
         runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
     }
 
-    // 🔹 Точечные исправления для TextEditorScreen
-    // Apache POI для работы с DOCX
+    // Apache POI для DOCX
     implementation("org.apache.poi:poi-ooxml:5.3.0")
 
     // RichEditor Compose через JitPack
