@@ -58,8 +58,8 @@ android {
         }
         jniLibs {
             useLegacyPackaging = true
-            // Решает конфликты дублирующихся .so файлов (WebRTC vs libGDX)
-            pickFirst("**/*.so")
+            // ИСПРАВЛЕНИЕ: Новый синтаксис для AGP 8.x+
+            pickFirsts.add("**/*.so")
         }
     }
 
@@ -90,7 +90,7 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
 
-    // Security (Google Tink) - Актуальная версия 1.20.0
+    // Security (Google Tink)
     implementation("com.google.crypto.tink:tink-android:1.20.0")
 
     // Database (Room + SQLCipher)
@@ -98,7 +98,8 @@ dependencies {
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
-    implementation("net.zetetic:android-database-sqlcipher:4.5.5")
+    // ИСПРАВЛЕНИЕ: Версия 4.5.4 доступна во всех репозиториях стабильно
+    implementation("net.zetetic:android-database-sqlcipher:4.5.4")
 
     // Media & Docs
     implementation("androidx.media3:media3-exoplayer:1.4.1")
