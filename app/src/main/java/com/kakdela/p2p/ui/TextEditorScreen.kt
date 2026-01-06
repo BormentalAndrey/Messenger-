@@ -1,7 +1,10 @@
 package com.kakdela.p2p.ui
 
-import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import android.os.ParcelFileDescriptor
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -24,9 +27,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
-import com.tomroush.pdfbox.android.PDFBoxResourceLoader
-import com.tomroush.pdfbox.pdmodel.PDDocument
-import com.tomroush.pdfbox.text.PDFTextStripper
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.launch
 import org.apache.poi.xwpf.usermodel.XWPFDocument
 import java.nio.charset.Charset
@@ -46,10 +49,7 @@ fun TextEditorScreen(navController: NavHostController) {
 
     val charsets = listOf(Charsets.UTF_8, Charset.forName("windows-1251"), Charsets.ISO_8859_1)
 
-    // Инициализация PDFBox для Android
-    LaunchedEffect(Unit) {
-        PDFBoxResourceLoader.init(context)
-    }
+    val recognizer = remember { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
 
     val openLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -57,30 +57,56 @@ fun TextEditorScreen(navController: NavHostController) {
         uri?.let { u ->
             scope.launch {
                 try {
-                    val content: String = context.contentResolver.openInputStream(u)?.use { input ->
-                        when (u.lastPathSegment?.substringAfterLast(".")?.lowercase()) {
-                            "docx" -> {
+                    val extension = u.lastPathSegment?.substringAfterLast(".")?.lowercase()
+                    val content: String = when (extension) {
+                        "docx" -> {
+                            context.contentResolver.openInputStream(u)?.use { input ->
                                 XWPFDocument(input).use { doc ->
                                     doc.paragraphs.joinToString("\n") { it.text }
                                 }
+                            } ?: ""
+                        }
+                        "pdf" -> {
+                            // Извлечение текста из PDF через рендеринг страниц + OCR (ML Kit)
+                            val pfd = context.contentResolver.openFileDescriptor(u, "r") ?: return@let
+                            val renderer = PdfRenderer(pfd)
+                            val fullText = StringBuilder()
+
+                            for (i in 0 until renderer.pageCount) {
+                                val page = renderer.openPage(i)
+                                val bitmap = Bitmap.createBitmap(
+                                    page.width,
+                                    page.height,
+                                    Bitmap.Config.ARGB_8888
+                                )
+                                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+
+                                val image = InputImage.fromBitmap(bitmap, 0)
+                                val result = recognizer.process(image).await() // suspend функция
+
+                                fullText.append(result.text).append("\n\n")
+
+                                bitmap.recycle()
+                                page.close()
                             }
-                            "pdf" -> {
-                                PDDocument.load(input).use { doc ->
-                                    PDFTextStripper().getText(doc)
-                                }
-                            }
-                            else -> {
-                                var result: String? = null
+                            renderer.close()
+                            pfd.close()
+
+                            fullText.toString()
+                        }
+                        else -> {
+                            var result: String? = null
+                            context.contentResolver.openInputStream(u)?.use { input ->
                                 for (charset in charsets) {
                                     try {
                                         result = input.bufferedReader(charset).readText()
                                         break
-                                    } catch (_: Exception) { }
+                                    } catch (_: Exception) {}
                                 }
-                                result ?: ""
                             }
+                            result ?: ""
                         }
-                    } ?: ""
+                    }
 
                     text = content
                     currentUri = u
