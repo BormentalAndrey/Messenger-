@@ -24,13 +24,13 @@ android {
         }
 
         ndk {
-            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
         }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = true 
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -57,15 +57,16 @@ android {
 
     packaging {
         resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-            excludes += "META-INF/DEPENDENCIES"
-            excludes += "META-INF/INDEX.LIST"
-            excludes += "META-INF/NOTICE*"
-            excludes += "META-INF/LICENSE*"
+            excludes += setOf(
+                "/META-INF/{AL2.0,LGPL2.1}",
+                "META-INF/DEPENDENCIES",
+                "META-INF/INDEX.LIST",
+                "META-INF/NOTICE*",
+                "META-INF/LICENSE*"
+            )
         }
         jniLibs {
             useLegacyPackaging = true
-            pickFirsts.add("**/*.so")
         }
     }
 
@@ -77,13 +78,13 @@ android {
 }
 
 dependencies {
-    // Core & UI
+    // Core
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.appcompat:appcompat:1.7.0")
-    
-    // UI Components
+
+    // UI
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.constraintlayout:constraintlayout:2.2.0")
@@ -104,13 +105,12 @@ dependencies {
     // Security
     implementation("com.google.crypto.tink:tink-android:1.20.0")
 
-    // Database (Room + SQLCipher)
+    // Room + SQLCipher (КОРРЕКТНО)
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
-    
-    // ИСПРАВЛЕНО: Правильная конфигурация для шифрования базы данных
+
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
     implementation("androidx.sqlite:sqlite-ktx:2.4.0")
 
@@ -121,7 +121,6 @@ dependencies {
     implementation("androidx.media3:media3-session:$media3Version")
 
     // Utils
-    implementation("org.apache.poi:poi-ooxml:5.2.3")
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
@@ -150,13 +149,6 @@ val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
     into(layout.buildDirectory.dir("gdx-natives"))
 }
 
-tasks.configureEach {
-    if (name.contains("merge") && name.contains("JniLibFolders")) {
-        dependsOn(copyAndroidNatives)
-    }
-}
-
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     dependsOn(copyAndroidNatives)
 }
-
