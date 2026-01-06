@@ -28,11 +28,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import org.apache.poi.xwpf.usermodel.XWPFDocument
 import java.nio.charset.Charset
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+private suspend fun recognizeTextFromImage(
+    recognizer: com.google.mlkit.vision.text.TextRecognizer,
+    image: InputImage
+): Text = suspendCancellableCoroutine { continuation ->
+    recognizer.process(image)
+        .addOnSuccessListener { result -> continuation.resume(result) }
+        .addOnFailureListener { exception -> continuation.resumeWithException(exception) }
+        .addOnCanceledListener { continuation.cancel() }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,13 +76,13 @@ fun TextEditorScreen(navController: NavHostController) {
                         "docx" -> {
                             context.contentResolver.openInputStream(u)?.use { input ->
                                 XWPFDocument(input).use { doc ->
-                                    doc.paragraphs.joinToString("\n") { it.text }
+                                    doc.paragraphs.joinToString("\n") { p -> p.text }
                                 }
                             } ?: ""
                         }
                         "pdf" -> {
-                            // Извлечение текста из PDF через рендеринг страниц + OCR (ML Kit)
-                            val pfd = context.contentResolver.openFileDescriptor(u, "r") ?: return@let
+                            val pfd = context.contentResolver.openFileDescriptor(u, "r")
+                                ?: return@let snackbarHostState.showSnackbar("Не удалось открыть PDF")
                             val renderer = PdfRenderer(pfd)
                             val fullText = StringBuilder()
 
@@ -82,9 +96,12 @@ fun TextEditorScreen(navController: NavHostController) {
                                 page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
 
                                 val image = InputImage.fromBitmap(bitmap, 0)
-                                val result = recognizer.process(image).await() // suspend функция
-
-                                fullText.append(result.text).append("\n\n")
+                                try {
+                                    val result = recognizeTextFromImage(recognizer, image)
+                                    fullText.append(result.text).append("\n\n")
+                                } catch (e: Exception) {
+                                    fullText.append("[Ошибка распознавания страницы ${i + 1}]\n\n")
+                                }
 
                                 bitmap.recycle()
                                 page.close()
@@ -108,12 +125,12 @@ fun TextEditorScreen(navController: NavHostController) {
                         }
                     }
 
-                    text = content
+                    text = content.trim()
                     currentUri = u
                     fileName = u.lastPathSegment ?: "Файл"
                     isModified = false
                 } catch (e: Exception) {
-                    snackbarHostState.showSnackbar("Ошибка открытия: ${e.localizedMessage}")
+                    snackbarHostState.showSnackbar("Ошибка открытия файла: ${e.localizedMessage}")
                 }
             }
         }
@@ -205,9 +222,7 @@ fun TextEditorScreen(navController: NavHostController) {
                     text = "Символов: ${text.length} • ${if (isModified) "Изменено" else "Сохранено"}",
                     color = Color.White.copy(alpha = 0.7f),
                     fontSize = 12.sp,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp)
+                    modifier = Modifier.fillMaxWidth().padding(8.dp)
                 )
             }
         }
@@ -230,20 +245,18 @@ fun TextEditorScreen(navController: NavHostController) {
 }
 
 private fun saveFile(
-    context: Context,
+    context: android.content.Context,
     uri: Uri,
     content: String,
     isDocx: Boolean,
     snackbarHostState: SnackbarHostState
 ) {
-    val scope = kotlinx.coroutines.MainScope()
-    scope.launch {
+    kotlinx.coroutines.MainScope().launch {
         try {
             context.contentResolver.openOutputStream(uri)?.use { output ->
                 if (isDocx) {
                     XWPFDocument().use { doc ->
-                        val lines = content.split("\n")
-                        for (line in lines) {
+                        content.split("\n").forEach { line ->
                             if (line.isNotBlank()) {
                                 doc.createParagraph().createRun().setText(line)
                             } else {
