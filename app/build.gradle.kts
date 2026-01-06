@@ -66,27 +66,30 @@ android {
         }
         jniLibs {
             useLegacyPackaging = true
-            // Современный синтаксис AGP 8.6.0
             pickFirsts.add("**/*.so")
         }
     }
 
     sourceSets {
         getByName("main") {
-            // Указываем путь к сгенерированным нативным либам libGDX
             jniLibs.srcDirs(layout.buildDirectory.dir("gdx-natives/lib"))
         }
     }
 }
 
 dependencies {
-    // Core
+    // Core & UI
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.appcompat:appcompat:1.7.0")
+    
+    // ДОБАВЛЕНО: Традиционные View компоненты (нужны для VideoPlayerActivity)
+    implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.0")
 
-    // UI & Compose
+    // Compose
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
@@ -99,19 +102,23 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
 
-    // Security (Google Tink 1.20.0)
+    // Security
     implementation("com.google.crypto.tink:tink-android:1.20.0")
 
-    // Database (Room + SQLCipher)
+    // Database
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
 
-    // Media & Docs
-    implementation("androidx.media3:media3-exoplayer:1.4.1")
-    implementation("androidx.media3:media3-ui:1.4.1")
+    // Media3 (MediaSession исправляет ошибки в MusicPlaybackService)
+    val media3Version = "1.4.1"
+    implementation("androidx.media3:media3-exoplayer:$media3Version")
+    implementation("androidx.media3:media3-ui:$media3Version")
+    implementation("androidx.media3:media3-session:$media3Version") // ДОБАВЛЕНО для MediaSessionService
+
+    // Docs & Coil
     implementation("org.apache.poi:poi-ooxml:5.2.3")
     implementation("io.coil-kt:coil-compose:2.6.0")
 
@@ -125,11 +132,10 @@ dependencies {
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
 }
 
-// РЕШЕНИЕ ОШИБКИ ИМПЛИЦИТНОЙ ЗАВИСИМОСТИ
+// Таски для нативных библиотек
 val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
     val gdxVersion = "1.12.1"
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-    
     platforms.forEach { platform ->
         val jarConfiguration = configurations.detachedConfiguration(
             dependencies.create("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
@@ -142,7 +148,6 @@ val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
     into(layout.buildDirectory.dir("gdx-natives"))
 }
 
-// Привязываем копирование ко всем задачам упаковки JNI
 tasks.configureEach {
     if (name.contains("merge") && name.contains("JniLibFolders")) {
         dependsOn(copyAndroidNatives)
