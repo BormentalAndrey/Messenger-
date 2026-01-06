@@ -9,12 +9,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
@@ -38,14 +40,14 @@ fun TextEditorScreen(navController: NavHostController) {
 
     val openLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
+    ) { uri: Uri? ->
         uri?.let { u ->
             scope.launch {
                 try {
                     val extension = u.lastPathSegment?.substringAfterLast(".")?.lowercase()
-                    textContent = when (extension) {
+                    val content: String = when (extension) {
                         "docx" -> {
-                            context.contentResolver.openInputStream(u)?.use { input ->
+                            context.contentResolver.openInputStream(u)?.use { input: java.io.InputStream ->
                                 XWPFDocument(input).use { doc ->
                                     doc.paragraphs.joinToString("\n") { it.text }
                                 }
@@ -53,7 +55,7 @@ fun TextEditorScreen(navController: NavHostController) {
                         }
                         else -> {
                             var result: String? = null
-                            context.contentResolver.openInputStream(u)?.use { input ->
+                            context.contentResolver.openInputStream(u)?.use { input: java.io.InputStream ->
                                 for (charset in charsets) {
                                     try {
                                         result = input.bufferedReader(charset).readText()
@@ -64,6 +66,8 @@ fun TextEditorScreen(navController: NavHostController) {
                             result ?: ""
                         }
                     }
+
+                    textContent = content
                     currentUri = u
                     fileName = u.lastPathSegment ?: "Файл"
                     isModified = false
@@ -76,7 +80,7 @@ fun TextEditorScreen(navController: NavHostController) {
 
     val saveLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("*/*")
-    ) { uri ->
+    ) { uri: Uri? ->
         uri?.let {
             saveFile(context, it, textContent, it.lastPathSegment?.endsWith(".docx", true) == true, snackbarHostState)
             isModified = false
@@ -110,42 +114,47 @@ fun TextEditorScreen(navController: NavHostController) {
                 title = { Text(fileName, color = Color.Black) },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Filled.ArrowBack, null, tint = Color.Black)
+                        Icon(Icons.Filled.ArrowBack, contentDescription = null, tint = Color.Black)
                     }
                 },
                 actions = {
                     IconButton(onClick = { openLauncher.launch(arrayOf("*/*")) }) {
-                        Icon(Icons.Filled.FolderOpen, null, tint = Color.Black)
+                        Icon(Icons.Filled.FolderOpen, contentDescription = null, tint = Color.Black)
                     }
                     IconButton(onClick = { saveCurrent() }) {
-                        Icon(Icons.Filled.Save, null, tint = Color.Black)
+                        Icon(Icons.Filled.Save, contentDescription = null, tint = Color.Black)
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.White)
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) }
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        bottomBar = {
+            Surface(color = Color(0xFFF0F0F0), modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Символов: ${textContent.length} • ${if (isModified) "Изменено" else "Сохранено"}",
+                    color = Color.Black.copy(alpha = 0.7f),
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(8.dp)
+                )
+            }
+        }
     ) { paddingValues ->
-        Column(
+        TextField(
+            value = textContent,
+            onValueChange = {
+                textContent = it
+                isModified = true
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(Color.White)
                 .verticalScroll(rememberScrollState())
-                .padding(16.dp)
-        ) {
-            TextField(
-                value = textContent,
-                onValueChange = {
-                    textContent = it
-                    isModified = true
-                },
-                modifier = Modifier
-                    .fillMaxSize(),
-                textStyle = LocalTextStyle.current.copy(fontSize = 16.sp),
-                placeholder = { Text("Введите текст...") }
-            )
-        }
+                .background(Color.White)
+                .padding(16.dp),
+            textStyle = LocalTextStyle.current.copy(color = Color.Black, fontSize = 16.sp),
+            singleLine = false
+        )
     }
 }
 
