@@ -16,7 +16,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.kakdela.p2p.auth.SmsCodeManager
+import com.kakdela.p2p.auth.SmsCodeStore
 import com.kakdela.p2p.data.IdentityRepository
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -38,22 +40,44 @@ fun PhoneAuthScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var permissionDenied by remember { mutableStateOf(false) }
 
-    // --- Проверка разрешения на SMS ---
+    // --- Автозаполнение кода из SMS ---
+    LaunchedEffect(sentCode) {
+        if (sentCode != null) {
+            while (true) {
+                val received = SmsCodeStore.lastReceivedCode
+                if (received != null && received == sentCode) {
+                    inputCode = received
+                    SmsCodeStore.lastReceivedCode = null // Очищаем после использования
+                    break 
+                }
+                delay(1000) // Проверка раз в секунду
+            }
+        }
+    }
+
+    // --- Проверка разрешений ---
     val smsPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        permissionDenied = !granted
-        if (!granted) {
-            error = "Без разрешения SMS регистрация невозможна"
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.values.all { it }
+        permissionDenied = !allGranted
+        if (!allGranted) {
+            error = "Необходимы разрешения на SMS для верификации"
         }
     }
 
     LaunchedEffect(Unit) {
-        val granted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.SEND_SMS
-        ) == PackageManager.PERMISSION_GRANTED
-        if (!granted) smsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
+        val permissions = arrayOf(
+            Manifest.permission.SEND_SMS,
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.READ_SMS
+        )
+        val needed = permissions.filter {
+            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (needed.isNotEmpty()) {
+            smsPermissionLauncher.launch(needed.toTypedArray())
+        }
     }
 
     Column(
@@ -63,17 +87,17 @@ fun PhoneAuthScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("Регистрация", style = MaterialTheme.typography.headlineMedium)
-        Text("Ваш номер будет проверен через SMS", style = MaterialTheme.typography.bodySmall)
+        Text("Цифровая Личность", style = MaterialTheme.typography.headlineMedium)
+        Text("P2P верификация через ваш номер", style = MaterialTheme.typography.bodySmall)
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(24.dp))
 
-        // Ввод имени и телефона
         OutlinedTextField(
             value = name,
             onValueChange = { name = it },
-            label = { Text("Имя (Display Name)") },
-            modifier = Modifier.fillMaxWidth()
+            label = { Text("Ваше имя") },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = sentCode == null
         )
 
         Spacer(Modifier.height(8.dp))
@@ -81,53 +105,44 @@ fun PhoneAuthScreen(
         OutlinedTextField(
             value = phone,
             onValueChange = { phone = it },
-            label = { Text("Номер телефона") },
-            modifier = Modifier.fillMaxWidth()
+            label = { Text("Номер телефона (+7...)") },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = sentCode == null
         )
 
         Spacer(Modifier.height(16.dp))
 
         if (sentCode == null) {
-            // --- Шаг 1: Получить код ---
             Button(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     error = null
                     if (name.isBlank() || phone.isBlank()) {
-                        error = "Заполните все поля"
+                        error = "Заполните данные"
                         return@Button
                     }
-
-                    val granted = ContextCompat.checkSelfPermission(
-                        context,
-                        Manifest.permission.SEND_SMS
-                    ) == PackageManager.PERMISSION_GRANTED
-
-                    if (!granted) {
-                        permissionDenied = true
-                        return@Button
-                    }
-
+                    
                     val code = SmsCodeManager.generateCode()
                     sentCode = code
                     SmsCodeManager.sendCode(context, phone, code)
                 }
             ) {
-                Text("Получить код")
+                Text("Проверить номер")
             }
         } else {
-            // --- Шаг 2: Ввести код ---
             OutlinedTextField(
                 value = inputCode,
                 onValueChange = { inputCode = it },
-                label = { Text("Код из SMS") },
-                modifier = Modifier.fillMaxWidth()
+                label = { Text("Код подтверждения") },
+                modifier = Modifier.fillMaxWidth(),
+                supportingText = { Text("Код будет перехвачен автоматически") }
             )
 
             Spacer(Modifier.height(16.dp))
 
             Button(
                 modifier = Modifier.fillMaxWidth(),
+                enabled = !isLoading,
                 onClick = {
                     if (inputCode == sentCode) {
                         isLoading = true
@@ -139,13 +154,12 @@ fun PhoneAuthScreen(
                                         .edit().putString("my_phone", phone).apply()
                                     onSuccess()
                                 } else {
-                                    error = "Ошибка при создании цифровой личности"
+                                    error = "Ошибка публикации в P2P сеть"
                                     isLoading = false
                                 }
                             } catch (e: Exception) {
-                                error = "Ошибка регистрации: ${e.message}"
+                                error = e.localizedMessage
                                 isLoading = false
-                                e.printStackTrace()
                             }
                         }
                     } else {
@@ -153,29 +167,32 @@ fun PhoneAuthScreen(
                     }
                 }
             ) {
-                if (isLoading) CircularProgressIndicator() else Text("Создать цифровую личность")
+                if (isLoading) CircularProgressIndicator(size = 24.dp) 
+                else Text("Подтвердить и войти")
+            }
+            
+            TextButton(onClick = { sentCode = null; inputCode = "" }) {
+                Text("Изменить номер")
             }
         }
 
         if (permissionDenied) {
-            Spacer(Modifier.height(16.dp))
             Button(
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                 onClick = {
-                    val intent = Intent(
-                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                        Uri.fromParts("package", context.packageName, null)
-                    )
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.fromParts("package", context.packageName, null)
+                    }
                     context.startActivity(intent)
-                }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
             ) {
-                Text("Разрешить отправку SMS в настройках")
+                Text("Дать разрешения в настройках")
             }
         }
 
         error?.let {
-            Spacer(Modifier.height(12.dp))
-            Text(it, color = MaterialTheme.colorScheme.error)
+            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
         }
     }
 }
+
