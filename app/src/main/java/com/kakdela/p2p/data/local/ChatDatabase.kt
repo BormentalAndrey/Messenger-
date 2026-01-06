@@ -4,8 +4,8 @@ import android.content.Context
 import androidx.room.*
 import com.kakdela.p2p.data.Message
 import kotlinx.coroutines.flow.Flow
-import net.sqlcipher.database.SQLiteDatabase
-import net.sqlcipher.database.SupportOpenHelperFactory
+import net.sqlcipher.database.SQLiteDatabase // ВАЖНО
+import net.sqlcipher.database.SupportOpenHelperFactory // ВАЖНО
 
 @Dao
 interface MessageDao {
@@ -13,13 +13,13 @@ interface MessageDao {
     fun getAllMessages(): Flow<List<Message>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(message: Message)
+    suspend fun insert(message: MessageEntity) // Используйте Entity, если в базе Room
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(messages: List<Message>)
+    suspend fun insertAll(messages: List<MessageEntity>)
 }
 
-@Database(entities = [Message::class], version = 2, exportSchema = false)
+@Database(entities = [MessageEntity::class], version = 2, exportSchema = false)
 abstract class ChatDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
 
@@ -28,17 +28,14 @@ abstract class ChatDatabase : RoomDatabase() {
 
         fun getDatabase(context: Context): ChatDatabase {
             return INSTANCE ?: synchronized(this) {
-                // Инициализация библиотеки SQLCipher
-                SQLiteDatabase.loadLibs(context)
-                
-                val factory = SupportOpenHelperFactory("secure_db_password".toByteArray())
+                SQLiteDatabase.loadLibs(context) // Загрузка нативных либ
+                val factory = SupportOpenHelperFactory("secure_password".toByteArray())
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     ChatDatabase::class.java,
-                    "chat_secure_db"
+                    "chat_db"
                 )
                 .openHelperFactory(factory)
-                .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance
                 instance
