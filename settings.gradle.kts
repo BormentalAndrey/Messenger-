@@ -1,5 +1,3 @@
-// Файл: /settings.gradle.kts
-
 pluginManagement {
     repositories {
         google()
@@ -11,14 +9,14 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
-        google()
+        google() // Обязательно первым для Tink и Firebase
         mavenCentral()
-        // Добавлено для WebRTC (ТЗ п. 8)
         maven { url = uri("https://getstream.io/maven") }
         maven { url = uri("https://jitpack.io") }
+        maven { url = uri("https://maven.google.com") } 
     }
 }
 
-rootProject.name = "Messenger-"
+rootProject.name = "MessengerP2P"
 include(":app")
 
