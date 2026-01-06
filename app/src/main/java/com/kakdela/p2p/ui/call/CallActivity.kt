@@ -15,12 +15,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+// ИСПРАВЛЕНО: Путь к рендереру
 import io.getstream.webrtc.android.ui.VideoRenderer
 
 class CallActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
         val targetId = intent.getStringExtra("targetId") ?: "Unknown"
 
         setContent {
@@ -34,11 +34,11 @@ class CallActivity : ComponentActivity() {
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text("Звонок: $targetId", color = Color.Cyan, style = MaterialTheme.typography.headlineMedium)
-                    
                     Spacer(modifier = Modifier.height(50.dp))
                     
                     Box(modifier = Modifier.size(300.dp).padding(16.dp)) {
-                        Text("Ожидание подключения...", color = Color.Gray, modifier = Modifier.align(Alignment.Center))
+                        // Здесь будет VideoRenderer при установке связи
+                        Text("Ожидание...", color = Color.Gray, modifier = Modifier.align(Alignment.Center))
                     }
 
                     Row(
@@ -52,14 +52,9 @@ class CallActivity : ComponentActivity() {
                                 tint = if (isMuted) Color.Red else Color.White
                             )
                         }
-                        
-                        Button(
-                            onClick = { finish() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-                        ) {
+                        Button(onClick = { finish() }, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) {
                             Text("Сбросить")
                         }
-
                         IconButton(onClick = { isCameraOn = !isCameraOn }) {
                             Icon(
                                 imageVector = if (isCameraOn) Icons.Default.Videocam else Icons.Default.VideocamOff,
