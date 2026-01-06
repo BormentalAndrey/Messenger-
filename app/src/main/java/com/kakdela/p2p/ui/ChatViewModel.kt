@@ -1,97 +1,73 @@
 package com.kakdela.p2p.ui
 
 import android.app.Application
-import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.FirebaseFirestore
-import com.kakdela.p2p.data.*
+import com.kakdela.p2p.data.Message
+import com.kakdela.p2p.data.MessageType
 import com.kakdela.p2p.data.local.ChatDatabase
 import com.kakdela.p2p.data.local.MessageEntity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class ChatViewModel(application: Application) : AndroidViewModel(application) {
+class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val db = FirebaseFirestore.getInstance()
-    private val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: ""
-    private var chatId: String = ""
+    private val firestore = FirebaseFirestore.getInstance()
+    private val dao = ChatDatabase.getDatabase(app).messageDao()
+    private val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages = _messages.asStateFlow()
 
-    private var listener: ListenerRegistration? = null
-    
-    // Исправлено создание репозитория (без аргументов)
-    private val msgRepo = MessageRepository() 
-    private val dao = ChatDatabase.getDatabase(application).messageDao()
+    private var chatId: String = ""
 
-    fun initChat(id: String, uid: String) {
-        this.chatId = id
-        listenMessages()
+    fun initChat(id: String) {
+        chatId = id
+        listen()
     }
 
-    private fun listenMessages() {
-        if (chatId.isEmpty()) return
-        listener?.remove()
-        listener = db.collection("chats").document(chatId)
+    private fun listen() {
+        firestore.collection("chats").document(chatId)
             .collection("messages")
             .orderBy("timestamp")
-            .addSnapshotListener { snapshot, e ->
-                if (e != null) return@addSnapshotListener
-                
-                val rawMsgs = snapshot?.toObjects(Message::class.java) ?: emptyList()
-                
-                val processedMsgs = rawMsgs.map { msg ->
-                    msg.copy(isMe = msg.senderId == currentUserId)
-                }
-                _messages.value = processedMsgs
-                
-                // Сохранение в локальную БД Room
+            .addSnapshotListener { snap, _ ->
+                val list = snap?.toObjects(Message::class.java)?.map {
+                    it.copy(isMe = it.senderId == uid)
+                } ?: emptyList()
+
+                _messages.value = list
+
                 viewModelScope.launch {
-                    val entities = processedMsgs.map { msg ->
-                        MessageEntity(
-                            chatId = chatId,
-                            text = msg.text,
-                            senderId = msg.senderId,
-                            timestamp = msg.timestamp
-                        )
-                    }
-                    dao.insertAll(entities)
+                    dao.insertAll(
+                        list.map {
+                            MessageEntity(
+                                id = it.id,
+                                chatId = chatId,
+                                senderId = it.senderId,
+                                text = it.text,
+                                timestamp = it.timestamp
+                            )
+                        }
+                    )
                 }
             }
     }
 
-    fun sendMessage(text: String) {
-        if (text.isBlank()) return
-        uploadMessage(Message(text = text, senderId = currentUserId, type = MessageType.TEXT))
-    }
+    fun send(text: String) {
+        if (chatId.isBlank()) return
+        val ref = firestore.collection("chats").document(chatId)
+            .collection("messages").document()
 
-    fun sendFile(uri: Uri, type: MessageType) {
-        uploadMessage(Message(text = "Файл: ${uri.lastPathSegment}", senderId = currentUserId, type = type))
-    }
-
-    fun sendAudio(uri: Uri, duration: Int) {
-        uploadMessage(Message(senderId = currentUserId, type = MessageType.AUDIO, durationSeconds = duration))
-    }
-
-    fun scheduleMessage(text: String, timeMillis: Long) {
-        uploadMessage(Message(text = text, senderId = currentUserId, timestamp = timeMillis))
-    }
-
-    private fun uploadMessage(msg: Message) {
-        if (chatId.isEmpty()) return
-        val ref = db.collection("chats").document(chatId).collection("messages").document()
-        val finalMsg = msg.copy(id = ref.id)
-        ref.set(finalMsg)
-    }
-
-    override fun onCleared() {
-        listener?.remove()
-        super.onCleared()
+        ref.set(
+            Message(
+                id = ref.id,
+                senderId = uid,
+                text = text,
+                type = MessageType.TEXT
+            )
+        )
     }
 }
-
