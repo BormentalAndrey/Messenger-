@@ -13,7 +13,6 @@ interface MessageDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(message: MessageEntity)
 
-    // ИСПРАВЛЕНО: Добавлен метод insertAll, на который ругалась ViewModel
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(messages: List<MessageEntity>)
 }
@@ -27,8 +26,9 @@ abstract class ChatDatabase : RoomDatabase() {
 
         fun getDatabase(context: Context): ChatDatabase {
             return INSTANCE ?: synchronized(this) {
-                // Инициализация библиотек SQLCipher
-                SQLiteDatabase.loadLibs(context)
+                // Инициализация нативных библиотек SQLCipher
+                // ВАЖНО: Это должно вызываться до создания базы
+                System.loadLibrary("sqlcipher")
                 
                 val factory = SupportOpenHelperFactory("secure_password".toByteArray())
                 val instance = Room.databaseBuilder(
