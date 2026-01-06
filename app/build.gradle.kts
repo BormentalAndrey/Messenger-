@@ -105,12 +105,13 @@ dependencies {
     // Security
     implementation("com.google.crypto.tink:tink-android:1.20.0")
 
-    // Room + SQLCipher
+    // Room
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
+    // SQLCipher (как было)
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
     implementation("androidx.sqlite:sqlite-ktx:2.4.0")
 
@@ -134,9 +135,6 @@ dependencies {
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
 }
 
-/**
- * Копирование native .so libGDX в build/gdx-natives/lib/<abi>
- */
 val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
     val gdxVersion = "1.12.1"
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
@@ -156,13 +154,16 @@ val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
 }
 
 /**
- * 🔥 КРИТИЧНО ДЛЯ GRADLE 8+
- * Явно указываем зависимость mergeJniLibFolders → copyAndroidNatives
+ * 🔴 ВОТ ГЛАВНОЕ ИСПРАВЛЕНИЕ 🔴
+ * Явно говорим Gradle, что merge*JniLibFolders
+ * ЗАВИСИТ от copyAndroidNatives
  */
-afterEvaluate {
-    tasks.matching {
-        it.name.contains("merge") && it.name.contains("JniLibFolders")
-    }.configureEach {
-        dependsOn(copyAndroidNatives)
-    }
+tasks.matching {
+    it.name.contains("merge") && it.name.contains("JniLibFolders")
+}.configureEach {
+    dependsOn(copyAndroidNatives)
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    dependsOn(copyAndroidNatives)
 }
