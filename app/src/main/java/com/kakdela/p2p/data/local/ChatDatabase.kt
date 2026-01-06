@@ -3,17 +3,6 @@ package com.kakdela.p2p.data.local
 import android.content.Context
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
-import net.zetetic.database.sqlcipher.SQLiteDatabase
-import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
-
-@Entity(tableName = "messages")
-data class MessageEntity(
-    @PrimaryKey val id: String,
-    val chatId: String,
-    val senderId: String,
-    val text: String,
-    val timestamp: Long
-)
 
 @Dao
 interface MessageDao {
@@ -38,27 +27,18 @@ abstract class ChatDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
 
     companion object {
-        @Volatile
-        private var INSTANCE: ChatDatabase? = null
+        @Volatile private var INSTANCE: ChatDatabase? = null
 
-        fun getInstance(context: Context): ChatDatabase {
+        fun getDatabase(context: Context): ChatDatabase {
             return INSTANCE ?: synchronized(this) {
-                SQLiteDatabase.loadLibs(context)
-
-                val passphrase = "secure_password".toByteArray()
-                val factory = SupportOpenHelperFactory(passphrase)
-
-                val instance = Room.databaseBuilder(
+                Room.databaseBuilder(
                     context.applicationContext,
                     ChatDatabase::class.java,
-                    "chat_secure_db"
+                    "chat_db"
                 )
-                    .openHelperFactory(factory)
                     .fallbackToDestructiveMigration()
                     .build()
-
-                INSTANCE = instance
-                instance
+                    .also { INSTANCE = it }
             }
         }
     }
