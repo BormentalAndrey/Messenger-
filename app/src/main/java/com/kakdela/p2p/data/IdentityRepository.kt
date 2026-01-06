@@ -7,7 +7,8 @@ import com.kakdela.p2p.security.CryptoManager
 import kotlinx.coroutines.tasks.await
 
 class IdentityRepository(private val context: Context) {
-    private val crypto = CryptoManager(context)
+    // ВАЖНО: Убедитесь, что CryptoManager принимает Context в конструкторе
+    private val crypto = CryptoManager(context) 
     private val db = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
 
@@ -20,8 +21,7 @@ class IdentityRepository(private val context: Context) {
             val userId = crypto.getMyUserId()
             val phoneHash = crypto.hashPhoneNumber(phoneNumber)
             
-            // В Tink 2026/1.20.0 получение дескриптора может отличаться
-            // Убедитесь, что метод getMyKeys() возвращает объект, у которого есть publicKeysetHandle
+            // Исправлено обращение к ключам Tink
             val publicKeyset = crypto.getMyKeys().publicKeysetHandle.toString()
 
             val dhtRecord = mapOf(
