@@ -21,6 +21,10 @@ import io.getstream.webrtc.android.compose.VideoRenderer
 import org.webrtc.*
 import java.util.concurrent.CopyOnWriteArrayList
 
+/**
+ * CallActivity реализует логику видеозвонка точка-точка (P2P).
+ * Использует WebRTC для передачи медиаданных и IdentityRepository для обмена сигналами (SDP/ICE).
+ */
 class CallActivity : ComponentActivity() {
 
     private lateinit var identityRepo: IdentityRepository
@@ -35,6 +39,7 @@ class CallActivity : ComponentActivity() {
     private var localVideoTrack: VideoTrack? = null
     private var remoteVideoTrack by mutableStateOf<VideoTrack?>(null)
 
+    // Очередь для ICE-кандидатов, пришедших до того, как удаленный SDP был обработан
     private val pendingIce = CopyOnWriteArrayList<IceCandidate>()
 
     private var targetIp = ""
@@ -63,6 +68,9 @@ class CallActivity : ComponentActivity() {
                     } else {
                         startCall()
                     }
+                } else {
+                    Log.e("CallActivity", "Permissions not granted")
+                    finish()
                 }
             }
 
@@ -77,7 +85,7 @@ class CallActivity : ComponentActivity() {
     }
 
     /* ----------------------------------------------------
-       UI
+       UI Элементы
      ---------------------------------------------------- */
 
     @Composable
@@ -87,19 +95,24 @@ class CallActivity : ComponentActivity() {
 
         Box(Modifier.fillMaxSize().background(Color.Black)) {
 
+            
+
             remoteVideoTrack?.let {
                 VideoRenderer(
                     videoTrack = it,
                     eglBaseContext = eglBase.eglBaseContext,
                     modifier = Modifier.fillMaxSize(),
-                    // ИСПРАВЛЕНО: Используем RendererCommon.RendererEvents
                     rendererEvents = object : RendererCommon.RendererEvents {
                         override fun onFirstFrameRendered() {}
                         override fun onFrameResolutionChanged(w: Int, h: Int, rot: Int) {}
                     }
                 )
             } ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Установка P2P соединения…", color = Color.Cyan)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color.Cyan)
+                    Spacer(Modifier.height(16.dp))
+                    Text("Установка P2P соединения…", color = Color.Cyan)
+                }
             }
 
             if (cameraOn) {
@@ -129,12 +142,10 @@ class CallActivity : ComponentActivity() {
                     .padding(32.dp),
                 horizontalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-
                 FloatingActionButton(
                     onClick = {
                         muted = !muted
-                        peer.senders
-                            .mapNotNull { it.track() as? AudioTrack }
+                        peer.senders.mapNotNull { it.track() as? AudioTrack }
                             .forEach { it.setEnabled(!muted) }
                     },
                     containerColor = if (muted) Color.Red else Color.DarkGray
@@ -158,10 +169,8 @@ class CallActivity : ComponentActivity() {
                     containerColor = if (!cameraOn) Color.Red else Color.DarkGray
                 ) {
                     Icon(
-                        if (cameraOn) Icons.Default.Videocam
-                        else Icons.Default.VideocamOff,
-                        null,
-                        tint = Color.White
+                        if (cameraOn) Icons.Default.Videocam else Icons.Default.VideocamOff,
+                        null, tint = Color.White
                     )
                 }
             }
@@ -169,7 +178,7 @@ class CallActivity : ComponentActivity() {
     }
 
     /* ----------------------------------------------------
-       WEBRTC CORE
+       WebRTC Логика
      ---------------------------------------------------- */
 
     private fun initWebRTC() {
@@ -183,13 +192,12 @@ class CallActivity : ComponentActivity() {
             .createPeerConnectionFactory()
 
         val config = PeerConnection.RTCConfiguration(
-            listOf(
-                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
-            )
+            listOf(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer())
         )
 
         peer = factory.createPeerConnection(config, object : PeerConnection.Observer {
             override fun onIceCandidate(candidate: IceCandidate) {
+                // Отправляем найденного ICE-кандидата через наш P2P репозиторий
                 identityRepo.sendSignaling(
                     targetIp,
                     "ICE",
@@ -198,14 +206,22 @@ class CallActivity : ComponentActivity() {
             }
 
             override fun onTrack(transceiver: RtpTransceiver?) {
-                if (transceiver?.receiver?.track() is VideoTrack) {
-                    remoteVideoTrack = transceiver.receiver.track() as VideoTrack
+                val track = transceiver?.receiver?.track()
+                if (track is VideoTrack) {
+                    remoteVideoTrack = track
                 }
             }
 
             override fun onAddStream(stream: MediaStream?) {
                 if (stream?.videoTracks?.isNotEmpty() == true) {
                     remoteVideoTrack = stream.videoTracks[0]
+                }
+            }
+
+            override fun onConnectionChange(state: PeerConnection.PeerConnectionState?) {
+                if (state == PeerConnection.PeerConnectionState.DISCONNECTED || 
+                    state == PeerConnection.PeerConnectionState.FAILED) {
+                    finish()
                 }
             }
 
@@ -217,11 +233,6 @@ class CallActivity : ComponentActivity() {
             override fun onRemoveStream(p0: MediaStream?) {}
             override fun onDataChannel(p0: DataChannel?) {}
             override fun onRenegotiationNeeded() {}
-            override fun onConnectionChange(state: PeerConnection.PeerConnectionState?) {
-                if (state == PeerConnection.PeerConnectionState.DISCONNECTED || state == PeerConnection.PeerConnectionState.FAILED) {
-                    finish()
-                }
-            }
         })!!
     }
 
@@ -237,20 +248,19 @@ class CallActivity : ComponentActivity() {
         capturer?.startCapture(1280, 720, 30)
 
         localVideoTrack = factory.createVideoTrack("LOCAL_VIDEO", videoSource)
-        val audioTrack = factory.createAudioTrack(
-            "LOCAL_AUDIO",
-            factory.createAudioSource(MediaConstraints())
-        )
+        val audioTrack = factory.createAudioTrack("LOCAL_AUDIO", factory.createAudioSource(MediaConstraints()))
 
         peer.addTrack(localVideoTrack)
         peer.addTrack(audioTrack)
     }
 
     /* ----------------------------------------------------
-       SIGNALING (Чистое P2P)
+       P2P Сигналинг
      ---------------------------------------------------- */
 
     private fun bindSignaling() {
+        
+
         identityRepo.onSignalingMessageReceived = { type, data, fromIp ->
             if (fromIp == targetIp) {
                 when (type) {
@@ -288,7 +298,6 @@ class CallActivity : ComponentActivity() {
         }
 
         peer.createOffer(object : SimpleSdpObserver() {
-            // ИСПРАВЛЕНО: Аргумент должен быть SessionDescription?
             override fun onCreateSuccess(sdp: SessionDescription?) {
                 sdp?.let {
                     peer.setLocalDescription(object : SimpleSdpObserver() {}, it)
@@ -298,24 +307,22 @@ class CallActivity : ComponentActivity() {
         }, constraints)
     }
 
-    private fun answerCall(offer: String) {
-        peer.setRemoteDescription(
-            object : SimpleSdpObserver() {
-                override fun onSetSuccess() {
-                    remoteSdpSet = true
-                    peer.createAnswer(object : SimpleSdpObserver() {
-                        override fun onCreateSuccess(sdp: SessionDescription?) {
-                            sdp?.let {
-                                peer.setLocalDescription(object : SimpleSdpObserver() {}, it)
-                                identityRepo.sendSignaling(targetIp, "ANSWER", it.description)
-                                flushIce()
-                            }
+    private fun answerCall(offerDescription: String) {
+        val offerSdp = SessionDescription(SessionDescription.Type.OFFER, offerDescription)
+        peer.setRemoteDescription(object : SimpleSdpObserver() {
+            override fun onSetSuccess() {
+                remoteSdpSet = true
+                peer.createAnswer(object : SimpleSdpObserver() {
+                    override fun onCreateSuccess(sdp: SessionDescription?) {
+                        sdp?.let {
+                            peer.setLocalDescription(object : SimpleSdpObserver() {}, it)
+                            identityRepo.sendSignaling(targetIp, "ANSWER", it.description)
+                            flushIce()
                         }
-                    }, MediaConstraints())
-                }
-            },
-            SessionDescription(SessionDescription.Type.OFFER, offer)
-        )
+                    }
+                }, MediaConstraints())
+            }
+        }, offerSdp)
     }
 
     override fun onDestroy() {
@@ -332,8 +339,10 @@ class CallActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    /**
+     * Базовая реализация наблюдателя SDP событий с исправленными сигнатурами для Kotlin.
+     */
     open class SimpleSdpObserver : SdpObserver {
-        // ИСПРАВЛЕНО: Добавлены nullable типы для соответствия интерфейсу Java
         override fun onCreateSuccess(sdp: SessionDescription?) {}
         override fun onSetSuccess() {}
         override fun onCreateFailure(error: String?) { Log.e("WebRTC", "SDP Create Failure: $error") }
