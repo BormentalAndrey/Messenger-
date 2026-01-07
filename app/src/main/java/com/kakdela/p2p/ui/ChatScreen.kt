@@ -1,17 +1,19 @@
 package com.kakdela.p2p.ui
 
 import android.content.Intent
+import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.net.Uri
+import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -31,6 +33,7 @@ import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.data.Message
 import com.kakdela.p2p.data.MessageType
 import com.kakdela.p2p.ui.call.CallActivity
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -48,7 +51,8 @@ fun ChatScreen(
     onSendMessage: (String) -> Unit,
     onSendFile: (Uri, MessageType) -> Unit,
     onSendAudio: (Uri, Int) -> Unit,
-    onScheduleMessage: (String, Long) -> Unit
+    onScheduleMessage: (String, Long) -> Unit,
+    onBack: () -> Unit
 ) {
     var textState by remember { mutableStateOf("") }
     var showDatePicker by remember { mutableStateOf(false) }
@@ -57,6 +61,14 @@ fun ChatScreen(
     val datePickerState = rememberDatePickerState()
     val timePickerState = rememberTimePickerState()
     val context = LocalContext.current
+    val listState = rememberLazyListState()
+
+    // Прокрутка вниз при получении новых сообщений
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
+    }
 
     fun scheduleAndSend() {
         val date = datePickerState.selectedDateMillis ?: return
@@ -80,7 +92,7 @@ fun ChatScreen(
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black),
                 navigationIcon = {
-                    IconButton(onClick = { /* Handle back */ }) {
+                    IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = null, tint = NeonCyan)
                     }
                 }
@@ -100,9 +112,8 @@ fun ChatScreen(
                 onScheduleClick = { if (textState.isNotBlank()) showDatePicker = true },
                 onSendAudio = onSendAudio,
                 onStartCall = {
-                    // В P2P звонок инициируется через IdentityRepository сигналинг
                     val intent = Intent(context, CallActivity::class.java).apply {
-                        putExtra("targetIp", "auto") // Логика определения IP внутри CallActivity
+                        putExtra("targetIp", "auto")
                         putExtra("chatId", chatPartnerId)
                     }
                     context.startActivity(intent)
@@ -135,15 +146,14 @@ fun ChatScreen(
         }
 
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(horizontal = 12.dp),
-            contentPadding = PaddingValues(vertical = 16.dp),
-            reverseLayout = false // Обычно чаты идут сверху вниз или снизу вверх (stackFromEnd)
+            contentPadding = PaddingValues(vertical = 16.dp)
         ) {
             val currentTime = System.currentTimeMillis()
-            // Фильтрация отложенных сообщений
             val visibleMessages = messages.filter { 
                 it.isMe || it.scheduledTime == null || it.scheduledTime!! <= currentTime 
             }
@@ -171,7 +181,6 @@ fun ChatBubble(message: Message) {
                 .border(0.5.dp, neonEdge.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
-                // Если сообщение запланировано и еще не отправлено (визуальный индикатор для себя)
                 if (message.scheduledTime != null && message.isMe && message.scheduledTime!! > System.currentTimeMillis()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.Schedule, null, modifier = Modifier.size(12.dp), tint = NeonMagenta)
@@ -190,7 +199,6 @@ fun ChatBubble(message: Message) {
                     )
                     MessageType.AUDIO -> AudioPlayerView(message.fileUrl ?: "", message.durationSeconds)
                     MessageType.FILE -> FileP2PView(message.fileName ?: "Файл")
-                    // Обработка системных типов (звонки и т.д.) для exhaustive when
                     else -> Text("Системное сообщение: ${message.type}", color = Color.Gray, fontSize = 12.sp)
                 }
                 
@@ -226,9 +234,19 @@ fun ChatInputField(
 ) {
     val context = LocalContext.current
     var recording by remember { mutableStateOf(false) }
-    val recorder = remember { MediaRecorder() }
-    var audioFile by remember { mutableStateOf<java.io.File?>(null) }
-    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let(onAttachFile) }
+    var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var audioFile by remember { mutableStateOf<File?>(null) }
+    
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { onAttachFile(it) }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            recorder?.release()
+            recorder = null
+        }
+    }
 
     Surface(color = Color.Black, modifier = Modifier.imePadding()) {
         Row(
@@ -250,29 +268,43 @@ fun ChatInputField(
                     unfocusedContainerColor = SurfaceGray,
                     focusedTextColor = Color.White,
                     unfocusedTextColor = Color.White,
-                    cursorColor = NeonCyan
-                )
+                    cursorColor = NeonCyan,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent
+                ),
+                shape = RoundedCornerShape(24.dp)
             )
             IconButton(onClick = {
                 if (!recording) {
                     try {
-                        audioFile = java.io.File(context.cacheDir, "p2p_voice_${System.currentTimeMillis()}.m4a")
-                        recorder.apply {
+                        val file = File(context.cacheDir, "p2p_voice_${System.currentTimeMillis()}.m4a")
+                        audioFile = file
+                        
+                        val newRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            MediaRecorder(context)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            MediaRecorder()
+                        }.apply {
                             setAudioSource(MediaRecorder.AudioSource.MIC)
                             setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                             setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                            setOutputFile(audioFile!!.absolutePath)
+                            setOutputFile(file.absolutePath)
                             prepare()
                             start()
                         }
+                        recorder = newRecorder
                         recording = true
                     } catch (e: Exception) {
-                        Toast.makeText(context, "Ошибка записи", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Ошибка записи: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
                 } else {
                     try {
-                        recorder.stop()
-                        recorder.reset()
+                        recorder?.apply {
+                            stop()
+                            release()
+                        }
+                        recorder = null
                         recording = false
                         audioFile?.let { onSendAudio(Uri.fromFile(it), 0) }
                     } catch (e: Exception) {
@@ -296,24 +328,48 @@ fun ChatInputField(
 @Composable
 fun AudioPlayerView(url: String, duration: Int) {
     val context = LocalContext.current
-    val mediaPlayer = remember { android.media.MediaPlayer() }
-    
+    var isPlaying by remember { mutableStateOf(false) }
+    var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            mediaPlayer?.release()
+            mediaPlayer = null
+        }
+    }
+
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = { 
-            try {
-                mediaPlayer.apply { 
-                    reset()
-                    setDataSource(context, Uri.parse(url))
-                    prepare()
-                    start()
-                } 
-            } catch (e: Exception) {
-                Toast.makeText(context, "Файл не найден", Toast.LENGTH_SHORT).show()
+            if (isPlaying) {
+                mediaPlayer?.pause()
+                isPlaying = false
+            } else {
+                try {
+                    if (mediaPlayer == null) {
+                        mediaPlayer = MediaPlayer().apply {
+                            setDataSource(context, Uri.parse(url))
+                            prepare()
+                            setOnCompletionListener { isPlaying = false }
+                        }
+                    }
+                    mediaPlayer?.start()
+                    isPlaying = true
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Ошибка воспроизведения", Toast.LENGTH_SHORT).show()
+                }
             }
         }) {
-            Icon(Icons.Default.PlayArrow, null, tint = NeonCyan)
+            Icon(
+                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, 
+                contentDescription = null, 
+                tint = NeonCyan
+            )
         }
-        Text(if (duration > 0) "$duration сек" else "Голосовое", color = Color.White, fontSize = 12.sp)
+        Text(
+            text = if (duration > 0) "$duration сек" else "Голосовое", 
+            color = Color.White, 
+            fontSize = 12.sp
+        )
     }
 }
 
