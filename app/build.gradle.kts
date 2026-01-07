@@ -1,8 +1,17 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
     id("com.google.gms.google-services")
+}
+
+// Загружаем данные из local.properties
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(localPropertiesFile.inputStream())
 }
 
 android {
@@ -30,24 +39,33 @@ android {
 
     signingConfigs {
         create("release") {
+            // Пытаемся взять из системы, если нет — берем из local.properties
             storeFile = file("my-release-key.jks")
-            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
-            keyAlias = System.getenv("KEY_ALIAS") ?: ""
-            keyPassword = System.getenv("KEY_PASSWORD") ?: ""
+            storePassword = System.getenv("KEYSTORE_PASSWORD") 
+                ?: localProperties.getProperty("RELEASE_STORE_PASSWORD") ?: "ваш_пароль"
+            keyAlias = System.getenv("KEY_ALIAS") 
+                ?: localProperties.getProperty("RELEASE_KEY_ALIAS") ?: "ваш_алиас"
+            keyPassword = System.getenv("KEY_PASSWORD") 
+                ?: localProperties.getProperty("RELEASE_KEY_PASSWORD") ?: "ваш_пароль"
+            
+            enableV1Signing = true
+            enableV2Signing = true
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
-            val enableSign = (System.getenv("KEYSTORE_PASSWORD") ?: "").isNotEmpty()
-            if (enableSign) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            // Теперь подпись привязана жестко, чтобы не собирать пустые APK
+            signingConfig = signingConfigs.getByName("release")
+            
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -196,3 +214,4 @@ tasks.withType<JavaCompile>().configureEach {
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     dependsOn(copyAndroidNatives)
 }
+
