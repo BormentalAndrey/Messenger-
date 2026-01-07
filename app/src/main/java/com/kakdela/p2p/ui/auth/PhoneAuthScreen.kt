@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -27,42 +28,41 @@ fun PhoneAuthScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // Используем remember для сохранения репозитория при перерисовках
     val identityRepo = remember { IdentityRepository(context) }
 
-    // Поля ввода
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var sentCode by remember { mutableStateOf<String?>(null) }
     var inputCode by remember { mutableStateOf("") }
 
-    // Состояния UI
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var permissionDenied by remember { mutableStateOf(false) }
 
-    // --- Автозаполнение кода из SMS ---
+    // Автоматический перехват кода из SMS
     LaunchedEffect(sentCode) {
         if (sentCode != null) {
             while (true) {
                 val received = SmsCodeStore.lastReceivedCode
                 if (received != null && received == sentCode) {
                     inputCode = received
-                    SmsCodeStore.lastReceivedCode = null // Очищаем после использования
+                    SmsCodeStore.lastReceivedCode = null
                     break 
                 }
-                delay(1000) // Проверка раз в секунду
+                delay(1000)
             }
         }
     }
 
-    // --- Проверка разрешений ---
+    // Запрос разрешений на SMS
     val smsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val allGranted = permissions.values.all { it }
         permissionDenied = !allGranted
         if (!allGranted) {
-            error = "Необходимы разрешения на SMS для верификации"
+            error = "Разрешите чтение SMS для автоматического входа"
         }
     }
 
@@ -87,38 +87,48 @@ fun PhoneAuthScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text("Цифровая Личность", style = MaterialTheme.typography.headlineMedium)
-        Text("P2P верификация через ваш номер", style = MaterialTheme.typography.bodySmall)
+        Text(
+            text = "Создание P2P Личности", 
+            style = MaterialTheme.typography.headlineMedium,
+            color = Color.Cyan
+        )
+        Text(
+            text = "Ваш номер телефона станет вашим адресом в сети", 
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.Gray
+        )
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(32.dp))
 
         OutlinedTextField(
             value = name,
             onValueChange = { name = it },
-            label = { Text("Ваше имя") },
+            label = { Text("Ваше имя (псевдоним)") },
             modifier = Modifier.fillMaxWidth(),
-            enabled = sentCode == null
+            enabled = sentCode == null,
+            singleLine = true
         )
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
 
         OutlinedTextField(
             value = phone,
             onValueChange = { phone = it },
-            label = { Text("Номер телефона (+7...)") },
+            label = { Text("Номер телефона (+...)") },
             modifier = Modifier.fillMaxWidth(),
-            enabled = sentCode == null
+            enabled = sentCode == null,
+            singleLine = true
         )
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(24.dp))
 
         if (sentCode == null) {
             Button(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     error = null
-                    if (name.isBlank() || phone.isBlank()) {
-                        error = "Заполните данные"
+                    if (name.isBlank() || phone.length < 10) {
+                        error = "Введите корректное имя и номер"
                         return@Button
                     }
                     
@@ -127,15 +137,15 @@ fun PhoneAuthScreen(
                     SmsCodeManager.sendCode(context, phone, code)
                 }
             ) {
-                Text("Проверить номер")
+                Text("Получить код подтверждения")
             }
         } else {
             OutlinedTextField(
                 value = inputCode,
                 onValueChange = { inputCode = it },
-                label = { Text("Код подтверждения") },
+                label = { Text("Код из SMS") },
                 modifier = Modifier.fillMaxWidth(),
-                supportingText = { Text("Код будет перехвачен автоматически") }
+                supportingText = { Text("Ожидаем автоматического перехвата...") }
             )
 
             Spacer(Modifier.height(16.dp))
@@ -148,17 +158,16 @@ fun PhoneAuthScreen(
                         isLoading = true
                         scope.launch {
                             try {
+                                // Публикуем личность в локальный DHT и создаем ключи
                                 val success = identityRepo.publishIdentity(phone, name)
                                 if (success) {
-                                    context.getSharedPreferences("app_prefs", 0)
-                                        .edit().putString("my_phone", phone).apply()
                                     onSuccess()
                                 } else {
-                                    error = "Ошибка публикации в P2P сеть"
+                                    error = "Не удалось инициализировать ключи"
                                     isLoading = false
                                 }
                             } catch (e: Exception) {
-                                error = e.localizedMessage
+                                error = "Сбой P2P: ${e.localizedMessage}"
                                 isLoading = false
                             }
                         }
@@ -167,16 +176,24 @@ fun PhoneAuthScreen(
                     }
                 }
             ) {
-                if (isLoading) CircularProgressIndicator(size = 24.dp) 
-                else Text("Подтвердить и войти")
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp), // ИСПРАВЛЕНО
+                        strokeWidth = 2.dp,
+                        color = Color.White
+                    )
+                } else {
+                    Text("Создать профиль")
+                }
             }
             
             TextButton(onClick = { sentCode = null; inputCode = "" }) {
-                Text("Изменить номер")
+                Text("Назад", color = Color.Gray)
             }
         }
 
         if (permissionDenied) {
+            Spacer(Modifier.height(16.dp))
             Button(
                 onClick = {
                     val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
@@ -186,12 +203,17 @@ fun PhoneAuthScreen(
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
             ) {
-                Text("Дать разрешения в настройках")
+                Text("Открыть настройки разрешений")
             }
         }
 
         error?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
+            Text(
+                text = it, 
+                color = MaterialTheme.colorScheme.error, 
+                modifier = Modifier.padding(top = 16.dp),
+                style = MaterialTheme.typography.bodyMedium
+            )
         }
     }
 }
