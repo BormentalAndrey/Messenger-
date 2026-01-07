@@ -57,7 +57,9 @@ data class EntertainmentItem(
 private val entertainmentItems = listOf(
     EntertainmentItem("music", "Музыка", "MP3 проигрыватель", EntertainmentType.MUSIC, Routes.MUSIC),
     EntertainmentItem("video", "Видео", "Неоновый видео плеер", EntertainmentType.VIDEO),
-    EntertainmentItem( "ai_chat", "AI Чат", "Умный помощник", EntertainmentType.INTERNAL_CHAT, Routes.AI_CHAT)
+
+    // ✅ ИСПРАВЛЕНО: добавлена запятая
+    EntertainmentItem("ai_chat", "AI Чат", "Умный помощник", EntertainmentType.INTERNAL_CHAT, Routes.AI_CHAT),
     EntertainmentItem("tictactoe", "Крестики-нолики", "Игра против ИИ", EntertainmentType.GAME, Routes.TIC_TAC_TOE),
     EntertainmentItem("pacman", "Pacman", "Классическая аркада", EntertainmentType.GAME, Routes.PACMAN),
     EntertainmentItem("jewels", "Кристаллы", "Три в ряд", EntertainmentType.GAME, Routes.JEWELS),
@@ -73,8 +75,16 @@ fun EntertainmentScreen(navController: NavHostController) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Развлечения", fontWeight = FontWeight.Black, color = Color.Green) },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black)
+                title = {
+                    Text(
+                        "Развлечения",
+                        fontWeight = FontWeight.Black,
+                        color = Color.Green
+                    )
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = Color.Black
+                )
             )
         }
     ) { paddingValues ->
@@ -94,14 +104,18 @@ fun EntertainmentScreen(navController: NavHostController) {
 }
 
 @Composable
-fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostController) {
+fun EntertainmentNeonItem(
+    item: EntertainmentItem,
+    navController: NavHostController
+) {
     val context = LocalContext.current
+
     val neonColor = when (item.type) {
         EntertainmentType.GAME -> Color.Green
         EntertainmentType.INTERNAL_CHAT -> Color.Cyan
         EntertainmentType.WEB -> Color.Magenta
         EntertainmentType.MUSIC -> Color.Yellow
-        EntertainmentType.VIDEO -> Color(0xFFBA00FF) // Неоновый фиолетовый
+        EntertainmentType.VIDEO -> Color(0xFFBA00FF)
     }
 
     Card(
@@ -116,14 +130,18 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
             when (item.type) {
                 EntertainmentType.WEB -> {
                     item.url?.let { url ->
-                        // ИСПРАВЛЕНО: Использование ${} для интерполяции строк
-                        navController.navigate("webview/${Uri.encode(url)}/${Uri.encode(item.title)}")
+                        navController.navigate(
+                            "webview/${Uri.encode(url)}/${Uri.encode(item.title)}"
+                        )
                     }
                 }
+
                 EntertainmentType.VIDEO -> {
-                    val intent = Intent(context, VideoPlayerActivity::class.java)
-                    context.startActivity(intent)
+                    context.startActivity(
+                        Intent(context, VideoPlayerActivity::class.java)
+                    )
                 }
+
                 else -> {
                     item.route?.let { navController.navigate(it) }
                 }
@@ -134,11 +152,14 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
             modifier = Modifier
                 .fillMaxSize()
                 .background(
-                    Brush.horizontalGradient(listOf(Color.Transparent, neonColor.copy(alpha = 0.08f)))
+                    Brush.horizontalGradient(
+                        listOf(Color.Transparent, neonColor.copy(alpha = 0.08f))
+                    )
                 )
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+
             if (item.type == EntertainmentType.MUSIC && MusicManager.currentTrack != null) {
                 AsyncImage(
                     model = MusicManager.currentTrack!!.albumArt,
@@ -153,22 +174,47 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
                 Box(
                     modifier = Modifier
                         .size(45.dp)
-                        .background(neonColor.copy(alpha = 0.1f), RoundedCornerShape(8.dp)),
+                        .background(
+                            neonColor.copy(alpha = 0.1f),
+                            RoundedCornerShape(8.dp)
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(item.iconVector, contentDescription = null, tint = neonColor, modifier = Modifier.size(28.dp))
+                    Icon(
+                        item.iconVector,
+                        contentDescription = null,
+                        tint = neonColor,
+                        modifier = Modifier.size(28.dp)
+                    )
                 }
             }
 
             Spacer(Modifier.width(12.dp))
-            
+
             Column(Modifier.weight(1f)) {
                 if (item.type == EntertainmentType.MUSIC && MusicManager.currentTrack != null) {
-                    Text(MusicManager.currentTrack!!.title, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
-                    Text("Сейчас играет", color = neonColor, fontSize = 10.sp)
+                    Text(
+                        MusicManager.currentTrack!!.title,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                    Text(
+                        "Сейчас играет",
+                        color = neonColor,
+                        fontSize = 10.sp
+                    )
                 } else {
-                    Text(item.title.uppercase(), color = Color.White, fontWeight = FontWeight.Bold)
-                    Text(item.description, color = Color.Gray, fontSize = 11.sp)
+                    Text(
+                        item.title.uppercase(),
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        item.description,
+                        color = Color.Gray,
+                        fontSize = 11.sp
+                    )
                 }
             }
 
@@ -177,11 +223,23 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
                     IconButton(onClick = { MusicManager.playPrevious(context) }) {
                         Icon(Icons.Filled.ChevronLeft, null, tint = neonColor)
                     }
-                    IconButton(onClick = { 
-                        if (MusicManager.currentIndex == -1) MusicManager.playTrack(context, 0)
-                        else MusicManager.togglePlayPause() 
-                    }) {
-                        Icon(if (MusicManager.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = neonColor, modifier = Modifier.size(30.dp))
+                    IconButton(
+                        onClick = {
+                            if (MusicManager.currentIndex == -1)
+                                MusicManager.playTrack(context, 0)
+                            else
+                                MusicManager.togglePlayPause()
+                        }
+                    ) {
+                        Icon(
+                            if (MusicManager.isPlaying)
+                                Icons.Filled.Pause
+                            else
+                                Icons.Filled.PlayArrow,
+                            null,
+                            tint = neonColor,
+                            modifier = Modifier.size(30.dp)
+                        )
                     }
                     IconButton(onClick = { MusicManager.playNext(context) }) {
                         Icon(Icons.Filled.ChevronRight, null, tint = neonColor)
@@ -193,4 +251,3 @@ fun EntertainmentNeonItem(item: EntertainmentItem, navController: NavHostControl
         }
     }
 }
-
