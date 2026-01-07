@@ -33,6 +33,7 @@ import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.viewmodel.ChatViewModel
+import com.kakdela.p2p.viewmodel.ChatViewModelFactory // Предполагаем наличие фабрики
 
 @Composable
 fun rememberIsOnline(): State<Boolean> {
@@ -60,13 +61,22 @@ fun rememberIsOnline(): State<Boolean> {
 
 @Composable
 fun NoInternetScreen() {
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-        Image(
-            painter = painterResource(id = R.drawable.no_internet_neon),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Fit
-        )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black), 
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Image(
+                painter = painterResource(id = R.drawable.no_internet_neon),
+                contentDescription = "No Internet",
+                modifier = Modifier.size(200.dp),
+                contentScale = ContentScale.Fit
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Требуется подключение к сети", color = Color.White)
+        }
     }
 }
 
@@ -86,55 +96,39 @@ fun NavGraph(
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar(containerColor = Color(0xFF0A0A0A)) {
-                    NavigationBarItem(
-                        selected = currentRoute == Routes.CHATS,
-                        onClick = { 
-                            navController.navigate(Routes.CHATS) { 
-                                popUpTo(Routes.CHATS) { inclusive = true }
-                                launchSingleTop = true 
-                            } 
-                        },
-                        icon = { Icon(Icons.Outlined.ChatBubbleOutline, null) },
-                        label = { Text("Чаты") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.Cyan, 
-                            unselectedIconColor = Color.Gray,
-                            indicatorColor = Color(0xFF002222)
-                        )
+                    val navItems = listOf(
+                        Triple(Routes.CHATS, Icons.Outlined.ChatBubbleOutline, "Чаты"),
+                        Triple(Routes.DEALS, Icons.Filled.Checklist, "Дела"),
+                        Triple(Routes.ENTERTAINMENT, Icons.Outlined.PlayCircleOutline, "Развлечения"),
+                        Triple(Routes.SETTINGS, Icons.Filled.Settings, "Настройки")
                     )
-                    NavigationBarItem(
-                        selected = currentRoute == Routes.DEALS,
-                        onClick = { navController.navigate(Routes.DEALS) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Filled.Checklist, null) },
-                        label = { Text("Дела") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.Magenta, 
-                            unselectedIconColor = Color.Gray,
-                            indicatorColor = Color(0xFF220022)
+
+                    navItems.forEach { (route, icon, label) ->
+                        NavigationBarItem(
+                            selected = currentRoute == route,
+                            onClick = { 
+                                if (currentRoute != route) {
+                                    navController.navigate(route) { 
+                                        popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                        launchSingleTop = true 
+                                        restoreState = true
+                                    } 
+                                }
+                            },
+                            icon = { Icon(icon, contentDescription = label) },
+                            label = { Text(label) },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = when(route) {
+                                    Routes.CHATS -> Color.Cyan
+                                    Routes.DEALS -> Color.Magenta
+                                    Routes.ENTERTAINMENT -> Color.Green
+                                    else -> Color.White
+                                }, 
+                                unselectedIconColor = Color.Gray,
+                                indicatorColor = Color(0xFF1A1A1A)
+                            )
                         )
-                    )
-                    NavigationBarItem(
-                        selected = currentRoute == Routes.ENTERTAINMENT,
-                        onClick = { navController.navigate(Routes.ENTERTAINMENT) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Outlined.PlayCircleOutline, null) },
-                        label = { Text("Развлечения") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.Green, 
-                            unselectedIconColor = Color.Gray,
-                            indicatorColor = Color(0xFF002200)
-                        )
-                    )
-                    NavigationBarItem(
-                        selected = currentRoute == Routes.SETTINGS,
-                        onClick = { navController.navigate(Routes.SETTINGS) { launchSingleTop = true } },
-                        icon = { Icon(Icons.Filled.Settings, null) },
-                        label = { Text("Настройки") },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Color.White, 
-                            unselectedIconColor = Color.Gray,
-                            indicatorColor = Color(0xFF222222)
-                        )
-                    )
+                    }
                 }
             }
         }
@@ -148,7 +142,6 @@ fun NavGraph(
         ) {
             composable(Routes.SPLASH) {
                 SplashScreen(onTimeout = {
-                    // ИСПРАВЛЕНО: Проверяем наличие локального P2P ID вместо Firebase
                     val myId = identityRepository.getMyId()
                     val next = if (myId.isNotEmpty()) Routes.CHATS else Routes.CHOICE
                     navController.navigate(next) { popUpTo(Routes.SPLASH) { inclusive = true } }
@@ -213,19 +206,24 @@ fun NavGraph(
 
             composable("chat/{chatId}") { backStack ->
                 val chatId = backStack.arguments?.getString("chatId") ?: ""
-                val vm: ChatViewModel = viewModel()
                 
-                // ИСПРАВЛЕНО: Используем локальный P2P ID
+                // Используем фабрику для передачи identityRepository во ViewModel
+                val vm: ChatViewModel = viewModel(
+                    factory = ChatViewModelFactory(identityRepository)
+                )
+                
                 val myUid = identityRepository.getMyId()
                 
-                LaunchedEffect(chatId) { vm.initChat(chatId, myUid) }
+                LaunchedEffect(chatId) { 
+                    vm.initChat(chatId, myUid) 
+                }
                 
                 val messages by vm.messages.collectAsState()
                 
                 ChatScreen(
                     chatPartnerId = chatId,
                     messages = messages,
-                    identityRepository = identityRepository, // ПЕРЕДАНО
+                    identityRepository = identityRepository,
                     onSendMessage = { text -> vm.sendMessage(text) },
                     onSendFile = { uri, type -> vm.sendFile(uri, type) },
                     onSendAudio = { uri, duration -> vm.sendAudio(uri, duration) },
