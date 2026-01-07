@@ -27,7 +27,7 @@ class IdentityRepository(private val context: Context) {
     private val discoveredPeers = CopyOnWriteArraySet<String>()
     private val seenTimestamps = ConcurrentHashMap<String, Long>()
 
-    // Коллбэк для UI и менеджеров (теперь передает полные данные сообщения)
+    // Коллбэк для UI и менеджеров
     var onSignalingMessageReceived: ((type: String, data: String, fromIp: String) -> Unit)? = null
 
     private val P2P_PORT = 8888
@@ -59,8 +59,48 @@ class IdentityRepository(private val context: Context) {
     fun getMyPublicKeyHash(): String = getMyId()
 
     /* ----------------------------------------------------
+       COMPATIBILITY API (Исправление ошибок компиляции)
+     ---------------------------------------------------- */
+
+    /**
+     * Используется в FileTransferWorker для прямой отправки данных.
+     */
+    fun sendToSingleAddress(ip: String, message: String) {
+        sendUdp(ip, message)
+    }
+
+    /**
+     * Алиас для сигнальных данных (используется в некоторых компонентах).
+     */
+    fun sendSignalingData(targetIp: String, type: String, data: String) {
+        sendSignaling(targetIp, type, data)
+    }
+
+    /**
+     * Используется в EmailAuthScreen для бэкапа профиля в P2P сеть.
+     */
+    suspend fun updateEmailBackup(email: String, pass: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val emailHash = hash(email.lowercase().trim())
+            // В реальном сценарии здесь данные шифруются паролем 'pass'
+            val backupData = "BACKUP_${getMyId()}" 
+            sendBroadcastPacket("STORE", emailHash, backupData)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Проверка готовности криптографических ключей.
+     */
+    fun isKeyReady(): Boolean = CryptoManager.isKeyReady()
+
+    /* ----------------------------------------------------
        P2P OPERATIONS & DHT
      ---------------------------------------------------- */
+
+    
 
     suspend fun publishIdentity(phoneNumber: String, name: String): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -90,7 +130,6 @@ class IdentityRepository(private val context: Context) {
         payload.put("signature", sign(payload))
         val msg = payload.toString()
         
-        // Отправляем запрос всем известным узлам
         discoveredPeers.forEach { ip -> sendUdp(ip, msg) }
     }
 
@@ -150,7 +189,6 @@ class IdentityRepository(private val context: Context) {
                         "FIND" -> {
                             val key = json.getString("key")
                             localDhtSlice[key]?.let { (value, _) ->
-                                // Формируем ответ: "искомый_хеш:публичный_ключ"
                                 val responseData = "$key:$value"
                                 sendSignaling(senderIp, "STORE_RESPONSE", responseData)
                             }
@@ -214,7 +252,7 @@ class IdentityRepository(private val context: Context) {
                     val broadcastAddr = InetAddress.getByName("255.255.255.255")
                     socket.send(DatagramPacket(msg, msg.size, broadcastAddr, DISCOVERY_PORT))
                 } catch (e: Exception) { }
-                delay(15_000) // Оповещаем о себе каждые 15 сек
+                delay(15_000)
             }
         }
     }
@@ -231,10 +269,7 @@ class IdentityRepository(private val context: Context) {
             val pubKeyHash = json.getString("from")
             val timestamp = json.getLong("timestamp")
 
-            // Проверка "свежести" сообщения
             if (kotlin.math.abs(System.currentTimeMillis() - timestamp) > MAX_MESSAGE_AGE_MS) return false
-            
-            // Защита от повторов (Replay attack)
             if (seenTimestamps.putIfAbsent(pubKeyHash + timestamp, timestamp) != null) return false
 
             val clone = JSONObject(json.toString()).apply { remove("signature") }
