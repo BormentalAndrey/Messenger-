@@ -2,6 +2,7 @@ package com.kakdela.p2p.ui.navigation
 
 import android.content.Context
 import android.net.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -14,9 +15,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -44,7 +47,12 @@ fun rememberIsOnline(): State<Boolean> {
             override fun onAvailable(network: Network) { connected.value = true }
             override fun onLost(network: Network) { connected.value = false }
         }
-        cm.registerNetworkCallback(NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), cb)
+        cm.registerNetworkCallback(
+            NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build(), 
+            cb
+        )
         onDispose { cm.unregisterNetworkCallback(cb) }
     }
     return connected
@@ -52,16 +60,33 @@ fun rememberIsOnline(): State<Boolean> {
 
 @Composable
 fun NoInternetScreen() {
-    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                contentDescription = null,
-                modifier = Modifier.size(120.dp),
-                tint = Color.Cyan
+            // Используем твое изображение no_internet_neon
+            Image(
+                painter = painterResource(id = R.drawable.no_internet_neon),
+                contentDescription = "Нет сети",
+                modifier = Modifier.size(200.dp),
+                contentScale = ContentScale.Fit
             )
-            Spacer(Modifier.height(16.dp))
-            Text("Требуется подключение к сети", color = Color.Cyan)
+            Spacer(Modifier.height(24.dp))
+            Text(
+                text = "СОЕДИНЕНИЕ ПОТЕРЯНО",
+                color = Color.Cyan,
+                fontSize = 18.sp,
+                style = MaterialTheme.typography.labelLarge
+            )
+            Text(
+                text = "Проверьте подключение к интернету",
+                color = Color.Gray,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(top = 8.dp)
+            )
         }
     }
 }
@@ -76,7 +101,9 @@ fun NavGraph(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    val showBottomBar = currentRoute in listOf(Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS)
+    val showBottomBar = currentRoute in listOf(
+        Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
+    )
 
     Scaffold(
         bottomBar = {
@@ -114,94 +141,105 @@ fun NavGraph(
             }
         }
     ) { paddingValues ->
-        NavHost(
-            navController = navController,
-            startDestination = Routes.SPLASH,
-            modifier = Modifier.padding(paddingValues).background(Color.Black)
-        ) {
-            composable(Routes.SPLASH) {
-                SplashScreen {
-                    val nextRoute = if (identityRepository.getMyId().isNotEmpty()) Routes.CHATS else Routes.CHOICE
-                    navController.navigate(nextRoute) { popUpTo(Routes.SPLASH) { inclusive = true } }
-                }
-            }
-
-            composable(Routes.CHOICE) {
-                RegistrationChoiceScreen(
-                    onPhone = { navController.navigate(Routes.AUTH_PHONE) },
-                    onEmailOnly = { navController.navigate(Routes.AUTH_EMAIL) }
-                )
-            }
-
-            composable(Routes.AUTH_EMAIL) {
-                EmailAuthScreen(identityRepository) {
-                    navController.navigate(Routes.CHATS) { popUpTo(Routes.CHOICE) { inclusive = true } }
-                }
-            }
-
-            composable(Routes.AUTH_PHONE) {
-                PhoneAuthScreen(identityRepository) {
-                    navController.navigate(Routes.CHATS) { popUpTo(Routes.CHOICE) { inclusive = true } }
-                }
-            }
-
-            composable(Routes.CHATS) { ChatsListScreen(navController, identityRepository) }
-
-            composable(Routes.CONTACTS) {
-                ContactsScreen(
-                    identityRepository = identityRepository,
-                    onContactClick = { contact ->
-                        // ИСПРАВЛЕНО: используем publicKey из модели AppContact
-                        val chatId = contact.publicKey ?: contact.phoneNumber
-                        navController.navigate("chat/$chatId")
+        // Если интернета нет, и мы не на экране авторизации/заставки — показываем заглушку
+        // Для P2P мессенджера это важно, если DHT требует выхода в сеть
+        if (!isOnline && currentRoute !in listOf(Routes.SPLASH, Routes.CHOICE, Routes.DEALS)) {
+             Box(modifier = Modifier.padding(paddingValues)) {
+                 NoInternetScreen()
+             }
+        } else {
+            NavHost(
+                navController = navController,
+                startDestination = Routes.SPLASH,
+                modifier = Modifier
+                    .padding(paddingValues)
+                    .background(Color.Black)
+            ) {
+                composable(Routes.SPLASH) {
+                    SplashScreen {
+                        val nextRoute = if (identityRepository.getMyId().isNotEmpty()) Routes.CHATS else Routes.CHOICE
+                        navController.navigate(nextRoute) { popUpTo(Routes.SPLASH) { inclusive = true } }
                     }
-                )
-            }
+                }
 
-            composable(
-                route = "chat/{chatId}",
-                arguments = listOf(navArgument("chatId") { type = NavType.StringType })
-            ) { entry ->
-                val chatId = entry.arguments?.getString("chatId") ?: return@composable
-                val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(identityRepository))
+                composable(Routes.CHOICE) {
+                    RegistrationChoiceScreen(
+                        onPhone = { navController.navigate(Routes.AUTH_PHONE) },
+                        onEmailOnly = { navController.navigate(Routes.AUTH_EMAIL) }
+                    )
+                }
 
-                LaunchedEffect(chatId) { vm.initChat(chatId, identityRepository.getMyId()) }
+                composable(Routes.AUTH_EMAIL) {
+                    EmailAuthScreen(identityRepository) {
+                        navController.navigate(Routes.CHATS) { popUpTo(Routes.CHOICE) { inclusive = true } }
+                    }
+                }
 
-                ChatScreen(
-                    chatPartnerId = chatId,
-                    messages = vm.messages.collectAsState().value,
-                    identityRepository = identityRepository,
-                    onSendMessage = vm::sendMessage,
-                    onSendFile = vm::sendFile,
-                    onSendAudio = vm::sendAudio,
-                    onScheduleMessage = vm::scheduleMessage,
-                    onBack = { navController.popBackStack() }
-                )
-            }
+                composable(Routes.AUTH_PHONE) {
+                    PhoneAuthScreen(identityRepository) {
+                        navController.navigate(Routes.CHATS) { popUpTo(Routes.CHOICE) { inclusive = true } }
+                    }
+                }
 
-            composable(Routes.DEALS) { DealsScreen(navController) }
-            composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
-            composable(Routes.SETTINGS) { SettingsScreen(navController) }
-            composable(Routes.MUSIC) { MusicPlayerScreen() }
-            composable(Routes.CALCULATOR) { CalculatorScreen() }
-            composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
-            composable(Routes.CHESS) { ChessScreen() }
-            composable(Routes.PACMAN) { PacmanScreen() }
-            composable(Routes.JEWELS) { JewelsBlastScreen() }
-            composable(Routes.SUDOKU) { SudokuScreen() }
+                composable(Routes.CHATS) { 
+                    ChatsListScreen(navController, identityRepository) 
+                }
 
-            composable(
-                route = "webview/{url}/{title}",
-                arguments = listOf(
-                    navArgument("url") { type = NavType.StringType },
-                    navArgument("title") { type = NavType.StringType }
-                )
-            ) { e ->
-                val url = e.arguments?.getString("url").orEmpty()
-                val title = e.arguments?.getString("title").orEmpty()
-                if (isOnline) WebViewScreen(url, title, navController) else NoInternetScreen()
+                composable(Routes.CONTACTS) {
+                    ContactsScreen(
+                        identityRepository = identityRepository,
+                        onContactClick = { contact ->
+                            val chatId = contact.publicKey ?: contact.phoneNumber
+                            navController.navigate("chat/$chatId")
+                        }
+                    )
+                }
+
+                composable(
+                    route = "chat/{chatId}",
+                    arguments = listOf(navArgument("chatId") { type = NavType.StringType })
+                ) { entry ->
+                    val chatId = entry.arguments?.getString("chatId") ?: return@composable
+                    val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(identityRepository))
+
+                    LaunchedEffect(chatId) { vm.initChat(chatId, identityRepository.getMyId()) }
+
+                    ChatScreen(
+                        chatPartnerId = chatId,
+                        messages = vm.messages.collectAsState().value,
+                        identityRepository = identityRepository,
+                        onSendMessage = vm::sendMessage,
+                        onSendFile = vm::sendFile,
+                        onSendAudio = vm::sendAudio,
+                        onScheduleMessage = vm::scheduleMessage,
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Routes.DEALS) { DealsScreen(navController) }
+                composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
+                composable(Routes.SETTINGS) { SettingsScreen(navController) }
+                composable(Routes.MUSIC) { MusicPlayerScreen() }
+                composable(Routes.CALCULATOR) { CalculatorScreen() }
+                composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
+                composable(Routes.CHESS) { ChessScreen() }
+                composable(Routes.PACMAN) { PacmanScreen() }
+                composable(Routes.JEWELS) { JewelsBlastScreen() }
+                composable(Routes.SUDOKU) { SudokuScreen() }
+
+                composable(
+                    route = "webview/{url}/{title}",
+                    arguments = listOf(
+                        navArgument("url") { type = NavType.StringType },
+                        navArgument("title") { type = NavType.StringType }
+                    )
+                ) { e ->
+                    val url = e.arguments?.getString("url").orEmpty()
+                    val title = e.arguments?.getString("title").orEmpty()
+                    if (isOnline) WebViewScreen(url, title, navController) else NoInternetScreen()
+                }
             }
         }
     }
 }
-
+    
