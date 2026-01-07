@@ -57,7 +57,7 @@ data class EntertainmentItem(
 private val entertainmentItems = listOf(
     EntertainmentItem("music", "Музыка", "MP3 проигрыватель", EntertainmentType.MUSIC, Routes.MUSIC),
     EntertainmentItem("video", "Видео", "Неоновый видео плеер", EntertainmentType.VIDEO),
-    EntertainmentItem("global_chat", "ЧёКаВо?", "Общий чат", EntertainmentType.INTERNAL_CHAT, "chat/global"),
+    EntertainmentItem( "ai_chat", "AI Чат", "Умный помощник", EntertainmentType.INTERNAL_CHAT, Routes.AI_CHAT)
     EntertainmentItem("tictactoe", "Крестики-нолики", "Игра против ИИ", EntertainmentType.GAME, Routes.TIC_TAC_TOE),
     EntertainmentItem("pacman", "Pacman", "Классическая аркада", EntertainmentType.GAME, Routes.PACMAN),
     EntertainmentItem("jewels", "Кристаллы", "Три в ряд", EntertainmentType.GAME, Routes.JEWELS),
