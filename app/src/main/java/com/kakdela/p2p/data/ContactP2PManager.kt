@@ -12,27 +12,16 @@ import kotlinx.coroutines.withContext
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * Модель контакта для приложения
- */
-data class AppContact(
-    val name: String,
-    val phoneNumber: String,
-    val isRegistered: Boolean = false,
-    val publicKey: String? = null
-)
-
 class ContactP2PManager(
     private val context: Context,
     private val identityRepo: IdentityRepository
 ) {
 
-    // Временное хранилище для найденных ключей из ответов сети
+    // Временное хранилище: Хеш номера -> Публичный Ключ|IP
     private val discoveryResults = ConcurrentHashMap<String, String>()
 
     /**
      * Основной метод синхронизации.
-     * Хеширует номера и ищет их у узлов в сети.
      */
     suspend fun syncContacts(): List<AppContact> = withContext(Dispatchers.IO) {
         // 1. Проверка разрешений
@@ -48,51 +37,48 @@ class ContactP2PManager(
         // 3. Настройка слушателя для сбора ответов от сети
         identityRepo.onSignalingMessageReceived = { type, data, fromIp ->
             if (type == "STORE_RESPONSE") {
-                // Предполагаем, что данные приходят в формате "key:value" или просто "value"
-                // В реальности здесь должна быть логика сопоставления ответа с запросом
-                // Для упрощения: если мы искали хеш, мы сохраняем результат
-                Log.d("P2P_SYNC", "Received discovery data from $fromIp")
+                // Ожидаемый формат data: "phoneHash:publicKey"
+                val parts = data.split(":", limit = 2)
+                if (parts.size == 2) {
+                    val phoneHash = parts[0]
+                    val pubKeyWithIp = "${parts[1]}|$fromIp"
+                    discoveryResults[phoneHash] = pubKeyWithIp
+                    Log.d("P2P_SYNC", "Found peer for hash $phoneHash at $fromIp")
+                }
             }
         }
 
         // 4. Поиск в P2P сети (DHT Lookup)
-        // В P2P это асинхронный процесс. Мы рассылаем запросы "FIND".
         localContacts.forEach { contact ->
             val phoneHash = sha256(contact.phoneNumber)
             identityRepo.findPeerInDHT(phoneHash)
         }
 
-        // Даем сети немного времени (2-3 секунды) на ответы от узлов
-        delay(2000)
+        // Ожидание ответов от узлов
+        delay(2500)
 
         // 5. Сборка итогового списка
         val syncedList = localContacts.map { contact ->
             val phoneHash = sha256(contact.phoneNumber)
+            val result = discoveryResults[phoneHash] 
             
-            // Проверяем, не пришел ли ответ для этого хеша в репозиторий
-            // Примечание: В текущей реализации IdentityRepository данные STORE_RESPONSE 
-            // должны оседать в кеше репозитория или передаваться сюда.
-            val foundData = discoveryResults[phoneHash] 
-            
-            if (foundData != null) {
+            if (result != null) {
+                val (pubKey, ip) = result.split("|")
                 contact.copy(
-                    publicKey = foundData, 
-                    isRegistered = true
+                    publicKey = pubKey, 
+                    isRegistered = true,
+                    lastKnownIp = ip
                 )
             } else {
                 contact
             }
         }
 
-        // Сортируем: сначала те, кто в сети, затем по алфавиту
         return@withContext syncedList.sortedWith(
             compareByDescending<AppContact> { it.isRegistered }.thenBy { it.name }
         )
     }
 
-    /**
-     * Извлекает контакты из Android и нормализует их
-     */
     private fun fetchLocalPhoneContacts(): List<AppContact> {
         val contacts = mutableListOf<AppContact>()
         val seenPhones = mutableSetOf<String>()
