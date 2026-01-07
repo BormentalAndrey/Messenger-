@@ -27,7 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.kakdela.p2p.data.AppContact
+import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.data.Message
 import com.kakdela.p2p.data.MessageType
 import com.kakdela.p2p.ui.call.CallActivity
@@ -42,11 +42,13 @@ private val SurfaceGray = Color(0xFF1A1A1A)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
-    contact: AppContact,
+    chatPartnerId: String,
     messages: List<Message>,
-    onSendMessage: (String, Long?) -> Unit,
+    identityRepository: IdentityRepository,
+    onSendMessage: (String) -> Unit,
     onSendFile: (Uri, MessageType) -> Unit,
-    onSendAudio: (Uri, Int) -> Unit
+    onSendAudio: (Uri, Int) -> Unit,
+    onScheduleMessage: (String, Long) -> Unit
 ) {
     var textState by remember { mutableStateOf("") }
     var showDatePicker by remember { mutableStateOf(false) }
@@ -56,7 +58,6 @@ fun ChatScreen(
     val timePickerState = rememberTimePickerState()
     val context = LocalContext.current
 
-    // Логика планирования: храним время и отправляем пакет с метаданными
     fun scheduleAndSend() {
         val date = datePickerState.selectedDateMillis ?: return
         val cal = Calendar.getInstance().apply {
@@ -64,7 +65,7 @@ fun ChatScreen(
             set(Calendar.HOUR_OF_DAY, timePickerState.hour)
             set(Calendar.MINUTE, timePickerState.minute)
         }
-        onSendMessage(textState, cal.timeInMillis)
+        onScheduleMessage(textState, cal.timeInMillis)
         textState = ""
     }
 
@@ -73,11 +74,16 @@ fun ChatScreen(
             CenterAlignedTopAppBar(
                 title = { 
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(contact.name, color = NeonCyan, fontWeight = FontWeight.Bold)
-                        Text("P2P Node Active", fontSize = 10.sp, color = Color.Gray)
+                        Text("Узел: ${chatPartnerId.take(8)}...", color = NeonCyan, fontWeight = FontWeight.Bold)
+                        Text("P2P E2EE Protected", fontSize = 10.sp, color = Color.Gray)
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black)
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black),
+                navigationIcon = {
+                    IconButton(onClick = { /* Handle back */ }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = null, tint = NeonCyan)
+                    }
+                }
             )
         },
         bottomBar = {
@@ -86,7 +92,7 @@ fun ChatScreen(
                 onTextChange = { textState = it },
                 onSend = {
                     if (textState.isNotBlank()) {
-                        onSendMessage(textState, null)
+                        onSendMessage(textState)
                         textState = ""
                     }
                 },
@@ -94,21 +100,17 @@ fun ChatScreen(
                 onScheduleClick = { if (textState.isNotBlank()) showDatePicker = true },
                 onSendAudio = onSendAudio,
                 onStartCall = {
-                    try {
-                        val intent = Intent(context, CallActivity::class.java).apply {
-                            putExtra("targetIp", contact.lastKnownIp)
-                            putExtra("publicKey", contact.publicKey)
-                        }
-                        context.startActivity(intent)
-                    } catch (e: Exception) {
-                        Toast.makeText(context, "Ошибка вызова", Toast.LENGTH_SHORT).show()
+                    // В P2P звонок инициируется через IdentityRepository сигналинг
+                    val intent = Intent(context, CallActivity::class.java).apply {
+                        putExtra("targetIp", "auto") // Логика определения IP внутри CallActivity
+                        putExtra("chatId", chatPartnerId)
                     }
+                    context.startActivity(intent)
                 }
             )
         },
         containerColor = DarkBackground
     ) { padding ->
-        // Диалоги выбора времени (Планировщик)
         if (showDatePicker) {
             DatePickerDialog(
                 onDismissRequest = { showDatePicker = false },
@@ -133,13 +135,17 @@ fun ChatScreen(
         }
 
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp),
-            contentPadding = PaddingValues(vertical = 16.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 12.dp),
+            contentPadding = PaddingValues(vertical = 16.dp),
+            reverseLayout = false // Обычно чаты идут сверху вниз или снизу вверх (stackFromEnd)
         ) {
-            // В P2P мы фильтруем сообщения, время которых еще не пришло (для получателя)
             val currentTime = System.currentTimeMillis()
+            // Фильтрация отложенных сообщений
             val visibleMessages = messages.filter { 
-                it.isMe || it.scheduledTime == null || it.scheduledTime <= currentTime 
+                it.isMe || it.scheduledTime == null || it.scheduledTime!! <= currentTime 
             }
             
             items(visibleMessages) { message -> 
@@ -160,10 +166,13 @@ fun ChatBubble(message: Message) {
         Surface(
             color = bubbleColor,
             shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.widthIn(max = 280.dp).border(0.5.dp, neonEdge.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+            modifier = Modifier
+                .widthIn(max = 280.dp)
+                .border(0.5.dp, neonEdge.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
-                if (message.scheduledTime != null && message.isMe) {
+                // Если сообщение запланировано и еще не отправлено (визуальный индикатор для себя)
+                if (message.scheduledTime != null && message.isMe && message.scheduledTime!! > System.currentTimeMillis()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.Schedule, null, modifier = Modifier.size(12.dp), tint = NeonMagenta)
                         Text(" Запланировано", fontSize = 10.sp, color = NeonMagenta)
@@ -175,11 +184,16 @@ fun ChatBubble(message: Message) {
                     MessageType.IMAGE -> AsyncImage(
                         model = message.fileUrl,
                         contentDescription = null,
-                        modifier = Modifier.size(200.dp).clip(RoundedCornerShape(8.dp))
+                        modifier = Modifier
+                            .size(200.dp)
+                            .clip(RoundedCornerShape(8.dp))
                     )
                     MessageType.AUDIO -> AudioPlayerView(message.fileUrl ?: "", message.durationSeconds)
                     MessageType.FILE -> FileP2PView(message.fileName ?: "Файл")
+                    // Обработка системных типов (звонки и т.д.) для exhaustive when
+                    else -> Text("Системное сообщение: ${message.type}", color = Color.Gray, fontSize = 12.sp)
                 }
+                
                 Text(
                     text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp)),
                     fontSize = 10.sp,
@@ -217,34 +231,60 @@ fun ChatInputField(
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { it?.let(onAttachFile) }
 
     Surface(color = Color.Black, modifier = Modifier.imePadding()) {
-        Row(modifier = Modifier.padding(8.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { filePicker.launch("*/*") }) { Icon(Icons.Default.AttachFile, null, tint = NeonCyan) }
+        Row(
+            modifier = Modifier
+                .padding(8.dp)
+                .fillMaxWidth(), 
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = { filePicker.launch("*/*") }) { 
+                Icon(Icons.Default.AttachFile, null, tint = NeonCyan) 
+            }
             TextField(
                 value = text,
                 onValueChange = onTextChange,
                 modifier = Modifier.weight(1f),
-                colors = TextFieldDefaults.colors(focusedContainerColor = SurfaceGray, unfocusedContainerColor = SurfaceGray, focusedTextColor = Color.White)
+                placeholder = { Text("Сообщение...", color = Color.Gray) },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = SurfaceGray,
+                    unfocusedContainerColor = SurfaceGray,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    cursorColor = NeonCyan
+                )
             )
             IconButton(onClick = {
-                // Логика записи (как мини-сервер аудио-данных)
                 if (!recording) {
-                    audioFile = java.io.File(context.cacheDir, "p2p_voice.m4a")
-                    recorder.apply {
-                        setAudioSource(MediaRecorder.AudioSource.MIC)
-                        setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                        setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                        setOutputFile(audioFile!!.absolutePath)
-                        prepare()
-                        start()
+                    try {
+                        audioFile = java.io.File(context.cacheDir, "p2p_voice_${System.currentTimeMillis()}.m4a")
+                        recorder.apply {
+                            setAudioSource(MediaRecorder.AudioSource.MIC)
+                            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                            setOutputFile(audioFile!!.absolutePath)
+                            prepare()
+                            start()
+                        }
+                        recording = true
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Ошибка записи", Toast.LENGTH_SHORT).show()
                     }
-                    recording = true
                 } else {
-                    recorder.stop()
-                    recording = false
-                    audioFile?.let { onSendAudio(Uri.fromFile(it), 5) }
+                    try {
+                        recorder.stop()
+                        recorder.reset()
+                        recording = false
+                        audioFile?.let { onSendAudio(Uri.fromFile(it), 0) }
+                    } catch (e: Exception) {
+                        recording = false
+                    }
                 }
             }) {
-                Icon(if (recording) Icons.Default.Stop else Icons.Default.Mic, null, tint = if (recording) Color.Red else NeonCyan)
+                Icon(
+                    imageVector = if (recording) Icons.Default.Stop else Icons.Default.Mic, 
+                    contentDescription = null, 
+                    tint = if (recording) Color.Red else NeonCyan
+                )
             }
             IconButton(onClick = onStartCall) { Icon(Icons.Default.VideoCall, null, tint = NeonCyan) }
             IconButton(onClick = onScheduleClick) { Icon(Icons.Outlined.Schedule, null, tint = NeonMagenta) }
@@ -255,13 +295,25 @@ fun ChatInputField(
 
 @Composable
 fun AudioPlayerView(url: String, duration: Int) {
-    // В P2P это должен быть стриминг байтов, но для простоты используем MediaPlayer
+    val context = LocalContext.current
     val mediaPlayer = remember { android.media.MediaPlayer() }
-    IconButton(onClick = { 
-        mediaPlayer.apply { reset(); setDataSource(url); prepare(); start() } 
-    }) {
-        Icon(Icons.Default.PlayArrow, null, tint = NeonCyan)
+    
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { 
+            try {
+                mediaPlayer.apply { 
+                    reset()
+                    setDataSource(context, Uri.parse(url))
+                    prepare()
+                    start()
+                } 
+            } catch (e: Exception) {
+                Toast.makeText(context, "Файл не найден", Toast.LENGTH_SHORT).show()
+            }
+        }) {
+            Icon(Icons.Default.PlayArrow, null, tint = NeonCyan)
+        }
+        Text(if (duration > 0) "$duration сек" else "Голосовое", color = Color.White, fontSize = 12.sp)
     }
-    Text("$duration сек", color = Color.White, fontSize = 12.sp)
 }
 
