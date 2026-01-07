@@ -8,36 +8,35 @@ import com.google.crypto.tink.hybrid.HybridKeyTemplates
 import com.google.crypto.tink.signature.SignatureConfig
 import com.google.crypto.tink.signature.SignatureKeyTemplates
 import java.io.ByteArrayOutputStream
-import java.security.MessageDigest
-import java.security.PublicKey
 import java.security.SecureRandom
-import java.security.spec.KeySpec
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
-import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
 
 object CryptoManager {
     private var myPrivateKey: KeysetHandle? = null
-    private var mySigningKey: KeysetHandle? = null // Для цифровых подписей пакетов
+    private var mySigningKey: KeysetHandle? = null
 
-    private const val PBKDF2_ITERATIONS = 65536
-    private const val KEY_LENGTH = 256
-    private const val SALT_SIZE = 16
-    private const val IV_SIZE = 12
-    private const val TAG_SIZE = 128
+    // Временное хранилище известных публичных ключей (в идеале — БД Room)
+    private val publicKeyCache = mutableMapOf<String, String>()
+
+    fun init(context: Context) {
+        HybridConfig.register()
+        SignatureConfig.register()
+        generateKeys(context)
+    }
 
     /**
-     * Вызывается из MainActivity. Инициализирует Tink и проверяет ключи.
+     * Проверка, созданы ли ключи.
      */
-    fun init(context: Context) {
-        try {
-            HybridConfig.register()
-            SignatureConfig.register()
+    fun isKeyReady(): Boolean = myPrivateKey != null && mySigningKey != null
 
-            // В идеале здесь должна быть загрузка из Android Keystore
-            // Для текущей версии генерируем новые, если их нет в памяти
+    /**
+     * Генерация новой пары ключей для E2EE и цифровой подписи.
+     */
+    fun generateKeys(context: Context) {
+        try {
             if (myPrivateKey == null) {
                 myPrivateKey = KeysetHandle.generateNew(HybridKeyTemplates.ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM)
             }
@@ -49,17 +48,9 @@ object CryptoManager {
         }
     }
 
-    /* ----------------------------------------------------
-       P2P PACKET SIGNING (Для IdentityRepository)
-     ---------------------------------------------------- */
-
     fun sign(data: ByteArray): ByteArray {
-        return try {
-            val signer = mySigningKey?.getPrimitive(PublicKeySign::class.java)
-            signer?.sign(data) ?: ByteArray(0)
-        } catch (e: Exception) {
-            ByteArray(0)
-        }
+        val signer = mySigningKey?.getPrimitive(PublicKeySign::class.java)
+        return signer?.sign(data) ?: ByteArray(0)
     }
 
     fun verify(data: ByteArray, signature: ByteArray, publicKeyStr: String): Boolean {
@@ -73,51 +64,11 @@ object CryptoManager {
         }
     }
 
-    /**
-     * В текущей архитектуре P2P мы получаем публичный ключ из DHT по хэшу.
-     * Возвращает строку ключа, которую можно использовать в verify.
-     */
-    fun getPublicKeyByHash(hash: String): String? {
-        // Здесь должен быть запрос в локальную базу Room или DHT слайс.
-        // Пока возвращаем заглушку или механизм поиска.
-        return null 
+    fun getPublicKeyByHash(hash: String): String? = publicKeyCache[hash]
+
+    fun savePeerPublicKey(hash: String, key: String) {
+        publicKeyCache[hash] = key
     }
-
-    /* ----------------------------------------------------
-       IDENTITY EXPORT/IMPORT
-     ---------------------------------------------------- */
-
-    fun exportEncryptedKeyset(password: String): String {
-        return try {
-            val stream = ByteArrayOutputStream()
-            CleartextKeysetHandle.write(myPrivateKey, JsonKeysetWriter.withOutputStream(stream))
-            val rawKeyset = stream.toByteArray()
-
-            val salt = ByteArray(SALT_SIZE)
-            SecureRandom().nextBytes(salt)
-
-            val secretKey = deriveKey(password, salt)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.ENCRYPT_MODE, secretKey)
-            
-            val iv = cipher.iv
-            val encryptedBytes = cipher.doFinal(rawKeyset)
-            val result = salt + iv + encryptedBytes
-            
-            Base64.encodeToString(result, Base64.NO_WRAP)
-        } catch (e: Exception) { "" }
-    }
-
-    private fun deriveKey(password: String, salt: ByteArray): SecretKeySpec {
-        val factory = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256")
-        val spec: KeySpec = PBEKeySpec(password.toCharArray(), salt, PBKDF2_ITERATIONS, KEY_LENGTH)
-        val tmp = factory.generateSecret(spec)
-        return SecretKeySpec(tmp.encoded, "AES")
-    }
-
-    /* ----------------------------------------------------
-       MESSAGE ENCRYPTION
-     ---------------------------------------------------- */
 
     fun getMyPublicKeyStr(): String {
         val handle = myPrivateKey?.publicKeysetHandle ?: return ""
