@@ -24,12 +24,11 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun PhoneAuthScreen(
+    identityRepository: IdentityRepository,
     onSuccess: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    // Используем remember для сохранения репозитория при перерисовках
-    val identityRepo = remember { IdentityRepository(context) }
 
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
@@ -40,7 +39,7 @@ fun PhoneAuthScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var permissionDenied by remember { mutableStateOf(false) }
 
-    // Автоматический перехват кода из SMS
+    // Автоматический перехват кода из SMS через SmsCodeStore
     LaunchedEffect(sentCode) {
         if (sentCode != null) {
             while (true) {
@@ -55,165 +54,133 @@ fun PhoneAuthScreen(
         }
     }
 
-    // Запрос разрешений на SMS
     val smsPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val allGranted = permissions.values.all { it }
-        permissionDenied = !allGranted
-        if (!allGranted) {
-            error = "Разрешите чтение SMS для автоматического входа"
-        }
+        permissionDenied = !permissions.values.all { it }
     }
 
     LaunchedEffect(Unit) {
-        val permissions = arrayOf(
-            Manifest.permission.SEND_SMS,
-            Manifest.permission.RECEIVE_SMS,
-            Manifest.permission.READ_SMS
-        )
-        val needed = permissions.filter {
-            ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
-        }
-        if (needed.isNotEmpty()) {
-            smsPermissionLauncher.launch(needed.toTypedArray())
-        }
+        val needed = arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS)
+            .filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
+        if (needed.isNotEmpty()) smsPermissionLauncher.launch(needed.toTypedArray())
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(
-            text = "Создание P2P Личности", 
-            style = MaterialTheme.typography.headlineMedium,
-            color = Color.Cyan
-        )
-        Text(
-            text = "Ваш номер телефона станет вашим адресом в сети", 
-            style = MaterialTheme.typography.bodySmall,
-            color = Color.Gray
-        )
+    Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text("Создание P2P Личности", style = MaterialTheme.typography.headlineMedium, color = Color.Cyan)
+            Text("Номер телефона — ваш уникальный адрес", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
 
-        Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(32.dp))
 
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            label = { Text("Ваше имя (псевдоним)") },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = sentCode == null,
-            singleLine = true
-        )
-
-        Spacer(Modifier.height(12.dp))
-
-        OutlinedTextField(
-            value = phone,
-            onValueChange = { phone = it },
-            label = { Text("Номер телефона (+...)") },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = sentCode == null,
-            singleLine = true
-        )
-
-        Spacer(Modifier.height(24.dp))
-
-        if (sentCode == null) {
-            Button(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    error = null
-                    if (name.isBlank() || phone.length < 10) {
-                        error = "Введите корректное имя и номер"
-                        return@Button
-                    }
-                    
-                    val code = SmsCodeManager.generateCode()
-                    sentCode = code
-                    SmsCodeManager.sendCode(context, phone, code)
-                }
-            ) {
-                Text("Получить код подтверждения")
-            }
-        } else {
             OutlinedTextField(
-                value = inputCode,
-                onValueChange = { inputCode = it },
-                label = { Text("Код из SMS") },
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Псевдоним") },
                 modifier = Modifier.fillMaxWidth(),
-                supportingText = { Text("Ожидаем автоматического перехвата...") }
+                enabled = sentCode == null,
+                singleLine = true
             )
 
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
 
-            Button(
+            OutlinedTextField(
+                value = phone,
+                onValueChange = { phone = it },
+                label = { Text("Номер телефона (+...)") },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !isLoading,
-                onClick = {
-                    if (inputCode == sentCode) {
-                        isLoading = true
-                        scope.launch {
-                            try {
-                                // Публикуем личность в локальный DHT и создаем ключи
-                                val success = identityRepo.publishIdentity(phone, name)
-                                if (success) {
-                                    onSuccess()
-                                } else {
-                                    error = "Не удалось инициализировать ключи"
+                enabled = sentCode == null,
+                singleLine = true
+            )
+
+            Spacer(Modifier.height(24.dp))
+
+            if (sentCode == null) {
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan, contentColor = Color.Black),
+                    onClick = {
+                        if (name.length < 2 || phone.length < 10) {
+                            error = "Проверьте имя и номер"
+                            return@Button
+                        }
+                        val code = SmsCodeManager.generateCode()
+                        sentCode = code
+                        SmsCodeManager.sendCode(context, phone, code)
+                    }
+                ) {
+                    Text("Получить код")
+                }
+            } else {
+                OutlinedTextField(
+                    value = inputCode,
+                    onValueChange = { inputCode = it },
+                    label = { Text("Код подтверждения") },
+                    modifier = Modifier.fillMaxWidth(),
+                    supportingText = { Text("Ожидаем SMS...") }
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                Button(
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isLoading,
+                    onClick = {
+                        if (inputCode == sentCode) {
+                            isLoading = true
+                            scope.launch {
+                                try {
+                                    // Генерация ключей и публикация в DHT
+                                    val success = identityRepository.publishIdentity(phone, name)
+                                    if (success) onSuccess()
+                                    else {
+                                        error = "Ошибка создания ключей"
+                                        isLoading = false
+                                    }
+                                } catch (e: Exception) {
+                                    error = "Сбой P2P: ${e.localizedMessage}"
                                     isLoading = false
                                 }
-                            } catch (e: Exception) {
-                                error = "Сбой P2P: ${e.localizedMessage}"
-                                isLoading = false
                             }
+                        } else {
+                            error = "Неверный код"
                         }
+                    }
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = Color.White)
                     } else {
-                        error = "Неверный код"
+                        Text("Создать профиль")
                     }
                 }
-            ) {
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp), // ИСПРАВЛЕНО
-                        strokeWidth = 2.dp,
-                        color = Color.White
-                    )
-                } else {
-                    Text("Создать профиль")
+                
+                TextButton(onClick = { sentCode = null; inputCode = "" }) {
+                    Text("Назад", color = Color.Gray)
                 }
             }
-            
-            TextButton(onClick = { sentCode = null; inputCode = "" }) {
-                Text("Назад", color = Color.Gray)
-            }
-        }
 
-        if (permissionDenied) {
-            Spacer(Modifier.height(16.dp))
-            Button(
-                onClick = {
-                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                        data = Uri.fromParts("package", context.packageName, null)
-                    }
-                    context.startActivity(intent)
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-            ) {
-                Text("Открыть настройки разрешений")
+            if (permissionDenied) {
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.fromParts("package", context.packageName, null)
+                        }
+                        context.startActivity(intent)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Разрешить SMS в настройках")
+                }
             }
-        }
 
-        error?.let {
-            Text(
-                text = it, 
-                color = MaterialTheme.colorScheme.error, 
-                modifier = Modifier.padding(top = 16.dp),
-                style = MaterialTheme.typography.bodyMedium
-            )
+            error?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 16.dp))
+            }
         }
     }
 }
