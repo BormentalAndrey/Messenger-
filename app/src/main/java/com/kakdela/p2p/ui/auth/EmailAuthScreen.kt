@@ -6,20 +6,21 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.kakdela.p2p.data.IdentityRepository
 import kotlinx.coroutines.launch
 
+/**
+ * Экран входа/восстановления через Email.
+ * В P2P это работает как загрузка зашифрованного ключа из сети.
+ */
 @Composable
 fun EmailAuthScreen(
+    identityRepository: IdentityRepository,
     onAuthSuccess: () -> Unit
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    // Используем remember для предотвращения пересоздания репозитория при рекомпозиции
-    val identityRepo = remember { IdentityRepository(context) }
 
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -28,7 +29,7 @@ fun EmailAuthScreen(
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = Color.Black
     ) {
         Column(
             modifier = Modifier
@@ -38,9 +39,14 @@ fun EmailAuthScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "Вход в P2P сеть",
+                text = "Восстановление личности",
                 style = MaterialTheme.typography.headlineMedium,
                 color = Color.Cyan
+            )
+            Text(
+                text = "Ваш профиль будет загружен из P2P сети",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray
             )
 
             Spacer(Modifier.height(32.dp))
@@ -49,9 +55,9 @@ fun EmailAuthScreen(
                 value = email,
                 onValueChange = { 
                     email = it.trim().lowercase() 
-                    error = null // Сбрасываем ошибку при вводе
+                    error = null 
                 },
-                label = { Text("Email") },
+                label = { Text("Email (логин бэкапа)") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 enabled = !isLoading
@@ -65,7 +71,7 @@ fun EmailAuthScreen(
                     password = it
                     error = null 
                 },
-                label = { Text("Пароль") },
+                label = { Text("Пароль для расшифровки") },
                 visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -76,43 +82,35 @@ fun EmailAuthScreen(
 
             Button(
                 modifier = Modifier.fillMaxWidth(),
-                enabled = !isLoading && email.isNotEmpty() && password.isNotEmpty(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan, contentColor = Color.Black),
+                enabled = !isLoading && email.isNotEmpty() && password.length >= 6,
                 onClick = {
                     isLoading = true
                     error = null
                     scope.launch {
-                        // Логика P2P: поиск по хешу email в DHT и дешифровка ключом на базе пароля
-                        val success = identityRepo.updateEmailBackup(email, password) // Используем существующий метод или его аналог
+                        // 1. Ищем в сети бэкап по хешу email
+                        // 2. Если найден, пытаемся расшифровать его паролем
+                        val success = identityRepository.updateEmailBackup(email, password)
                         
-                        // ПРИМЕЧАНИЕ: В IdentityRepository должен быть метод для входа (load/verify), 
-                        // здесь вызываем логику проверки.
                         if (success) {
                             onAuthSuccess()
                         } else {
-                            error = "Профиль не найден или пароль неверен"
+                            error = "Профиль не найден в сети или пароль неверен"
                             isLoading = false
                         }
                     }
                 }
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.Black)
                 } else {
-                    Text("Войти")
+                    Text("Восстановить доступ")
                 }
             }
 
             if (error != null) {
                 Spacer(Modifier.height(16.dp))
-                Text(
-                    text = error!!,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Text(text = error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
