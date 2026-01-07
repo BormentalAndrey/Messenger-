@@ -29,6 +29,7 @@ import com.kakdela.p2p.R
 import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
+import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.viewmodel.ChatViewModel
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
@@ -50,7 +51,7 @@ fun rememberIsOnline(): State<Boolean> {
         cm.registerNetworkCallback(
             NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                .build(), 
+                .build(),
             cb
         )
         onDispose { cm.unregisterNetworkCallback(cb) }
@@ -67,7 +68,6 @@ fun NoInternetScreen() {
         contentAlignment = Alignment.Center
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            // Используем твое изображение no_internet_neon
             Image(
                 painter = painterResource(id = R.drawable.no_internet_neon),
                 contentDescription = "Нет сети",
@@ -141,8 +141,6 @@ fun NavGraph(
             }
         }
     ) { paddingValues ->
-        // Если интернета нет, и мы не на экране авторизации/заставки — показываем заглушку
-        // Для P2P мессенджера это важно, если DHT требует выхода в сеть
         if (!isOnline && currentRoute !in listOf(Routes.SPLASH, Routes.CHOICE, Routes.DEALS)) {
              Box(modifier = Modifier.padding(paddingValues)) {
                  NoInternetScreen()
@@ -216,6 +214,7 @@ fun NavGraph(
                     )
                 }
 
+                // --- Основные экраны ---
                 composable(Routes.DEALS) { DealsScreen(navController) }
                 composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
                 composable(Routes.SETTINGS) { SettingsScreen(navController) }
@@ -227,6 +226,7 @@ fun NavGraph(
                 composable(Routes.JEWELS) { JewelsBlastScreen() }
                 composable(Routes.SUDOKU) { SudokuScreen() }
 
+                // --- WEB ---
                 composable(
                     route = "webview/{url}/{title}",
                     arguments = listOf(
@@ -238,8 +238,12 @@ fun NavGraph(
                     val title = e.arguments?.getString("title").orEmpty()
                     if (isOnline) WebViewScreen(url, title, navController) else NoInternetScreen()
                 }
+
+                // --- AI-помощник ---
+                composable(Routes.AI_CHAT) {
+                    AiChatScreen()
+                }
             }
         }
     }
 }
-    
