@@ -22,15 +22,14 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.ui.text.font.FontWeight
 
 private val NeonGreen = Color(0xFF00FFB3)
 private val NeonPink = Color(0xFFFF00FF)
 private val DarkBg = Color(0xFF0A0A0A)
-private val SurfaceGray = Color(0xFF1A1A1A)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,7 +71,7 @@ fun AiChatScreen() {
                 }
             }
 
-            // Панель ввода сообщений — прозрачная
+            // Панель ввода сообщений
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -85,23 +84,42 @@ fun AiChatScreen() {
                     Icon(Icons.Filled.AttachFile, contentDescription = "Прикрепить файл", tint = NeonPink)
                 }
 
+                // Пульсирующий бордер для поля ввода
+                val infiniteTransition = rememberInfiniteTransition()
+                val inputGlow by infiniteTransition.animateColor(
+                    initialValue = NeonGreen.copy(alpha = 0.6f),
+                    targetValue = NeonGreen.copy(alpha = 1f),
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(1200),
+                        repeatMode = RepeatMode.Reverse
+                    )
+                )
+
                 TextField(
                     value = input,
                     onValueChange = { input = it },
                     modifier = Modifier
                         .weight(1f)
-                        .height(50.dp)
-                        .border(1.dp, NeonGreen.copy(alpha = 0.7f), RoundedCornerShape(25.dp)),
-                    placeholder = { Text("Введите сообщение…", color = Color.Gray) },
-                    colors = TextFieldDefaults.textFieldColors(
-                        containerColor = Color.Transparent,
+                        .height(52.dp)
+                        .border(2.dp, inputGlow, RoundedCornerShape(26.dp))
+                        .shadow(8.dp, RoundedCornerShape(26.dp), ambientColor = inputGlow),
+                    placeholder = {
+                        Text(
+                            "Введите сообщение…",
+                            color = NeonGreen.copy(alpha = 0.6f),
+                            fontSize = 15.sp
+                        )
+                    },
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
                         cursorColor = NeonGreen,
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent
                     ),
-                    shape = RoundedCornerShape(25.dp),
+                    shape = RoundedCornerShape(26.dp),
                     singleLine = true
                 )
 
@@ -123,45 +141,59 @@ fun AiChatScreen() {
 @Composable
 private fun AiChatBubble(msg: ChatMessage) {
     val isUser = msg.isUser
-    val bubbleColor = if (isUser) Color(0xFF003D2B) else SurfaceGray
+    val alignment = if (isUser) Alignment.End else Alignment.Start
     val baseNeon = if (isUser) NeonGreen else NeonPink
-    val horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
 
     val infiniteTransition = rememberInfiniteTransition()
     val neonGlow by infiniteTransition.animateColor(
-        initialValue = baseNeon.copy(alpha = 0.5f),
+        initialValue = baseNeon.copy(alpha = 0.4f),
         targetValue = baseNeon.copy(alpha = 1f),
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1000, easing = LinearEasing),
+            animation = tween(durationMillis = 1200, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         )
     )
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = horizontalArrangement
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
         Box(
             modifier = Modifier
+                .align(alignment)
                 .widthIn(max = 300.dp)
-                .background(neonGlow.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
-                .blur(16.dp)
-        )
-
-        Box(
-            modifier = Modifier
-                .widthIn(max = 300.dp)
-                .shadow(8.dp, RoundedCornerShape(14.dp), ambientColor = neonGlow, spotColor = neonGlow)
-                .border(width = 2.dp, color = neonGlow, shape = RoundedCornerShape(14.dp))
-                .clip(RoundedCornerShape(14.dp))
-                .background(bubbleColor)
-                .padding(12.dp)
         ) {
-            Text(
-                text = msg.text,
-                color = Color.White,
-                fontSize = 14.sp
+            // Размытое свечение позади пузырька
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(neonGlow.copy(alpha = 0.3f), RoundedCornerShape(18.dp))
+                    .blur(radius = 20.dp)
             )
+
+            // Основной пузырёк — полностью прозрачный с неоновой рамкой
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .shadow(
+                        elevation = 12.dp,
+                        shape = RoundedCornerShape(18.dp),
+                        ambientColor = neonGlow,
+                        spotColor = neonGlow
+                    )
+                    .border(2.dp, neonGlow, RoundedCornerShape(18.dp))
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(Color.Transparent)
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = msg.text,
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    lineHeight = 20.sp
+                )
+            }
         }
     }
 }
