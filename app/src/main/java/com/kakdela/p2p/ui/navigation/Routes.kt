@@ -22,4 +22,7 @@ object Routes {
 
     // 🤖 AI ПОМОЩНИК
     const val AI_CHAT = "ai_chat"
+
+    // 📝 ТЕКСТОВЫЙ РЕДАКТОР
+    const val TEXT_EDITOR = "text_editor"
 }
