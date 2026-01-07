@@ -3,7 +3,6 @@ package com.kakdela.p2p.ui.chat
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.animateColor
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,9 +38,7 @@ fun AiChatScreen() {
 
     // Файловый селектор
     val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let {
-            vm.sendMessage("Отправлен файл: ${it.lastPathSegment ?: "файл"}")
-        }
+        uri?.let { vm.sendFile(it) }
     }
 
     Scaffold(
@@ -75,7 +72,6 @@ fun AiChatScreen() {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.Transparent)
                     .padding(8.dp)
                     .imePadding(),
                 verticalAlignment = Alignment.CenterVertically
@@ -84,7 +80,7 @@ fun AiChatScreen() {
                     Icon(Icons.Filled.AttachFile, contentDescription = "Прикрепить файл", tint = NeonPink)
                 }
 
-                // Пульсирующий бордер для поля ввода
+                // Пульсирующая рамка поля ввода
                 val infiniteTransition = rememberInfiniteTransition()
                 val inputGlow by infiniteTransition.animateColor(
                     initialValue = NeonGreen.copy(alpha = 0.6f),
@@ -104,11 +100,7 @@ fun AiChatScreen() {
                         .border(2.dp, inputGlow, RoundedCornerShape(26.dp))
                         .shadow(8.dp, RoundedCornerShape(26.dp), ambientColor = inputGlow),
                     placeholder = {
-                        Text(
-                            "Введите сообщение…",
-                            color = NeonGreen.copy(alpha = 0.6f),
-                            fontSize = 15.sp
-                        )
+                        Text("Введите сообщение…", color = NeonGreen.copy(alpha = 0.6f), fontSize = 15.sp)
                     },
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.Transparent,
@@ -141,7 +133,7 @@ fun AiChatScreen() {
 @Composable
 private fun AiChatBubble(msg: ChatMessage) {
     val isUser = msg.isUser
-    val alignment = if (isUser) Alignment.End else Alignment.Start
+    val alignment: Alignment = if (isUser) Alignment.End else Alignment.Start
     val baseNeon = if (isUser) NeonGreen else NeonPink
 
     val infiniteTransition = rememberInfiniteTransition()
