@@ -27,7 +27,6 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
-import com.google.firebase.auth.FirebaseAuth
 import com.kakdela.p2p.R
 import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.ui.*
@@ -149,7 +148,9 @@ fun NavGraph(
         ) {
             composable(Routes.SPLASH) {
                 SplashScreen(onTimeout = {
-                    val next = if (FirebaseAuth.getInstance().currentUser != null) Routes.CHATS else Routes.CHOICE
+                    // ИСПРАВЛЕНО: Проверяем наличие локального P2P ID вместо Firebase
+                    val myId = identityRepository.getMyId()
+                    val next = if (myId.isNotEmpty()) Routes.CHATS else Routes.CHOICE
                     navController.navigate(next) { popUpTo(Routes.SPLASH) { inclusive = true } }
                 })
             }
@@ -213,16 +214,18 @@ fun NavGraph(
             composable("chat/{chatId}") { backStack ->
                 val chatId = backStack.arguments?.getString("chatId") ?: ""
                 val vm: ChatViewModel = viewModel()
-                val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
                 
-                LaunchedEffect(chatId) { vm.initChat(chatId, uid) }
+                // ИСПРАВЛЕНО: Используем локальный P2P ID
+                val myUid = identityRepository.getMyId()
+                
+                LaunchedEffect(chatId) { vm.initChat(chatId, myUid) }
                 
                 val messages by vm.messages.collectAsState()
                 
                 ChatScreen(
                     chatPartnerId = chatId,
                     messages = messages,
-                    identityRepository = identityRepository,
+                    identityRepository = identityRepository, // ПЕРЕДАНО
                     onSendMessage = { text -> vm.sendMessage(text) },
                     onSendFile = { uri, type -> vm.sendFile(uri, type) },
                     onSendAudio = { uri, duration -> vm.sendAudio(uri, duration) },
