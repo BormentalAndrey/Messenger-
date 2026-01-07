@@ -23,11 +23,17 @@ import com.kakdela.p2p.ui.navigation.Routes
 @Composable
 fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(onClick).padding(16.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            Modifier.size(48.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary),
+            Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary),
             contentAlignment = Alignment.Center
         ) {
             Text(chat.title.first().toString(), color = Color.Black)
@@ -48,7 +54,7 @@ fun ChatsListScreen(
 ) {
     val vm: ChatsListViewModel = viewModel()
     val chats by vm.chats.collectAsState()
-    val uid = Firebase.auth.currentUser?.uid ?: ""
+    val uid = Firebase.auth.currentUser?.uid.orEmpty()
 
     LaunchedEffect(uid) {
         if (uid.isNotEmpty()) vm.loadChats(uid)
@@ -68,7 +74,10 @@ fun ChatsListScreen(
         }
     ) { padding ->
         LazyColumn(
-            Modifier.fillMaxSize().background(Color.Black).padding(padding)
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .padding(padding)
         ) {
             items(chats, key = { it.id }) { chat ->
                 ChatListItem(chat) {
