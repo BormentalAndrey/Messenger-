@@ -36,24 +36,28 @@ android {
         ndk {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
         }
+
+        // ✅ ДОБАВЛЕНО: API-ключ Gemini для умного чата
+        buildConfigField(
+            "String",
+            "GEMINI_API_KEY",
+            "\"${localProperties.getProperty("GEMINI_API_KEY") ?: ""}\""
+        )
     }
 
     signingConfigs {
         create("release") {
-            // Твой ключ лежит в папке app, поэтому путь просто "my-release-key.jks"
             storeFile = file("my-release-key.jks")
 
-            // Берем пароли из GitHub Secrets (System.getenv) 
-            // или из файла local.properties (localProperties.getProperty)
-            storePassword = System.getenv("KEYSTORE_PASSWORD") 
+            storePassword = System.getenv("KEYSTORE_PASSWORD")
                 ?: localProperties.getProperty("RELEASE_STORE_PASSWORD") ?: ""
-            
-            keyAlias = System.getenv("KEY_ALIAS") 
+
+            keyAlias = System.getenv("KEY_ALIAS")
                 ?: localProperties.getProperty("RELEASE_KEY_ALIAS") ?: ""
-            
-            keyPassword = System.getenv("KEY_PASSWORD") 
+
+            keyPassword = System.getenv("KEY_PASSWORD")
                 ?: localProperties.getProperty("RELEASE_KEY_PASSWORD") ?: ""
-            
+
             enableV1Signing = true
             enableV2Signing = true
         }
@@ -62,16 +66,14 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
-            // Принудительно подписываем релизный APK
             signingConfig = signingConfigs.getByName("release")
-            
+
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
         debug {
-            // Дебаг тоже подписываем этим ключом, чтобы проще было ставить поверх
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -87,6 +89,9 @@ android {
 
     buildFeatures {
         compose = true
+
+        // ✅ ДОБАВЛЕНО: нужно для BuildConfig.GEMINI_API_KEY
+        buildConfig = true
     }
 
     composeOptions {
@@ -221,4 +226,3 @@ tasks.withType<JavaCompile>().configureEach {
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
     dependsOn(copyAndroidNatives)
 }
-
