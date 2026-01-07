@@ -1,111 +1,109 @@
-package com.kakdela.p2p.ui
+package com.kakdela.p2p.viewmodel
 
-import android.app.Application
 import android.net.Uri
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
+import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.data.Message
 import com.kakdela.p2p.data.MessageType
-import com.kakdela.p2p.data.local.ChatDatabase
-import com.kakdela.p2p.data.local.MessageEntity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.json.JSONObject
+import java.util.*
 
-class ChatViewModel(app: Application) : AndroidViewModel(app) {
-
-    private val firestore = FirebaseFirestore.getInstance()
-    private val dao = ChatDatabase.getDatabase(app).messageDao()
-    private val currentUserId = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+class ChatViewModel(private val repository: IdentityRepository) : ViewModel() {
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages = _messages.asStateFlow()
 
-    private var chatId: String = ""
+    private var partnerId: String = "" // В P2P это публичный ключ или хеш партнера
+    private var partnerIp: String = "" // IP адрес для отправки UDP пакетов
 
-    fun initChat(id: String) {
-        chatId = id
-        listenMessages()
-    }
-
-    // 🔹 Совместимость с NavGraph
-    fun initChat(id: String, uid: String) {
-        chatId = id
-        listenMessages()
-    }
-
-    private fun listenMessages() {
-        if (chatId.isBlank()) return
-
-        firestore.collection("chats")
-            .document(chatId)
-            .collection("messages")
-            .orderBy("timestamp")
-            .addSnapshotListener { snap, _ ->
-                val list = snap?.toObjects(Message::class.java)?.map {
-                    it.copy(isMe = it.senderId == currentUserId)
-                } ?: emptyList()
-
-                _messages.value = list
-
-                viewModelScope.launch {
-                    dao.insertAll(
-                        list.map {
-                            MessageEntity(
-                                id = it.id,
-                                chatId = chatId,
-                                senderId = it.senderId,
-                                text = it.text,
-                                timestamp = it.timestamp
-                            )
-                        }
-                    )
-                }
+    init {
+        // Подписываемся на входящие P2P сообщения
+        repository.onSignalingMessageReceived = { type, data, fromIp ->
+            if (type == "CHAT_MSG") {
+                handleIncomingP2PMessage(data, fromIp)
             }
+        }
+    }
+
+    fun initChat(id: String, myUid: String) {
+        this.partnerId = id
+        // В реальном сценарии здесь должен быть поиск IP в DHT по id (публичному ключу)
+        // Для тестов предполагаем, что id может временно содержать IP или берется из кэша
+    }
+
+    fun setPartnerIp(ip: String) {
+        this.partnerIp = ip
+    }
+
+    private fun handleIncomingP2PMessage(jsonStr: String, fromIp: String) {
+        try {
+            val json = JSONObject(jsonStr)
+            val msg = Message(
+                id = json.getString("id"),
+                senderId = json.getString("senderId"),
+                text = json.getString("text"),
+                timestamp = json.getLong("timestamp"),
+                isMe = false
+            )
+            
+            // Если сообщение от текущего собеседника, обновляем UI
+            if (msg.senderId == partnerId || fromIp == partnerIp) {
+                _messages.value = _messages.value + msg
+            }
+            
+            // Здесь должна быть логика сохранения в локальную БД (Room)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     fun sendMessage(text: String) {
-        if (chatId.isBlank() || text.isBlank()) return
+        if (text.isBlank() || partnerIp.isBlank()) return
 
-        val ref = firestore.collection("chats")
-            .document(chatId)
-            .collection("messages")
-            .document()
+        val myId = repository.getMyId()
+        val timestamp = System.currentTimeMillis()
+        val msgId = UUID.randomUUID().toString()
 
-        ref.set(
-            Message(
-                id = ref.id,
-                senderId = currentUserId,
-                text = text,
-                type = MessageType.TEXT
-            )
+        val msgObj = Message(
+            id = msgId,
+            senderId = myId,
+            text = text,
+            timestamp = timestamp,
+            isMe = true
         )
+
+        // 1. Обновляем локальный UI
+        _messages.value = _messages.value + msgObj
+
+        // 2. Сериализуем и отправляем через P2P репозиторий
+        val payload = JSONObject().apply {
+            put("id", msgId)
+            put("senderId", myId)
+            put("text", text)
+            put("timestamp", timestamp)
+        }
+
+        repository.sendSignaling(partnerIp, "CHAT_MSG", payload.toString())
+        
+        // 3. Сохраняем в локальную БД (dao.insert...)
     }
 
     fun sendFile(uri: Uri, type: MessageType) {
-        sendMessage("Файл: ${uri.lastPathSegment}")
+        sendMessage("Отправлен файл: ${uri.lastPathSegment}")
+        // Здесь будет запуск FileTransferWorker
     }
 
     fun sendAudio(uri: Uri, duration: Int) {
-        sendMessage("Аудио ($duration сек)")
+        sendMessage("Аудио сообщение ($duration сек)")
     }
 
     fun scheduleMessage(text: String, timeMillis: Long) {
-        val ref = firestore.collection("chats")
-            .document(chatId)
-            .collection("messages")
-            .document()
-
-        ref.set(
-            Message(
-                id = ref.id,
-                senderId = currentUserId,
-                text = text,
-                timestamp = timeMillis,
-                type = MessageType.TEXT
-            )
-        )
+        // В P2P отложенные сообщения хранятся локально и отправляются по таймеру
+        sendMessage("[Запланировано] $text")
     }
 }
+
