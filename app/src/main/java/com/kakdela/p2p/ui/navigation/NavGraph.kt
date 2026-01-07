@@ -100,12 +100,13 @@ fun NavGraph(
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar(containerColor = Color(0xFF0A0A0A)) {
-                    listOf(
+                    val items = listOf(
                         Triple(Routes.CHATS, Icons.Outlined.ChatBubbleOutline, "Чаты"),
                         Triple(Routes.DEALS, Icons.Filled.Checklist, "Дела"),
                         Triple(Routes.ENTERTAINMENT, Icons.Outlined.PlayCircleOutline, "Развлечения"),
                         Triple(Routes.SETTINGS, Icons.Filled.Settings, "Настройки")
-                    ).forEach { (r, icon, label) ->
+                    )
+                    items.forEach { (r, icon, label) ->
                         NavigationBarItem(
                             selected = route == r,
                             onClick = {
@@ -117,7 +118,7 @@ fun NavGraph(
                                     }
                                 }
                             },
-                            icon = { Icon(icon, null) },
+                            icon = { Icon(icon, contentDescription = label) },
                             label = { Text(label) }
                         )
                     }
@@ -127,16 +128,17 @@ fun NavGraph(
     ) { padding ->
 
         NavHost(
-            navController,
+            navController = navController,
             startDestination = Routes.SPLASH,
-            modifier = Modifier.padding(padding).background(Color.Black)
+            modifier = Modifier
+                .padding(padding)
+                .background(Color.Black)
         ) {
 
             composable(Routes.SPLASH) {
                 SplashScreen {
-                    navController.navigate(
-                        if (identityRepository.getMyId().isNotEmpty()) Routes.CHATS else Routes.CHOICE
-                    ) {
+                    val nextRoute = if (identityRepository.getMyId().isNotEmpty()) Routes.CHATS else Routes.CHOICE
+                    navController.navigate(nextRoute) {
                         popUpTo(Routes.SPLASH) { inclusive = true }
                     }
                 }
@@ -150,7 +152,7 @@ fun NavGraph(
             }
 
             composable(Routes.AUTH_EMAIL) {
-                EmailAuthScreen {
+                EmailAuthScreen(identityRepository) {
                     navController.navigate(Routes.CHATS) {
                         popUpTo(Routes.CHOICE) { inclusive = true }
                     }
@@ -158,7 +160,7 @@ fun NavGraph(
             }
 
             composable(Routes.AUTH_PHONE) {
-                PhoneAuthScreen {
+                PhoneAuthScreen(identityRepository) {
                     navController.navigate(Routes.CHATS) {
                         popUpTo(Routes.CHOICE) { inclusive = true }
                     }
@@ -170,7 +172,10 @@ fun NavGraph(
             }
 
             composable(Routes.CONTACTS) {
-                ContactsScreen { id -> navController.navigate("chat/$id") }
+                // ИСПРАВЛЕНО: Передаем identityRepository, если экран его требует
+                ContactsScreen(navController, identityRepository) { id -> 
+                    navController.navigate("chat/$id") 
+                }
             }
 
             composable("chat/{chatId}") { entry ->
@@ -214,14 +219,16 @@ fun NavGraph(
                     navArgument("title") { type = NavType.StringType }
                 )
             ) { e ->
+                val url = e.arguments?.getString("url").orEmpty()
+                val title = e.arguments?.getString("title").orEmpty()
+                
                 if (isOnline) {
-                    WebViewScreen(
-                        e.arguments?.getString("url").orEmpty(),
-                        e.arguments?.getString("title").orEmpty(),
-                        navController
-                    )
-                } else NoInternetScreen()
+                    WebViewScreen(url, title, navController)
+                } else {
+                    NoInternetScreen()
+                }
             }
         }
     }
 }
+
