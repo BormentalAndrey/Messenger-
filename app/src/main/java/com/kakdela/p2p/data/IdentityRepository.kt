@@ -57,12 +57,18 @@ class IdentityRepository(private val context: Context) {
         val savedHash = prefs.getString("my_pub_key_hash", null)
         if (savedHash != null) return savedHash
 
-        val pubKey = CryptoManager.getMyPublicKeyStr()
-        val hash = sha256(pubKey)
-        prefs.edit().putString("my_pub_key_hash", hash).apply()
-        return hash
+        // Если ключи готовы, берем хеш, иначе возвращаем пустую строку
+        return if (CryptoManager.isKeyReady()) {
+            val pubKey = CryptoManager.getMyPublicKeyStr()
+            val hash = sha256(pubKey)
+            prefs.edit().putString("my_pub_key_hash", hash).apply()
+            hash
+        } else ""
     }
 
+    /**
+     * Проверка готовности криптографических ключей.
+     */
     fun isKeyReady(): Boolean = CryptoManager.isKeyReady()
 
     /**
@@ -70,6 +76,11 @@ class IdentityRepository(private val context: Context) {
      */
     suspend fun publishIdentity(phoneNumber: String, name: String): Boolean = withContext(Dispatchers.IO) {
         try {
+            // Инициализируем ключи, если они еще не созданы
+            if (!CryptoManager.isKeyReady()) {
+                CryptoManager.generateKeys(context)
+            }
+
             val publicKey = CryptoManager.getMyPublicKeyStr()
             val phoneHash = sha256(phoneNumber)
             
@@ -89,11 +100,16 @@ class IdentityRepository(private val context: Context) {
 
     suspend fun updateEmailBackup(email: String, pass: String): Boolean {
         // В P2P логике email используется как ключ поиска ключа восстановления
+        // Здесь можно добавить логику шифрования приватного ключа паролем 'pass' 
+        // и отправку его в DHT. Пока используем базовый метод публикации.
         return publishIdentity(email, "P2P_Backup_Node")
     }
 
     // --- Network API ---
 
+    /**
+     * Отправка текстового сигналинга (JSON).
+     */
     fun sendSignaling(targetIp: String, type: String, data: String) {
         val payload = JSONObject().apply {
             put("type", type)
@@ -103,6 +119,15 @@ class IdentityRepository(private val context: Context) {
         }
         payload.put("signature", sign(payload))
         sendUdp(targetIp, payload.toString())
+    }
+
+    /**
+     * Отправка бинарных данных (используется FileTransferWorker).
+     * Конвертирует ByteArray в Base64 для безопасной передачи внутри JSON-пакета.
+     */
+    fun sendSignalingData(targetIp: String, type: String, data: ByteArray) {
+        val base64Data = Base64.encodeToString(data, Base64.NO_WRAP)
+        sendSignaling(targetIp, type, base64Data)
     }
 
     fun findPeerInDHT(key: String) {
@@ -121,8 +146,6 @@ class IdentityRepository(private val context: Context) {
     fun sendToSingleAddress(ip: String, message: String) = sendUdp(ip, message)
 
     // --- UDP Engine ---
-
-    
 
     private fun startListening() {
         scope.launch {
@@ -143,8 +166,9 @@ class IdentityRepository(private val context: Context) {
                     val type = json.getString("type")
                     when (type) {
                         "STORE" -> {
-                            localDhtSlice[json.getString("key")] = 
-                                json.getString("value") to (System.currentTimeMillis() + DHT_TTL_MS)
+                            val key = json.getString("key")
+                            val value = json.getString("value")
+                            localDhtSlice[key] = value to (System.currentTimeMillis() + DHT_TTL_MS)
                         }
                         "FIND" -> {
                             val key = json.getString("key")
@@ -154,7 +178,7 @@ class IdentityRepository(private val context: Context) {
                         }
                         "OFFER" -> launchIncomingCall(senderIp, json.optString("data"))
                         else -> {
-                            // Прокидываем в UI (сообщения чата, ICE-кандидаты и т.д.)
+                            // Прокидываем в UI (сообщения чата, ICE-кандидаты и бинарные данные)
                             onSignalingMessageReceived?.invoke(type, json.optString("data"), senderIp)
                         }
                     }
@@ -189,7 +213,6 @@ class IdentityRepository(private val context: Context) {
         }
         payload.put("signature", sign(payload))
         
-        // Отправляем всем известным узлам напрямую + Broadcast в подсеть
         val msg = payload.toString()
         discoveredPeers.forEach { sendUdp(it, msg) }
         sendUdp("255.255.255.255", msg)
@@ -223,7 +246,7 @@ class IdentityRepository(private val context: Context) {
                     val address = InetAddress.getByName("255.255.255.255")
                     socket.send(DatagramPacket(msg, msg.size, address, DISCOVERY_PORT))
                 } catch (e: Exception) {}
-                delay(15_000) // Анонс каждые 15 секунд
+                delay(15_000)
             }
         }
     }
@@ -231,10 +254,11 @@ class IdentityRepository(private val context: Context) {
     // --- Security Helpers ---
 
     private fun sign(json: JSONObject): String {
-        // Создаем копию без поля signature для корректного хеширования
-        val clone = JSONObject(json.toString()).apply { remove("signature") }
-        val signatureBytes = CryptoManager.sign(clone.toString().toByteArray())
-        return Base64.encodeToString(signatureBytes, Base64.NO_WRAP)
+        return try {
+            val clone = JSONObject(json.toString()).apply { remove("signature") }
+            val signatureBytes = CryptoManager.sign(clone.toString().toByteArray())
+            Base64.encodeToString(signatureBytes, Base64.NO_WRAP)
+        } catch (e: Exception) { "" }
     }
 
     private fun verify(json: JSONObject): Boolean {
@@ -243,15 +267,12 @@ class IdentityRepository(private val context: Context) {
             val timestamp = json.getLong("timestamp")
             val signature = json.getString("signature")
 
-            // 1. Проверка времени (защита от повторов)
             if (abs(System.currentTimeMillis() - timestamp) > MAX_MESSAGE_AGE_MS) return false
             
-            // 2. Проверка дубликата по ID сообщения (from + timestamp)
             val msgId = "$from$timestamp"
             if (seenTimestamps.containsKey(msgId)) return false
             seenTimestamps[msgId] = timestamp
 
-            // 3. Проверка криптографической подписи
             val clone = JSONObject(json.toString()).apply { remove("signature") }
             val pubKey = CryptoManager.getPublicKeyByHash(from) ?: return false
             
@@ -287,11 +308,10 @@ class IdentityRepository(private val context: Context) {
     }
 
     private fun getLocalIp(): String? = try {
-        val wm = context.getSystemService(Context.WIFI_SERVICE) as WifiManager
-        Formatter.formatIpAddress(wm.connectionInfo.ipAddress)
-    } catch (e: Exception) {
-        null
-    }
+        val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val ip = wm.connectionInfo.ipAddress
+        if (ip == 0) null else Formatter.formatIpAddress(ip)
+    } catch (e: Exception) { null }
 
     private fun sha256(input: String): String = 
         MessageDigest.getInstance("SHA-256").digest(input.toByteArray())
