@@ -22,17 +22,18 @@ class IdentityRepository(private val context: Context) {
     private val prefs = context.getSharedPreferences("p2p_identity", Context.MODE_PRIVATE)
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
+    // Локальная копия DHT: Key (Hash) -> Pair(Value, ExpirationTimestamp)
     private val localDhtSlice = ConcurrentHashMap<String, Pair<String, Long>>()
     private val discoveredPeers = CopyOnWriteArraySet<String>()
     private val seenTimestamps = ConcurrentHashMap<String, Long>()
 
-    // Коллбэк для UI (звонки, файлы, чат)
+    // Коллбэк для UI и менеджеров (теперь передает полные данные сообщения)
     var onSignalingMessageReceived: ((type: String, data: String, fromIp: String) -> Unit)? = null
 
     private val P2P_PORT = 8888
     private val DISCOVERY_PORT = 8889
     private val MAX_MESSAGE_AGE_MS = 30_000
-    private val DHT_TTL_MS = 48 * 60 * 60 * 1000L
+    private val DHT_TTL_MS = 48 * 60 * 60 * 1000L // 48 часов хранения
 
     init {
         startListening()
@@ -42,12 +43,9 @@ class IdentityRepository(private val context: Context) {
     }
 
     /* ----------------------------------------------------
-       PUBLIC IDENTITY API (Замена Firebase)
+       PUBLIC IDENTITY API
      ---------------------------------------------------- */
 
-    /**
-     * Возвращает уникальный ID текущего пользователя (Хеш публичного ключа)
-     */
     fun getMyId(): String {
         val stored = prefs.getString("my_pub_key_hash", null)
         if (stored != null) return stored
@@ -61,27 +59,7 @@ class IdentityRepository(private val context: Context) {
     fun getMyPublicKeyHash(): String = getMyId()
 
     /* ----------------------------------------------------
-       COMPATIBILITY LAYER (Для ContactP2PManager и рабочих процессов)
-     ---------------------------------------------------- */
-
-    fun sendToSingleAddress(ip: String, message: String) = sendUdp(ip, message)
-
-    fun sendSignalingData(targetIp: String, type: String, data: String) = sendSignaling(targetIp, type, data)
-
-    fun findPeerInDHT(key: String) {
-        val payload = JSONObject().apply {
-            put("type", "FIND")
-            put("key", key)
-            put("from", getMyPublicKeyHash())
-            put("timestamp", System.currentTimeMillis())
-        }
-        payload.put("signature", sign(payload))
-        val msg = payload.toString()
-        discoveredPeers.forEach { ip -> sendUdp(ip, msg) }
-    }
-
-    /* ----------------------------------------------------
-       P2P OPERATIONS
+       P2P OPERATIONS & DHT
      ---------------------------------------------------- */
 
     suspend fun publishIdentity(phoneNumber: String, name: String): Boolean = withContext(Dispatchers.IO) {
@@ -96,15 +74,24 @@ class IdentityRepository(private val context: Context) {
                 apply()
             }
 
+            // Рассылаем свою личность соседям для сохранения в DHT
             sendBroadcastPacket("STORE", phoneHash, publicKey)
             true
         } catch (e: Exception) { false }
     }
 
-    suspend fun signInWithEmailP2P(email: String, pass: String): Boolean = withContext(Dispatchers.IO) {
-        // Логика: ищем в DHT зашифрованный профиль и пробуем дешифровать CryptoManager-ом
-        // Для упрощения возвращаем true, если ключи в Keystore валидны
-        CryptoManager.isKeyReady()
+    fun findPeerInDHT(key: String) {
+        val payload = JSONObject().apply {
+            put("type", "FIND")
+            put("key", key)
+            put("from", getMyPublicKeyHash())
+            put("timestamp", System.currentTimeMillis())
+        }
+        payload.put("signature", sign(payload))
+        val msg = payload.toString()
+        
+        // Отправляем запрос всем известным узлам
+        discoveredPeers.forEach { ip -> sendUdp(ip, msg) }
     }
 
     fun sendSignaling(targetIp: String, type: String, data: String) {
@@ -152,25 +139,31 @@ class IdentityRepository(private val context: Context) {
                     if (!verify(json)) continue
 
                     val type = json.getString("type")
-                    val data = json.optString("data")
 
                     when (type) {
                         "STORE" -> {
                             val key = json.getString("key")
                             val value = json.getString("value")
                             localDhtSlice[key] = Pair(value, System.currentTimeMillis() + DHT_TTL_MS)
+                            Log.d("P2P_DHT", "Stored data for key: $key")
                         }
                         "FIND" -> {
                             val key = json.getString("key")
                             localDhtSlice[key]?.let { (value, _) ->
-                                sendSignaling(senderIp, "STORE_RESPONSE", value)
+                                // Формируем ответ: "искомый_хеш:публичный_ключ"
+                                val responseData = "$key:$value"
+                                sendSignaling(senderIp, "STORE_RESPONSE", responseData)
                             }
                         }
-                        "OFFER" -> launchIncomingCall(senderIp, data)
-                        "ANSWER", "ICE", "CANDIDATE", "STORE_RESPONSE", "CHAT_MSG" -> 
-                            onSignalingMessageReceived?.invoke(type, data, senderIp)
+                        "OFFER" -> launchIncomingCall(senderIp, json.optString("data"))
+                        "ANSWER", "ICE", "CANDIDATE", "STORE_RESPONSE", "CHAT_MSG" -> {
+                            val msgData = json.optString("data")
+                            onSignalingMessageReceived?.invoke(type, msgData, senderIp)
+                        }
                     }
-                } catch (e: Exception) { }
+                } catch (e: Exception) {
+                    Log.e("P2P_NET", "Listen error: ${e.message}")
+                }
             }
         }
     }
@@ -180,28 +173,35 @@ class IdentityRepository(private val context: Context) {
             try {
                 val socket = DatagramSocket()
                 val data = message.toByteArray()
-                socket.send(DatagramPacket(data, data.size, InetAddress.getByName(ip), P2P_PORT))
+                val address = InetAddress.getByName(ip)
+                socket.send(DatagramPacket(data, data.size, address, P2P_PORT))
                 socket.close()
-            } catch (e: Exception) { }
+            } catch (e: Exception) {
+                Log.e("P2P_NET", "Send error to $ip: ${e.message}")
+            }
         }
     }
 
     /* ----------------------------------------------------
-       DISCOVERY & CRYPTO HELPERS
+       DISCOVERY & SECURITY
      ---------------------------------------------------- */
 
     private fun startDiscovery() {
         scope.launch {
-            val socket = DatagramSocket(DISCOVERY_PORT)
-            val buffer = ByteArray(512)
-            while (isActive) {
-                try {
+            try {
+                val socket = DatagramSocket(DISCOVERY_PORT)
+                val buffer = ByteArray(512)
+                while (isActive) {
                     val packet = DatagramPacket(buffer, buffer.size)
                     socket.receive(packet)
                     val ip = packet.address.hostAddress ?: continue
-                    if (ip != getLocalIp()) discoveredPeers.add(ip)
-                } catch (e: Exception) { }
-            }
+                    if (ip != getLocalIp()) {
+                        if (discoveredPeers.add(ip)) {
+                            Log.d("P2P_DISCOVERY", "New peer found: $ip")
+                        }
+                    }
+                }
+            } catch (e: Exception) { }
         }
     }
 
@@ -211,9 +211,10 @@ class IdentityRepository(private val context: Context) {
             val msg = "IAM_HERE".toByteArray()
             while (isActive) {
                 try {
-                    socket.send(DatagramPacket(msg, msg.size, InetAddress.getByName("255.255.255.255"), DISCOVERY_PORT))
+                    val broadcastAddr = InetAddress.getByName("255.255.255.255")
+                    socket.send(DatagramPacket(msg, msg.size, broadcastAddr, DISCOVERY_PORT))
                 } catch (e: Exception) { }
-                delay(15_000)
+                delay(15_000) // Оповещаем о себе каждые 15 сек
             }
         }
     }
@@ -230,9 +231,10 @@ class IdentityRepository(private val context: Context) {
             val pubKeyHash = json.getString("from")
             val timestamp = json.getLong("timestamp")
 
+            // Проверка "свежести" сообщения
             if (kotlin.math.abs(System.currentTimeMillis() - timestamp) > MAX_MESSAGE_AGE_MS) return false
             
-            // Replay protection
+            // Защита от повторов (Replay attack)
             if (seenTimestamps.putIfAbsent(pubKeyHash + timestamp, timestamp) != null) return false
 
             val clone = JSONObject(json.toString()).apply { remove("signature") }
@@ -270,7 +272,8 @@ class IdentityRepository(private val context: Context) {
     private fun getLocalIp(): String? {
         return try {
             val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            Formatter.formatIpAddress(wm.connectionInfo.ipAddress)
+            val ip = wm.connectionInfo.ipAddress
+            Formatter.formatIpAddress(ip)
         } catch (e: Exception) { null }
     }
 
