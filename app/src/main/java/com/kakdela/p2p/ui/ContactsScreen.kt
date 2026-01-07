@@ -26,7 +26,6 @@ fun ContactsScreen(
     onContactClick: (AppContact) -> Unit
 ) {
     val context = LocalContext.current
-    // Используем новый P2P менеджер вместо ContactManager
     val contactManager = remember { ContactP2PManager(context, identityRepository) }
 
     var contacts by remember { mutableStateOf<List<AppContact>>(emptyList()) }
@@ -43,7 +42,6 @@ fun ContactsScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasPermission = granted }
 
-    // Автоматическая синхронизация при получении разрешений
     LaunchedEffect(hasPermission) {
         if (hasPermission) {
             isLoading = true
@@ -66,7 +64,8 @@ fun ContactsScreen(
                     color = Color.Gray
                 )
             }
-        }
+        },
+        containerColor = Color.Black
     ) { padding ->
         when {
             !hasPermission -> {
@@ -95,22 +94,35 @@ fun ContactList(
     LazyColumn(modifier = Modifier.padding(padding).fillMaxSize()) {
         items(contacts) { contact ->
             ListItem(
-                headlineContent = { Text(contact.name) },
-                supportingContent = { Text(contact.phoneNumber) },
+                headlineContent = { Text(contact.name, color = Color.White) },
+                supportingContent = { Text(contact.phoneNumber, color = Color.Gray) },
                 trailingContent = {
                     if (contact.isRegistered) {
-                        Badge(containerColor = Color(0xFF00FFF0)) {
-                            Text("P2P", color = Color.Black)
+                        Surface(
+                            color = Color(0xFF00FFF0),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                "P2P", 
+                                color = Color.Black, 
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall
+                            )
                         }
                     } else {
-                        Text("Не в сети", style = MaterialTheme.typography.labelSmall)
+                        Text("OFFLINE", color = Color.DarkGray, style = MaterialTheme.typography.labelSmall)
                     }
                 },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 modifier = Modifier.clickable(enabled = contact.isRegistered) {
                     onContactClick(contact)
                 }
             )
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = Color.DarkGray)
+            HorizontalDivider(
+                modifier = Modifier.padding(horizontal = 16.dp), 
+                thickness = 0.5.dp, 
+                color = Color(0xFF1A1A1A)
+            )
         }
     }
 }
@@ -119,9 +131,12 @@ fun ContactList(
 fun PermissionRequestUI(padding: PaddingValues, onGrant: () -> Unit) {
     Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Приложению нужен доступ к книге для поиска друзей")
+            Text("Доступ к контактам нужен для поиска друзей в сети", color = Color.White)
             Spacer(Modifier.height(16.dp))
-            Button(onClick = onGrant) { Text("Разрешить") }
+            Button(
+                onClick = onGrant,
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan, contentColor = Color.Black)
+            ) { Text("Разрешить") }
         }
     }
 }
