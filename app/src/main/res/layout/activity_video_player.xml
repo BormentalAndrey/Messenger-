@@ -12,17 +12,16 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         app:use_controller="false"
-        app:resize_mode="fit"
-        app:controller_layout_id="@layout/custom_player_controls" /> <!-- Если захотите кастомный контроллер ExoPlayer -->
+        app:resize_mode="fit" />
 
-    <!-- Оверлей для центральных индикаторов (перемотка, громкость, яркость) и иконки блокировки -->
+    <!-- Оверлей для центральных индикаторов и иконки блокировки -->
     <FrameLayout
         android:id="@+id/overlay_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@android:color/transparent">
 
-        <!-- Центральный индикатор жестов (неоновый текст) -->
+        <!-- Центральный индикатор жестов (перемотка, громкость, яркость) -->
         <TextView
             android:id="@+id/center_indicator"
             android:layout_width="wrap_content"
@@ -34,7 +33,7 @@
             android:shadowColor="#FF00FF"
             android:shadowRadius="30" />
 
-        <!-- Иконка блокировки (отображается по центру при locked) -->
+        <!-- Иконка блокировки экрана -->
         <ImageView
             android:id="@+id/lock_icon"
             android:layout_width="100dp"
@@ -47,7 +46,7 @@
             android:focusable="true" />
     </FrameLayout>
 
-    <!-- Верхняя панель (часы, батарея, название видео) -->
+    <!-- Верхняя панель (название видео, часы, батарея) -->
     <LinearLayout
         android:id="@+id/top_controls"
         android:layout_width="match_parent"
@@ -113,7 +112,7 @@
             android:progressBackgroundTint="#40FFFFFF"
             android:thumbTint="#FF00FF" />
 
-        <!-- Время -->
+        <!-- Текущее и общее время -->
         <RelativeLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -177,13 +176,13 @@
                 android:layout_height="0dp"
                 android:layout_weight="1" />
 
-            <!-- Дополнительные кнопки -->
+            <!-- Кнопка скорости (рекомендуется создать свой drawable ic_speed или заменить на системный) -->
             <ImageButton
                 android:id="@+id/btn_speed"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:src="@drawable/ic_speed" <!-- Создайте свой вектор или используйте @android:drawable/ic_menu_info_details -->
+                android:src="@android:drawable/ic_menu_info_details"
                 android:tint="#FF00FF" />
 
             <ImageButton
@@ -210,9 +209,9 @@
                 android:layout_height="48dp"
                 android:layout_marginStart="12dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:src="@android:drawable/ic_picture_in_picture"
+                android:src="@android:drawable/ic_media_pip"
                 android:tint="#00FFFF"
-                android:visibility="gone" /> <!-- Видимость управляется в коде (API 26+) -->
+                android:visibility="gone" />
 
             <ImageButton
                 android:id="@+id/btn_fullscreen"
