@@ -21,11 +21,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
+import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.ui.navigation.Routes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatsListScreen(navController: NavHostController) {
+fun ChatsListScreen(
+    navController: NavHostController,
+    identityRepository: IdentityRepository
+) {
     val viewModel: ChatsListViewModel = viewModel()
     val chats by viewModel.chats.collectAsState()
     val currentUserId = Firebase.auth.currentUser?.uid ?: ""
@@ -38,7 +42,6 @@ fun ChatsListScreen(navController: NavHostController) {
 
     Scaffold(
         topBar = {
-            // Обычный TopAppBar — заголовок автоматически слева
             TopAppBar(
                 title = {
                     Text(
@@ -47,27 +50,18 @@ fun ChatsListScreen(navController: NavHostController) {
                         color = MaterialTheme.colorScheme.primary
                     )
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Black
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
             )
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = {
-                    // Открываем экран поиска и добавления контактов
-                    navController.navigate(Routes.CONTACTS)
-                },
+                onClick = { navController.navigate(Routes.CONTACTS) },
                 containerColor = MaterialTheme.colorScheme.primary,
                 contentColor = Color.Black
             ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Добавить контакт / Новый чат"
-                )
+                Icon(Icons.Default.Add, contentDescription = "Новый чат")
             }
-        },
-        floatingActionButtonPosition = FabPosition.End // Кнопка справа внизу
+        }
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -81,82 +75,16 @@ fun ChatsListScreen(navController: NavHostController) {
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "Нет чатов",
-                            color = Color.Gray,
-                            fontSize = 18.sp
-                        )
+                        Text("Нет чатов", color = Color.Gray, fontSize = 18.sp)
                     }
                 }
             } else {
                 items(chats, key = { it.id }) { chat ->
-                    ChatListItem(chat = chat) {
+                    ChatListItem(chat) {
                         navController.navigate("chat/${chat.id}")
                     }
                 }
             }
         }
     }
-}
-
-/* =========================
-   ЭЛЕМЕНТ СПИСКА ЧАТОВ
-   ========================= */
-
-@Composable
-fun ChatListItem(
-    chat: ChatDisplay,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Аватарка
-        Box(
-            modifier = Modifier
-                .size(56.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = chat.title.firstOrNull()?.uppercaseChar()?.toString() ?: "?",
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = chat.title,
-                color = Color.White,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Medium
-            )
-
-            Text(
-                text = chat.lastMessage.ifEmpty { "Нет сообщений" },
-                color = Color.Gray,
-                fontSize = 14.sp,
-                maxLines = 1
-            )
-        }
-
-        Column(horizontalAlignment = Alignment.End) {
-            Text(
-                text = chat.time,
-                color = Color.Gray,
-                fontSize = 12.sp
-            )
-        }
-    }
-
-    HorizontalDivider(color = Color.DarkGray.copy(alpha = 0.3f))
 }
