@@ -29,10 +29,12 @@ import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.google.firebase.auth.FirebaseAuth
 import com.kakdela.p2p.R
+import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.ui.TextEditorScreen
+import com.kakdela.p2p.viewmodel.ChatViewModel
 
 @Composable
 fun rememberIsOnline(): State<Boolean> {
@@ -49,7 +51,10 @@ fun rememberIsOnline(): State<Boolean> {
             override fun onAvailable(network: Network) { connected.value = true }
             override fun onLost(network: Network) { connected.value = false }
         }
-        connectivityManager.registerNetworkCallback(NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), callback)
+        connectivityManager.registerNetworkCallback(
+            NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), 
+            callback
+        )
         onDispose { connectivityManager.unregisterNetworkCallback(callback) }
     }
     return connected
@@ -69,8 +74,11 @@ fun NoInternetScreen() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NavGraph(navController: NavHostController) {
-    val isOnline by rememberIsOnline() // Следим за сетью
+fun NavGraph(
+    navController: NavHostController,
+    identityRepository: IdentityRepository // ДОБАВЛЕНО: Репозиторий для P2P функций
+) {
+    val isOnline by rememberIsOnline()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
@@ -124,9 +132,22 @@ fun NavGraph(navController: NavHostController) {
                 })
             }
 
-            composable(Routes.CHOICE) { RegistrationChoiceScreen(onEmail = { navController.navigate(Routes.AUTH_EMAIL) }, onPhone = { navController.navigate(Routes.AUTH_PHONE) }) }
-            composable(Routes.AUTH_EMAIL) { EmailAuthScreen(navController) { navController.navigate(Routes.CHATS) } }
-            composable(Routes.AUTH_PHONE) { PhoneAuthScreen { navController.navigate(Routes.CHATS) } }
+            // ИСПРАВЛЕНО: Аргументы для RegistrationChoiceScreen
+            composable(Routes.CHOICE) { 
+                RegistrationChoiceScreen(
+                    onPhone = { navController.navigate(Routes.AUTH_PHONE) },
+                    onEmailOnly = { navController.navigate(Routes.AUTH_EMAIL) }
+                ) 
+            }
+
+            // ИСПРАВЛЕНО: Аргументы для EmailAuthScreen (убрали navController, если он не нужен внутри)
+            composable(Routes.AUTH_EMAIL) { 
+                EmailAuthScreen(onAuthSuccess = { navController.navigate(Routes.CHATS) }) 
+            }
+
+            composable(Routes.AUTH_PHONE) { 
+                PhoneAuthScreen { navController.navigate(Routes.CHATS) } 
+            }
 
             composable(Routes.CHATS) { ChatsListScreen(navController) }
             composable(Routes.CONTACTS) { ContactsScreen { id -> navController.navigate("chat/$id") } }
@@ -143,7 +164,6 @@ fun NavGraph(navController: NavHostController) {
             composable(Routes.SUDOKU) { SudokuScreen() }
             composable("text_editor") { TextEditorScreen(navController = navController) }
 
-            // --- WebView: ПРОВЕРКА ИНТЕРНЕТА ТОЛЬКО ЗДЕСЬ ---
             composable(
                 route = "webview/{url}/{title}",
                 arguments = listOf(
@@ -162,13 +182,25 @@ fun NavGraph(navController: NavHostController) {
                 }
             }
 
+            // ИСПРАВЛЕНО: Интеграция с ChatViewModel и корректные аргументы ChatScreen
             composable("chat/{chatId}") { backStack ->
                 val chatId = backStack.arguments?.getString("chatId") ?: ""
                 val vm: ChatViewModel = viewModel()
                 val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+                
                 LaunchedEffect(chatId) { vm.initChat(chatId, uid) }
+                
                 val messages by vm.messages.collectAsState()
-                ChatScreen(chatId = chatId, messages = messages, onSendMessage = { text -> vm.sendMessage(text) }, onSendFile = { uri, type -> vm.sendFile(uri, type) }, onSendAudio = { uri, duration -> vm.sendAudio(uri, duration) }, onScheduleMessage = { text, time -> vm.scheduleMessage(text, time) })
+                
+                ChatScreen(
+                    chatPartnerId = chatId, // ИСПРАВЛЕНО имя параметра
+                    messages = messages,
+                    identityRepository = identityRepository, // ПЕРЕДАЕМ репозиторий
+                    onSendMessage = { text -> vm.sendMessage(text) },
+                    onSendFile = { uri, type -> vm.sendFile(uri, type) },
+                    onSendAudio = { uri, duration -> vm.sendAudio(uri, duration) },
+                    onScheduleMessage = { text, time -> vm.scheduleMessage(text, time) }
+                )
             }
         }
     }
