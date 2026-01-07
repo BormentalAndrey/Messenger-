@@ -2,6 +2,7 @@ package com.kakdela.p2p.ui
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,13 +20,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.apache.poi.xwpf.usermodel.XWPFDocument
 import java.nio.charset.Charset
 
@@ -40,6 +40,7 @@ fun TextEditorScreen(navController: NavHostController) {
     var currentUri by remember { mutableStateOf<Uri?>(null) }
     var fileName by remember { mutableStateOf("Новый файл.txt") }
     var isModified by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
 
     val charsets = listOf(Charsets.UTF_8, Charset.forName("windows-1251"), Charsets.ISO_8859_1)
 
@@ -47,63 +48,87 @@ fun TextEditorScreen(navController: NavHostController) {
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         uri?.let { u ->
-            scope.launch {
+            isLoading = true
+            scope.launch(Dispatchers.IO) { // ВАЖНО: Работаем в IO потоке
                 try {
                     val extension = u.lastPathSegment?.substringAfterLast(".")?.lowercase()
+                    // Получаем имя файла безопасно
+                    val newName = u.path?.split("/")?.last() ?: "Файл"
+                    
                     val content: String = when (extension) {
                         "docx" -> {
-                            context.contentResolver.openInputStream(u)?.use { input ->
-                                XWPFDocument(input).use { doc ->
-                                    doc.paragraphs.joinToString("\n") { it.text }
-                                }
-                            } ?: ""
+                            try {
+                                context.contentResolver.openInputStream(u)?.use { input ->
+                                    XWPFDocument(input).use { doc ->
+                                        doc.paragraphs.joinToString("\n") { it.text }
+                                    }
+                                } ?: ""
+                            } catch (e: NoClassDefFoundError) {
+                                throw Exception("Библиотека DOCX не поддерживается вашим устройством")
+                            }
                         }
                         else -> {
                             var result: String? = null
-                            context.contentResolver.openInputStream(u)?.use { input ->
-                                for (charset in charsets) {
-                                    try {
-                                        result = input.bufferedReader(charset).readText()
-                                        break
-                                    } catch (_: Exception) {}
-                                }
+                            // ВАЖНО: Открываем поток заново для каждой кодировки
+                            for (charset in charsets) {
+                                try {
+                                    context.contentResolver.openInputStream(u)?.use { input ->
+                                        val text = input.bufferedReader(charset).readText()
+                                        // Эвристика: если нет странных символов, считаем успехом
+                                        if (!text.contains("")) {
+                                            result = text
+                                        }
+                                    }
+                                    if (result != null) break
+                                } catch (_: Exception) {}
                             }
-                            result ?: ""
+                            // Если не вышло подобрать, читаем как UTF-8
+                            result ?: context.contentResolver.openInputStream(u)?.bufferedReader()?.readText() ?: ""
                         }
                     }
-                    textContent = content
-                    currentUri = u
-                    fileName = u.lastPathSegment ?: "Файл"
-                    isModified = false
+                    
+                    withContext(Dispatchers.Main) {
+                        textContent = content
+                        currentUri = u
+                        fileName = newName
+                        isModified = false
+                        isLoading = false
+                    }
                 } catch (e: Exception) {
-                    snackbarHostState.showSnackbar("Ошибка открытия: ${e.localizedMessage}")
+                    withContext(Dispatchers.Main) {
+                        isLoading = false
+                        snackbarHostState.showSnackbar("Ошибка: ${e.localizedMessage}")
+                        Log.e("Editor", "Error opening", e)
+                    }
                 }
             }
         }
     }
 
     val saveLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("*/*")
+        contract = ActivityResultContracts.CreateDocument("text/plain")
     ) { uri: Uri? ->
         uri?.let {
-            saveFile(
+            saveFileProcess(
                 context, it, textContent,
-                it.lastPathSegment?.endsWith(".docx", ignoreCase = true) == true,
-                snackbarHostState
-            )
-            isModified = false
+                it.toString().endsWith(".docx", ignoreCase = true),
+                snackbarHostState,
+                scope
+            ) { isModified = false }
         }
     }
 
     fun saveCurrent() {
-        currentUri?.let { uri ->
-            saveFile(
-                context, uri, textContent,
-                uri.lastPathSegment?.endsWith(".docx", ignoreCase = true) == true,
-                snackbarHostState
-            )
-            isModified = false
-        } ?: saveLauncher.launch(fileName)
+        if (currentUri != null) {
+            saveFileProcess(
+                context, currentUri!!, textContent,
+                fileName.endsWith(".docx", ignoreCase = true),
+                snackbarHostState,
+                scope
+            ) { isModified = false }
+        } else {
+            saveLauncher.launch(fileName)
+        }
     }
 
     BackHandler(enabled = isModified) {
@@ -111,7 +136,8 @@ fun TextEditorScreen(navController: NavHostController) {
             val result = snackbarHostState.showSnackbar(
                 message = "Сохранить изменения?",
                 actionLabel = "Сохранить",
-                withDismissAction = true
+                withDismissAction = true,
+                duration = SnackbarDuration.Short
             )
             if (result == SnackbarResult.ActionPerformed) saveCurrent()
             else navController.popBackStack()
@@ -121,18 +147,29 @@ fun TextEditorScreen(navController: NavHostController) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(fileName, color = Color.Black) },
+                title = { 
+                    Text(
+                        fileName, 
+                        color = Color.Black, 
+                        maxLines = 1,
+                        fontSize = 16.sp 
+                    ) 
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = null, tint = Color.Black)
                     }
                 },
                 actions = {
-                    IconButton(onClick = { openLauncher.launch(arrayOf("*/*")) }) {
-                        Icon(Icons.Filled.FolderOpen, contentDescription = null, tint = Color.Black)
-                    }
-                    IconButton(onClick = { saveCurrent() }) {
-                        Icon(Icons.Filled.Save, contentDescription = null, tint = Color.Black)
+                    if (isLoading) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    } else {
+                        IconButton(onClick = { openLauncher.launch(arrayOf("*/*")) }) {
+                            Icon(Icons.Filled.FolderOpen, contentDescription = null, tint = Color.Black)
+                        }
+                        IconButton(onClick = { saveCurrent() }) {
+                            Icon(Icons.Filled.Save, contentDescription = null, tint = Color.Black)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.White)
@@ -150,52 +187,68 @@ fun TextEditorScreen(navController: NavHostController) {
             }
         }
     ) { paddingValues ->
-        TextField(
-            value = textContent,
-            onValueChange = {
-                textContent = it
-                isModified = true
-            },
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
-                .background(Color.White)
-                .padding(16.dp),
-            textStyle = TextStyle(color = Color.Black, fontSize = 16.sp),
-            singleLine = false
-        )
+        // ИСПРАВЛЕНИЕ Layout: Убрали verticalScroll из TextField и добавили его в Box
+        Box(modifier = Modifier
+            .fillMaxSize()
+            .padding(paddingValues)
+            .background(Color.White)
+        ) {
+            TextField(
+                value = textContent,
+                onValueChange = {
+                    textContent = it
+                    isModified = true
+                },
+                modifier = Modifier.fillMaxSize(), // TextField сам умеет скроллить контент
+                textStyle = TextStyle(color = Color.Black, fontSize = 16.sp),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White,
+                    disabledContainerColor = Color.White
+                )
+            )
+        }
     }
 }
 
-private fun saveFile(
+private fun saveFileProcess(
     context: Context,
     uri: Uri,
     content: String,
     isDocx: Boolean,
-    snackbarHostState: SnackbarHostState
+    snackbarHostState: SnackbarHostState,
+    scope: kotlinx.coroutines.CoroutineScope,
+    onSuccess: () -> Unit
 ) {
-    kotlinx.coroutines.MainScope().launch {
+    scope.launch(Dispatchers.IO) { // ВАЖНО: Сохранение в IO потоке
         try {
-            context.contentResolver.openOutputStream(uri)?.use { output ->
+            context.contentResolver.openOutputStream(uri, "wt")?.use { output ->
                 if (isDocx) {
-                    XWPFDocument().use { doc ->
-                        content.split("\n").forEach { line ->
-                            if (line.isNotBlank()) {
-                                doc.createParagraph().createRun().setText(line)
-                            } else {
-                                doc.createParagraph()
+                    try {
+                        XWPFDocument().use { doc ->
+                            content.split("\n").forEach { line ->
+                                val p = doc.createParagraph()
+                                val r = p.createRun()
+                                r.setText(line)
                             }
+                            doc.write(output)
                         }
-                        doc.write(output)
+                    } catch (e: NoClassDefFoundError) {
+                        throw Exception("Ошибка библиотек POI")
                     }
                 } else {
                     output.write(content.toByteArray(Charsets.UTF_8))
                 }
             }
-            snackbarHostState.showSnackbar("Сохранено успешно")
+            withContext(Dispatchers.Main) {
+                onSuccess()
+                snackbarHostState.showSnackbar("Файл сохранен")
+            }
         } catch (e: Exception) {
-            snackbarHostState.showSnackbar("Ошибка сохранения: ${e.localizedMessage}")
+            withContext(Dispatchers.Main) {
+                snackbarHostState.showSnackbar("Ошибка сохранения: ${e.localizedMessage}")
+            }
         }
     }
 }
+
