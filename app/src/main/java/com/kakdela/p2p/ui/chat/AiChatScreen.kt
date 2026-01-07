@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.foundation.layout.imePadding
 
 private val NeonGreen = Color(0xFF00FFB3)
 private val NeonPink = Color(0xFFFF00FF)
@@ -38,7 +39,9 @@ fun AiChatScreen() {
 
     // Файловый селектор
     val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let { vm.sendFile(it) }
+        uri?.let {
+            vm.sendMessage("Отправлен файл: ${it.lastPathSegment ?: "файл"}")
+        }
     }
 
     Scaffold(
@@ -72,6 +75,7 @@ fun AiChatScreen() {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .background(Color.Transparent)
                     .padding(8.dp)
                     .imePadding(),
                 verticalAlignment = Alignment.CenterVertically
@@ -80,7 +84,7 @@ fun AiChatScreen() {
                     Icon(Icons.Filled.AttachFile, contentDescription = "Прикрепить файл", tint = NeonPink)
                 }
 
-                // Пульсирующая рамка поля ввода
+                // Пульсирующий бордер для поля ввода
                 val infiniteTransition = rememberInfiniteTransition()
                 val inputGlow by infiniteTransition.animateColor(
                     initialValue = NeonGreen.copy(alpha = 0.6f),
@@ -97,10 +101,14 @@ fun AiChatScreen() {
                     modifier = Modifier
                         .weight(1f)
                         .height(52.dp)
-                        .border(2.dp, inputGlow, RoundedCornerShape(26.dp))
+                        .border(width = 2.dp, color = inputGlow, shape = RoundedCornerShape(26.dp))
                         .shadow(8.dp, RoundedCornerShape(26.dp), ambientColor = inputGlow),
                     placeholder = {
-                        Text("Введите сообщение…", color = NeonGreen.copy(alpha = 0.6f), fontSize = 15.sp)
+                        Text(
+                            "Введите сообщение…",
+                            color = NeonGreen.copy(alpha = 0.6f),
+                            fontSize = 15.sp
+                        )
                     },
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.Transparent,
@@ -132,9 +140,8 @@ fun AiChatScreen() {
 
 @Composable
 private fun AiChatBubble(msg: ChatMessage) {
-    val isUser = msg.isUser
-    val alignment: Alignment = if (isUser) Alignment.End else Alignment.Start
-    val baseNeon = if (isUser) NeonGreen else NeonPink
+    val alignment = if (msg.isUser) Alignment.CenterEnd else Alignment.CenterStart
+    val baseNeon = if (msg.isUser) NeonGreen else NeonPink
 
     val infiniteTransition = rememberInfiniteTransition()
     val neonGlow by infiniteTransition.animateColor(
@@ -161,20 +168,15 @@ private fun AiChatBubble(msg: ChatMessage) {
                 modifier = Modifier
                     .matchParentSize()
                     .background(neonGlow.copy(alpha = 0.3f), RoundedCornerShape(18.dp))
-                    .blur(radius = 20.dp)
+                    .blur(20.dp)
             )
 
             // Основной пузырёк — полностью прозрачный с неоновой рамкой
             Box(
                 modifier = Modifier
                     .matchParentSize()
-                    .shadow(
-                        elevation = 12.dp,
-                        shape = RoundedCornerShape(18.dp),
-                        ambientColor = neonGlow,
-                        spotColor = neonGlow
-                    )
-                    .border(2.dp, neonGlow, RoundedCornerShape(18.dp))
+                    .shadow(12.dp, RoundedCornerShape(18.dp), ambientColor = neonGlow, spotColor = neonGlow)
+                    .border(width = 2.dp, color = neonGlow, shape = RoundedCornerShape(18.dp))
                     .clip(RoundedCornerShape(18.dp))
                     .background(Color.Transparent)
                     .padding(16.dp)
