@@ -3,6 +3,7 @@ package com.kakdela.p2p.ui.chat
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -37,7 +38,6 @@ fun AiChatScreen() {
     val vm: AiChatViewModel = viewModel()
     var input by remember { mutableStateOf("") }
 
-    // Файловый селектор
     val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
             vm.sendMessage("Отправлен файл: ${it.lastPathSegment ?: "файл"}")
@@ -71,7 +71,6 @@ fun AiChatScreen() {
                 }
             }
 
-            // Панель ввода сообщений
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -84,16 +83,17 @@ fun AiChatScreen() {
                     Icon(Icons.Filled.AttachFile, contentDescription = "Прикрепить файл", tint = NeonPink)
                 }
 
-                // Пульсирующий бордер для поля ввода
+                // Анимируем цвет бордера через animateColorAsState
                 val infiniteTransition = rememberInfiniteTransition()
-                val inputGlow by infiniteTransition.animateColor(
-                    initialValue = NeonGreen.copy(alpha = 0.6f),
-                    targetValue = NeonGreen.copy(alpha = 1f),
+                val glowAlpha by infiniteTransition.animateFloat(
+                    initialValue = 0.6f,
+                    targetValue = 1f,
                     animationSpec = infiniteRepeatable(
                         animation = tween(1200),
                         repeatMode = RepeatMode.Reverse
                     )
                 )
+                val inputGlow = NeonGreen.copy(alpha = glowAlpha)
 
                 TextField(
                     value = input,
@@ -143,15 +143,17 @@ private fun AiChatBubble(msg: ChatMessage) {
     val alignment = if (msg.isUser) Alignment.CenterEnd else Alignment.CenterStart
     val baseNeon = if (msg.isUser) NeonGreen else NeonPink
 
+    // Пульсирующее свечение с animateColorAsState
     val infiniteTransition = rememberInfiniteTransition()
-    val neonGlow by infiniteTransition.animateColor(
-        initialValue = baseNeon.copy(alpha = 0.4f),
-        targetValue = baseNeon.copy(alpha = 1f),
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 1200, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         )
     )
+    val neonGlow = baseNeon.copy(alpha = glowAlpha)
 
     Box(
         modifier = Modifier
@@ -171,7 +173,7 @@ private fun AiChatBubble(msg: ChatMessage) {
                     .blur(20.dp)
             )
 
-            // Основной пузырёк — полностью прозрачный с неоновой рамкой
+            // Основной пузырёк
             Box(
                 modifier = Modifier
                     .matchParentSize()
