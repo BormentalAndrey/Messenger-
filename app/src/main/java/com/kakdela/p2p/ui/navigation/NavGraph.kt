@@ -33,7 +33,6 @@ import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
-import com.kakdela.p2p.ui.TextEditorScreen
 import com.kakdela.p2p.viewmodel.ChatViewModel
 
 @Composable
@@ -76,7 +75,7 @@ fun NoInternetScreen() {
 @Composable
 fun NavGraph(
     navController: NavHostController,
-    identityRepository: IdentityRepository // ДОБАВЛЕНО: Репозиторий для P2P функций
+    identityRepository: IdentityRepository
 ) {
     val isOnline by rememberIsOnline()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -90,31 +89,52 @@ fun NavGraph(
                 NavigationBar(containerColor = Color(0xFF0A0A0A)) {
                     NavigationBarItem(
                         selected = currentRoute == Routes.CHATS,
-                        onClick = { navController.navigate(Routes.CHATS) { popUpTo(Routes.CHATS) { inclusive = true }; launchSingleTop = true } },
+                        onClick = { 
+                            navController.navigate(Routes.CHATS) { 
+                                popUpTo(Routes.CHATS) { inclusive = true }
+                                launchSingleTop = true 
+                            } 
+                        },
                         icon = { Icon(Icons.Outlined.ChatBubbleOutline, null) },
                         label = { Text("Чаты") },
-                        colors = NavigationBarItemDefaults.colors(selectedIconColor = Color.Cyan, indicatorColor = Color(0xFF002222))
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.Cyan, 
+                            unselectedIconColor = Color.Gray,
+                            indicatorColor = Color(0xFF002222)
+                        )
                     )
                     NavigationBarItem(
                         selected = currentRoute == Routes.DEALS,
                         onClick = { navController.navigate(Routes.DEALS) { launchSingleTop = true } },
                         icon = { Icon(Icons.Filled.Checklist, null) },
                         label = { Text("Дела") },
-                        colors = NavigationBarItemDefaults.colors(selectedIconColor = Color.Magenta, indicatorColor = Color(0xFF220022))
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.Magenta, 
+                            unselectedIconColor = Color.Gray,
+                            indicatorColor = Color(0xFF220022)
+                        )
                     )
                     NavigationBarItem(
                         selected = currentRoute == Routes.ENTERTAINMENT,
                         onClick = { navController.navigate(Routes.ENTERTAINMENT) { launchSingleTop = true } },
                         icon = { Icon(Icons.Outlined.PlayCircleOutline, null) },
                         label = { Text("Развлечения") },
-                        colors = NavigationBarItemDefaults.colors(selectedIconColor = Color.Green, indicatorColor = Color(0xFF002200))
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.Green, 
+                            unselectedIconColor = Color.Gray,
+                            indicatorColor = Color(0xFF002200)
+                        )
                     )
                     NavigationBarItem(
                         selected = currentRoute == Routes.SETTINGS,
                         onClick = { navController.navigate(Routes.SETTINGS) { launchSingleTop = true } },
                         icon = { Icon(Icons.Filled.Settings, null) },
                         label = { Text("Настройки") },
-                        colors = NavigationBarItemDefaults.colors(selectedIconColor = Color.White, indicatorColor = Color.Gray)
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.White, 
+                            unselectedIconColor = Color.Gray,
+                            indicatorColor = Color(0xFF222222)
+                        )
                     )
                 }
             }
@@ -123,7 +143,9 @@ fun NavGraph(
         NavHost(
             navController = navController,
             startDestination = Routes.SPLASH,
-            modifier = Modifier.padding(padding).background(Color.Black)
+            modifier = Modifier
+                .padding(padding)
+                .background(Color.Black)
         ) {
             composable(Routes.SPLASH) {
                 SplashScreen(onTimeout = {
@@ -132,7 +154,6 @@ fun NavGraph(
                 })
             }
 
-            // ИСПРАВЛЕНО: Аргументы для RegistrationChoiceScreen
             composable(Routes.CHOICE) { 
                 RegistrationChoiceScreen(
                     onPhone = { navController.navigate(Routes.AUTH_PHONE) },
@@ -140,13 +161,20 @@ fun NavGraph(
                 ) 
             }
 
-            // ИСПРАВЛЕНО: Аргументы для EmailAuthScreen (убрали navController, если он не нужен внутри)
             composable(Routes.AUTH_EMAIL) { 
-                EmailAuthScreen(onAuthSuccess = { navController.navigate(Routes.CHATS) }) 
+                EmailAuthScreen(onAuthSuccess = { 
+                    navController.navigate(Routes.CHATS) {
+                        popUpTo(Routes.CHOICE) { inclusive = true }
+                    }
+                }) 
             }
 
             composable(Routes.AUTH_PHONE) { 
-                PhoneAuthScreen { navController.navigate(Routes.CHATS) } 
+                PhoneAuthScreen { 
+                    navController.navigate(Routes.CHATS) {
+                        popUpTo(Routes.CHOICE) { inclusive = true }
+                    }
+                } 
             }
 
             composable(Routes.CHATS) { ChatsListScreen(navController) }
@@ -182,7 +210,6 @@ fun NavGraph(
                 }
             }
 
-            // ИСПРАВЛЕНО: Интеграция с ChatViewModel и корректные аргументы ChatScreen
             composable("chat/{chatId}") { backStack ->
                 val chatId = backStack.arguments?.getString("chatId") ?: ""
                 val vm: ChatViewModel = viewModel()
@@ -193,9 +220,9 @@ fun NavGraph(
                 val messages by vm.messages.collectAsState()
                 
                 ChatScreen(
-                    chatPartnerId = chatId, // ИСПРАВЛЕНО имя параметра
+                    chatPartnerId = chatId,
                     messages = messages,
-                    identityRepository = identityRepository, // ПЕРЕДАЕМ репозиторий
+                    identityRepository = identityRepository,
                     onSendMessage = { text -> vm.sendMessage(text) },
                     onSendFile = { uri, type -> vm.sendFile(uri, type) },
                     onSendAudio = { uri, duration -> vm.sendAudio(uri, duration) },
