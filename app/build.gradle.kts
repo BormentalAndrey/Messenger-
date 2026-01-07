@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.io.FileInputStream
 
 plugins {
     id("com.android.application")
@@ -7,11 +8,11 @@ plugins {
     id("com.google.gms.google-services")
 }
 
-// Загружаем данные из local.properties
+// 1. Загружаем данные из local.properties (для сборки на твоем компьютере)
 val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
-    localProperties.load(localPropertiesFile.inputStream())
+    localProperties.load(FileInputStream(localPropertiesFile))
 }
 
 android {
@@ -39,14 +40,19 @@ android {
 
     signingConfigs {
         create("release") {
-            // Пытаемся взять из системы, если нет — берем из local.properties
+            // Твой ключ лежит в папке app, поэтому путь просто "my-release-key.jks"
             storeFile = file("my-release-key.jks")
+
+            // Берем пароли из GitHub Secrets (System.getenv) 
+            // или из файла local.properties (localProperties.getProperty)
             storePassword = System.getenv("KEYSTORE_PASSWORD") 
-                ?: localProperties.getProperty("RELEASE_STORE_PASSWORD") ?: "ваш_пароль"
+                ?: localProperties.getProperty("RELEASE_STORE_PASSWORD") ?: ""
+            
             keyAlias = System.getenv("KEY_ALIAS") 
-                ?: localProperties.getProperty("RELEASE_KEY_ALIAS") ?: "ваш_алиас"
+                ?: localProperties.getProperty("RELEASE_KEY_ALIAS") ?: ""
+            
             keyPassword = System.getenv("KEY_PASSWORD") 
-                ?: localProperties.getProperty("RELEASE_KEY_PASSWORD") ?: "ваш_пароль"
+                ?: localProperties.getProperty("RELEASE_KEY_PASSWORD") ?: ""
             
             enableV1Signing = true
             enableV2Signing = true
@@ -56,7 +62,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
-            // Теперь подпись привязана жестко, чтобы не собирать пустые APK
+            // Принудительно подписываем релизный APK
             signingConfig = signingConfigs.getByName("release")
             
             proguardFiles(
@@ -65,6 +71,7 @@ android {
             )
         }
         debug {
+            // Дебаг тоже подписываем этим ключом, чтобы проще было ставить поверх
             signingConfig = signingConfigs.getByName("release")
         }
     }
