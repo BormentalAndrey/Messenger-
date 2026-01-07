@@ -92,8 +92,10 @@ class CallActivity : ComponentActivity() {
                     videoTrack = it,
                     eglBaseContext = eglBase.eglBaseContext,
                     modifier = Modifier.fillMaxSize(),
-                    rendererEvents = object : VideoSink {
-                        override fun onFrame(frame: VideoFrame?) {}
+                    // ИСПРАВЛЕНО: Используем RendererCommon.RendererEvents
+                    rendererEvents = object : RendererCommon.RendererEvents {
+                        override fun onFirstFrameRendered() {}
+                        override fun onFrameResolutionChanged(w: Int, h: Int, rot: Int) {}
                     }
                 )
             } ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -112,8 +114,9 @@ class CallActivity : ComponentActivity() {
                             videoTrack = it,
                             eglBaseContext = eglBase.eglBaseContext,
                             modifier = Modifier.fillMaxSize(),
-                            rendererEvents = object : VideoSink {
-                                override fun onFrame(frame: VideoFrame?) {}
+                            rendererEvents = object : RendererCommon.RendererEvents {
+                                override fun onFirstFrameRendered() {}
+                                override fun onFrameResolutionChanged(w: Int, h: Int, rot: Int) {}
                             }
                         )
                     }
@@ -285,9 +288,12 @@ class CallActivity : ComponentActivity() {
         }
 
         peer.createOffer(object : SimpleSdpObserver() {
-            override fun onCreateSuccess(sdp: SessionDescription) {
-                peer.setLocalDescription(object : SimpleSdpObserver() {}, sdp)
-                identityRepo.sendSignaling(targetIp, "OFFER", sdp.description)
+            // ИСПРАВЛЕНО: Аргумент должен быть SessionDescription?
+            override fun onCreateSuccess(sdp: SessionDescription?) {
+                sdp?.let {
+                    peer.setLocalDescription(object : SimpleSdpObserver() {}, it)
+                    identityRepo.sendSignaling(targetIp, "OFFER", it.description)
+                }
             }
         }, constraints)
     }
@@ -298,10 +304,12 @@ class CallActivity : ComponentActivity() {
                 override fun onSetSuccess() {
                     remoteSdpSet = true
                     peer.createAnswer(object : SimpleSdpObserver() {
-                        override fun onCreateSuccess(sdp: SessionDescription) {
-                            peer.setLocalDescription(object : SimpleSdpObserver() {}, sdp)
-                            identityRepo.sendSignaling(targetIp, "ANSWER", sdp.description)
-                            flushIce()
+                        override fun onCreateSuccess(sdp: SessionDescription?) {
+                            sdp?.let {
+                                peer.setLocalDescription(object : SimpleSdpObserver() {}, it)
+                                identityRepo.sendSignaling(targetIp, "ANSWER", it.description)
+                                flushIce()
+                            }
                         }
                     }, MediaConstraints())
                 }
@@ -324,12 +332,12 @@ class CallActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    // ИСПРАВЛЕНО: Реализация интерфейса через open class
     open class SimpleSdpObserver : SdpObserver {
-        override fun onCreateSuccess(p0: SessionDescription?) {}
+        // ИСПРАВЛЕНО: Добавлены nullable типы для соответствия интерфейсу Java
+        override fun onCreateSuccess(sdp: SessionDescription?) {}
         override fun onSetSuccess() {}
-        override fun onCreateFailure(p0: String?) { Log.e("WebRTC", "SDP Create Failure: $p0") }
-        override fun onSetFailure(p0: String?) { Log.e("WebRTC", "SDP Set Failure: $p0") }
+        override fun onCreateFailure(error: String?) { Log.e("WebRTC", "SDP Create Failure: $error") }
+        override fun onSetFailure(error: String?) { Log.e("WebRTC", "SDP Set Failure: $error") }
     }
 }
 
