@@ -41,8 +41,7 @@ fun AiChatScreen() {
     // Файловый селектор
     val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let {
-            // Добавляем заглушку для отправки файла
-            vm.sendMessage("Отправлен файл: ${it.lastPathSegment ?: "файл"}") 
+            vm.sendMessage("Отправлен файл: ${it.lastPathSegment ?: "файл"}")
         }
     }
 
@@ -73,10 +72,11 @@ fun AiChatScreen() {
                 }
             }
 
+            // Панель ввода сообщений — прозрачная
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(DarkBg)
+                    .background(Color.Transparent)
                     .padding(8.dp)
                     .imePadding(),
                 verticalAlignment = Alignment.CenterVertically
@@ -90,10 +90,11 @@ fun AiChatScreen() {
                     onValueChange = { input = it },
                     modifier = Modifier
                         .weight(1f)
-                        .height(50.dp),
+                        .height(50.dp)
+                        .border(1.dp, NeonGreen.copy(alpha = 0.7f), RoundedCornerShape(25.dp)),
                     placeholder = { Text("Введите сообщение…", color = Color.Gray) },
                     colors = TextFieldDefaults.textFieldColors(
-                        containerColor = SurfaceGray,
+                        containerColor = Color.Transparent,
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
                         cursorColor = NeonGreen,
