@@ -492,4 +492,88 @@ class VideoPlayerActivity : ComponentActivity() {
         val view = layoutInflater.inflate(R.layout.layout_playlist, null)
         val rv = view.findViewById<RecyclerView>(R.id.rv_playlist)
         rv.layoutManager = LinearLayoutManager(this)
-        rv.adapter = PlaylistAdapte
+        rv.adapter = PlaylistAdapter(playlist, currentIndex) { pos ->
+            player.seekTo(pos, C.TIME_UNSET)
+            player.play()
+            dialog.dismiss()
+        }
+        dialog.setContentView(view)
+        dialog.show()
+    }
+
+    private fun toggleFullscreen() {
+        isFullscreen = !isFullscreen
+        requestedOrientation = if (isFullscreen) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            if (isFullscreen) hide(WindowInsetsCompat.Type.systemBars()) else show(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
+    private fun checkPermission() {
+        val perm = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_VIDEO else Manifest.permission.READ_EXTERNAL_STORAGE
+        if (ContextCompat.checkSelfPermission(this, perm) == PackageManager.PERMISSION_GRANTED) {
+            loadVideos()
+        } else {
+            permissionLauncher.launch(perm)
+        }
+    }
+
+    private fun formatTime(ms: Long): String {
+        if (ms <= 0 || ms == C.TIME_UNSET) return "00:00"
+        val totalSecs = ms / 1000
+        val secs = totalSecs % 60
+        val mins = (totalSecs / 60) % 60
+        val hours = totalSecs / 3600
+        return if (hours > 0) String.format("%d:%02d:%02d", hours, mins, secs) else String.format("%02d:%02d", mins, secs)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        player.release()
+        handler.removeCallbacksAndMessages(null)
+        batteryReceiver?.let { unregisterReceiver(it) }
+    }
+
+    inner class PlaylistAdapter(
+        private val list: List<VideoModel>,
+        private val currentPos: Int,
+        private val onClick: (Int) -> Unit
+    ) : RecyclerView.Adapter<PlaylistAdapter.VH>() {
+
+        inner class VH(view: View) : RecyclerView.ViewHolder(view) {
+            val title: TextView = view.findViewById(R.id.tv_video_title)
+            val thumb: ImageView = view.findViewById(R.id.iv_thumbnail)
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
+            VH(LayoutInflater.from(parent.context).inflate(R.layout.item_video, parent, false))
+
+        @SuppressLint("NewApi")
+        override fun onBindViewHolder(holder: VH, pos: Int) {
+            val item = list[pos]
+            holder.title.text = item.title
+            if (pos == currentPos) {
+                holder.title.setTextColor(neonPink)
+                holder.title.setShadowLayer(15f, 0f, 0f, neonPink)
+                holder.title.setTypeface(null, Typeface.BOLD)
+            } else {
+                holder.title.setTextColor(Color.WHITE)
+                holder.title.setShadowLayer(5f, 0f, 0f, neonCyan)
+            }
+
+            val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentResolver.loadThumbnail(ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, item.id), Size(320, 180), null)
+            } else {
+                @Suppress("DEPRECATION")
+                MediaStore.Video.Thumbnails.getThumbnail(contentResolver, item.id, MediaStore.Video.Thumbnails.MINI_KIND, null)
+            }
+            holder.thumb.setImageBitmap(bitmap)
+
+            holder.itemView.setOnClickListener { onClick(pos) }
+        }
+
+        override fun getItemCount() = list.size
+    }
+}
