@@ -224,7 +224,7 @@ class VideoPlayerActivity : ComponentActivity() {
                                 val delta = deltaY / playerView.height
                                 val newBright = (initialBrightness + delta).coerceIn(0.1f, 1.0f)
                                 window.attributes = window.attributes.apply { screenBrightness = newBright }
-                                showCenterIndicator("Brightness ${(newBright * 100).toInt()}%", neonCyan)
+                                showCenterIndicator("Яркость ${(newBright * 100).toInt()}%", neonCyan)
                             }
                             3 -> {
                                 val deltaY = touchStartY - event.y
@@ -232,7 +232,7 @@ class VideoPlayerActivity : ComponentActivity() {
                                 val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                                 val newVol = (initialVolume + (delta * maxVol)).toInt().coerceIn(0, maxVol)
                                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
-                                showCenterIndicator("Volume ${(newVol * 100 / maxVol).toInt()}%", neonPink)
+                                showCenterIndicator("Громкость ${(newVol * 100 / maxVol).toInt()}%", neonPink)
                             }
                         }
                     }
