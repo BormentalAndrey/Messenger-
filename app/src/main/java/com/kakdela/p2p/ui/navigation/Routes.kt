@@ -19,4 +19,7 @@ object Routes {
 
     // 🎵 МУЗЫКА
     const val MUSIC = "music"
+
+    // 🤖 AI ПОМОЩНИК (вместо глобального чата)
+    const val ASSISTANT = "assistant"
 }
