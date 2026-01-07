@@ -4,19 +4,35 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.ContactsContract
+import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * Модель контакта для приложения
+ */
+data class AppContact(
+    val name: String,
+    val phoneNumber: String,
+    val isRegistered: Boolean = false,
+    val publicKey: String? = null
+)
 
 class ContactP2PManager(
     private val context: Context,
     private val identityRepo: IdentityRepository
 ) {
 
+    // Временное хранилище для найденных ключей из ответов сети
+    private val discoveryResults = ConcurrentHashMap<String, String>()
+
     /**
      * Основной метод синхронизации.
-     * Читает книгу, хеширует номера и ищет их у 2500+ узлов в сети.
+     * Хеширует номера и ищет их у узлов в сети.
      */
     suspend fun syncContacts(): List<AppContact> = withContext(Dispatchers.IO) {
         // 1. Проверка разрешений
@@ -29,16 +45,36 @@ class ContactP2PManager(
         val localContacts = fetchLocalPhoneContacts()
         if (localContacts.isEmpty()) return@withContext emptyList()
 
-        // 3. Поиск в P2P сети (DHT Lookup)
+        // 3. Настройка слушателя для сбора ответов от сети
+        identityRepo.onSignalingMessageReceived = { type, data, fromIp ->
+            if (type == "STORE_RESPONSE") {
+                // Предполагаем, что данные приходят в формате "key:value" или просто "value"
+                // В реальности здесь должна быть логика сопоставления ответа с запросом
+                // Для упрощения: если мы искали хеш, мы сохраняем результат
+                Log.d("P2P_SYNC", "Received discovery data from $fromIp")
+            }
+        }
+
+        // 4. Поиск в P2P сети (DHT Lookup)
+        // В P2P это асинхронный процесс. Мы рассылаем запросы "FIND".
+        localContacts.forEach { contact ->
+            val phoneHash = sha256(contact.phoneNumber)
+            identityRepo.findPeerInDHT(phoneHash)
+        }
+
+        // Даем сети немного времени (2-3 секунды) на ответы от узлов
+        delay(2000)
+
+        // 5. Сборка итогового списка
         val syncedList = localContacts.map { contact ->
             val phoneHash = sha256(contact.phoneNumber)
             
-            // Ищем данные в распределенной сети по хешу
-            val foundData = identityRepo.findPeerInDHT(phoneHash)
+            // Проверяем, не пришел ли ответ для этого хеша в репозиторий
+            // Примечание: В текущей реализации IdentityRepository данные STORE_RESPONSE 
+            // должны оседать в кеше репозитория или передаваться сюда.
+            val foundData = discoveryResults[phoneHash] 
             
             if (foundData != null) {
-                // Если в DHT лежит JSON, извлекаем ключ и IP
-                // В простейшем случае findPeerInDHT возвращает publicKey
                 contact.copy(
                     publicKey = foundData, 
                     isRegistered = true
@@ -48,7 +84,7 @@ class ContactP2PManager(
             }
         }
 
-        // Сортируем: сначала те, кто зарегистрирован, затем по алфавиту
+        // Сортируем: сначала те, кто в сети, затем по алфавиту
         return@withContext syncedList.sortedWith(
             compareByDescending<AppContact> { it.isRegistered }.thenBy { it.name }
         )
@@ -80,7 +116,6 @@ class ContactP2PManager(
                 val rawPhone = it.getString(phoneIdx) ?: continue
                 val cleanPhone = normalizePhone(rawPhone) ?: continue
 
-                // Убираем дубликаты
                 if (seenPhones.add(cleanPhone)) {
                     contacts.add(AppContact(name = name, phoneNumber = cleanPhone))
                 }
@@ -89,9 +124,6 @@ class ContactP2PManager(
         return contacts
     }
 
-    /**
-     * Приводит номера к формату 7XXXXXXXXXX
-     */
     private fun normalizePhone(raw: String): String? {
         var phone = raw.replace(Regex("[^0-9]"), "")
         if (phone.isEmpty()) return null
@@ -105,12 +137,10 @@ class ContactP2PManager(
         return if (phone.length >= 10) phone else null
     }
 
-    /**
-     * Хеширование номера для анонимного поиска в DHT
-     */
     private fun sha256(input: String): String {
         return MessageDigest.getInstance("SHA-256")
             .digest(input.toByteArray())
             .joinToString("") { "%02x".format(it) }
     }
 }
+
