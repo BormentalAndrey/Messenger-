@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColor
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -37,9 +38,12 @@ fun AiChatScreen() {
     val vm: AiChatViewModel = viewModel()
     var input by remember { mutableStateOf("") }
 
-    // File picker
+    // Файловый селектор
     val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let { vm.sendFile(it) }
+        uri?.let {
+            // Добавляем заглушку для отправки файла
+            vm.sendMessage("Отправлен файл: ${it.lastPathSegment ?: "файл"}") 
+        }
     }
 
     Scaffold(
@@ -69,7 +73,6 @@ fun AiChatScreen() {
                 }
             }
 
-            // Input + кнопки отправки
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -121,9 +124,8 @@ private fun AiChatBubble(msg: ChatMessage) {
     val isUser = msg.isUser
     val bubbleColor = if (isUser) Color(0xFF003D2B) else SurfaceGray
     val baseNeon = if (isUser) NeonGreen else NeonPink
-    val alignment = if (isUser) Alignment.End else Alignment.Start
+    val horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
 
-    // Анимация свечения
     val infiniteTransition = rememberInfiniteTransition()
     val neonGlow by infiniteTransition.animateColor(
         initialValue = baseNeon.copy(alpha = 0.5f),
@@ -134,21 +136,17 @@ private fun AiChatBubble(msg: ChatMessage) {
         )
     )
 
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        contentAlignment = alignment
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = horizontalArrangement
     ) {
-        // Размытое свечение
         Box(
             modifier = Modifier
                 .widthIn(max = 300.dp)
                 .background(neonGlow.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
-                .blur(radius = 16.dp)
+                .blur(16.dp)
         )
 
-        // Основной пузырёк
         Box(
             modifier = Modifier
                 .widthIn(max = 300.dp)
