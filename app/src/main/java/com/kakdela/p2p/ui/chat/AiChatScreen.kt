@@ -16,23 +16,26 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 
+private val NeonGreen = Color(0xFF00E676)
+private val DarkBg = Color(0xFF0A0A0A)
+private val SurfaceGray = Color(0xFF1A1A1A)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AiChatScreen() {
     val vm: AiChatViewModel = viewModel()
     var input by remember { mutableStateOf("") }
-    var refresh by remember { mutableStateOf(0) }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("AI-Чат", color = Color.Green) },
+                title = { Text("AI-Помощник", color = NeonGreen) },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                     containerColor = Color.Black
                 )
             )
         },
-        containerColor = Color.Black
+        containerColor = DarkBg
     ) { padding ->
 
         Column(
@@ -48,7 +51,7 @@ fun AiChatScreen() {
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(vm.messages) { msg ->
-                    ChatBubble(msg)
+                    AiChatBubble(msg)
                 }
             }
 
@@ -62,22 +65,28 @@ fun AiChatScreen() {
                     value = input,
                     onValueChange = { input = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Введите сообщение…") },
-                    colors = TextFieldDefaults.textFieldColors(
-                        containerColor = Color(0xFF1A1A1A),
-                        textColor = Color.White
-                    )
+                    placeholder = { Text("Введите сообщение…", color = Color.Gray) },
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = SurfaceGray,
+                        unfocusedContainerColor = SurfaceGray,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = NeonGreen,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    ),
+                    shape = RoundedCornerShape(24.dp)
                 )
 
                 IconButton(
                     onClick = {
                         if (input.isNotBlank()) {
-                            vm.sendMessage(input) { refresh++ }
+                            vm.sendMessage(input)
                             input = ""
                         }
                     }
                 ) {
-                    Icon(Icons.Filled.Send, null, tint = Color.Green)
+                    Icon(Icons.Filled.Send, null, tint = NeonGreen)
                 }
             }
         }
@@ -85,20 +94,20 @@ fun AiChatScreen() {
 }
 
 @Composable
-private fun ChatBubble(msg: ChatMessage) {
+private fun AiChatBubble(msg: ChatMessage) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (msg.isUser) Arrangement.End else Arrangement.Start
     ) {
         Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(14.dp))
                 .background(
-                    if (msg.isUser) Color(0xFF00C853)
-                    else Color(0xFF222222)
+                    if (msg.isUser) Color(0xFF003D2B)
+                    else SurfaceGray
                 )
-                .padding(10.dp)
-                .widthIn(max = 280.dp)
+                .padding(12.dp)
+                .widthIn(max = 300.dp)
         ) {
             Text(msg.text, color = Color.White)
         }
