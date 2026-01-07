@@ -16,116 +16,113 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.kakdela.p2p.data.ContactManager
-import com.kakdela.p2p.data.ContactModel
+import com.kakdela.p2p.data.AppContact
+import com.kakdela.p2p.data.ContactP2PManager
+import com.kakdela.p2p.data.IdentityRepository
 
 @Composable
-fun ContactsScreen(onContactClick: (String) -> Unit) {
-
+fun ContactsScreen(
+    identityRepository: IdentityRepository,
+    onContactClick: (AppContact) -> Unit
+) {
     val context = LocalContext.current
-    val contactManager = remember { ContactManager(context) }
+    // Используем новый P2P менеджер вместо ContactManager
+    val contactManager = remember { ContactP2PManager(context, identityRepository) }
 
-    var contacts by remember { mutableStateOf<List<ContactModel>>(emptyList()) }
+    var contacts by remember { mutableStateOf<List<AppContact>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
+    
     var hasPermission by remember {
         mutableStateOf(
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.READ_CONTACTS
-            ) == PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) 
+            == PackageManager.PERMISSION_GRANTED
         )
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasPermission = granted
-    }
+    ) { granted -> hasPermission = granted }
 
+    // Автоматическая синхронизация при получении разрешений
     LaunchedEffect(hasPermission) {
         if (hasPermission) {
             isLoading = true
-            contacts = contactManager.fetchAndSyncContacts()
+            contacts = contactManager.syncContacts()
             isLoading = false
         }
     }
 
     Scaffold(
         topBar = {
-            Text(
-                "Выберите контакт",
-                modifier = Modifier.padding(16.dp),
-                style = MaterialTheme.typography.headlineSmall
-            )
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    "P2P Контакты",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = Color.Cyan
+                )
+                Text(
+                    "Поиск пользователей в распределенной сети...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
+                )
+            }
         }
     ) { padding ->
-
         when {
             !hasPermission -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Нужен доступ к контактам")
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Button(onClick = {
-                            permissionLauncher.launch(
-                                Manifest.permission.READ_CONTACTS
-                            )
-                        }) {
-                            Text("Разрешить")
-                        }
-                    }
+                PermissionRequestUI(padding) {
+                    permissionLauncher.launch(Manifest.permission.READ_CONTACTS)
                 }
             }
-
             isLoading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
+                Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = Color.Cyan)
                 }
             }
-
             else -> {
-                LazyColumn(
-                    modifier = Modifier
-                        .padding(padding)
-                        .fillMaxSize()
-                ) {
-                    items(contacts) { contact ->
-                        ListItem(
-                            headlineContent = { Text(contact.name) },
-                            supportingContent = { Text(contact.phoneNumber) },
-                            trailingContent = {
-                                if (contact.isRegistered) {
-                                    Text(
-                                        "В сети",
-                                        color = Color(0xFF00FFF0)
-                                    )
-                                } else {
-                                    TextButton(onClick = {
-                                        // TODO: SMS invite
-                                    }) {
-                                        Text("Пригласить")
-                                    }
-                                }
-                            },
-                            modifier = Modifier.clickable(
-                                enabled = contact.isRegistered
-                            ) {
-                                contact.userId?.let(onContactClick)
-                            }
-                        )
-                    }
-                }
+                ContactList(padding, contacts, onContactClick)
             }
         }
     }
 }
+
+@Composable
+fun ContactList(
+    padding: PaddingValues, 
+    contacts: List<AppContact>, 
+    onContactClick: (AppContact) -> Unit
+) {
+    LazyColumn(modifier = Modifier.padding(padding).fillMaxSize()) {
+        items(contacts) { contact ->
+            ListItem(
+                headlineContent = { Text(contact.name) },
+                supportingContent = { Text(contact.phoneNumber) },
+                trailingContent = {
+                    if (contact.isRegistered) {
+                        Badge(containerColor = Color(0xFF00FFF0)) {
+                            Text("P2P", color = Color.Black)
+                        }
+                    } else {
+                        Text("Не в сети", style = MaterialTheme.typography.labelSmall)
+                    }
+                },
+                modifier = Modifier.clickable(enabled = contact.isRegistered) {
+                    onContactClick(contact)
+                }
+            )
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = Color.DarkGray)
+        }
+    }
+}
+
+@Composable
+fun PermissionRequestUI(padding: PaddingValues, onGrant: () -> Unit) {
+    Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Приложению нужен доступ к книге для поиска друзей")
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = onGrant) { Text("Разрешить") }
+        }
+    }
+}
+
