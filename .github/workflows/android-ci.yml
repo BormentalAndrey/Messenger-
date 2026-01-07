@@ -29,21 +29,20 @@ jobs:
       - name: Grant permissions
         run: chmod +x ./gradlew
 
-      # 5. Сборка APK с передачей секретов
-      - name: Build APK
+      # 5. Сборка только Release APK
+      - name: Build Release APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          # Чистим и пробуем собрать release
-          ./gradlew clean assembleRelease --stacktrace || echo "Release failed, trying debug..."
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew clean
+          ./gradlew assembleRelease --stacktrace
 
-      # 6. Загружаем собранные APK как артефакт
-      - name: Upload APKs
+      # 6. Загружаем только Release APK как артефакт
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
-          name: Kakdela-APKs
-          path: app/build/outputs/apk/**/*.apk
+          name: Kakdela-Release-APK
+          path: app/build/outputs/apk/release/*.apk
