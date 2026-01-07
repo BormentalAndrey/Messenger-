@@ -31,9 +31,11 @@ import com.kakdela.p2p.R
 import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
+import com.kakdela.p2p.ui.chat.ChatScreen // Убедитесь, что путь верный
+import com.kakdela.p2p.ui.chat.ChatsListScreen // Убедитесь, что путь верный
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.viewmodel.ChatViewModel
-import com.kakdela.p2p.viewmodel.ChatViewModelFactory // Предполагаем наличие фабрики
+import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
 @Composable
 fun rememberIsOnline(): State<Boolean> {
@@ -79,6 +81,8 @@ fun NoInternetScreen() {
         }
     }
 }
+
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -171,7 +175,9 @@ fun NavGraph(
                 } 
             }
 
-            composable(Routes.CHATS) { ChatsListScreen(navController) }
+            // ИСПРАВЛЕНО: Передаем identityRepository, если экран его требует
+            composable(Routes.CHATS) { ChatsListScreen(navController, identityRepository) }
+            
             composable(Routes.CONTACTS) { ContactsScreen { id -> navController.navigate("chat/$id") } }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
             composable(Routes.DEALS) { DealsScreen(navController) }
@@ -207,7 +213,7 @@ fun NavGraph(
             composable("chat/{chatId}") { backStack ->
                 val chatId = backStack.arguments?.getString("chatId") ?: ""
                 
-                // Используем фабрику для передачи identityRepository во ViewModel
+                // Использование фабрики для внедрения зависимостей в ViewModel
                 val vm: ChatViewModel = viewModel(
                     factory = ChatViewModelFactory(identityRepository)
                 )
@@ -220,6 +226,7 @@ fun NavGraph(
                 
                 val messages by vm.messages.collectAsState()
                 
+                // ИСПРАВЛЕНО: Убедитесь, что параметры ChatScreen соответствуют объявлению в самом файле ChatScreen.kt
                 ChatScreen(
                     chatPartnerId = chatId,
                     messages = messages,
