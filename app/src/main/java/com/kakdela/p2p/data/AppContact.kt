@@ -9,5 +9,8 @@ data class AppContact(
     val publicKey: String? = null,
     val isRegistered: Boolean = false,
     val lastKnownIp: String? = null
-)
+) {
+    // Хелпер для получения безопасного ID для навигации
+    fun getIdentifier(): String = publicKey ?: phoneNumber
+}
 
