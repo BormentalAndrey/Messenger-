@@ -3,129 +3,203 @@ package com.kakdela.p2p.ui.call
 import android.Manifest
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.kakdela.p2p.data.IdentityRepository
 import io.getstream.webrtc.android.compose.VideoRenderer
 import org.webrtc.*
+import java.util.concurrent.CopyOnWriteArrayList
 
 class CallActivity : ComponentActivity() {
 
-    // WebRTC компоненты
-    private lateinit var peerConnectionFactory: PeerConnectionFactory
-    private lateinit var peerConnection: PeerConnection
-    private var localVideoTrack: VideoTrack? by mutableStateOf(null)
-    private var remoteVideoTrack: VideoTrack? by mutableStateOf(null)
-    
-    private lateinit var videoCapturer: CameraVideoCapturer
-    private lateinit var surfaceTextureHelper: SurfaceTextureHelper
+    private lateinit var identityRepo: IdentityRepository
+    private lateinit var factory: PeerConnectionFactory
+    private lateinit var peer: PeerConnection
+
+    private val eglBase = EglBase.create()
+
+    private var capturer: CameraVideoCapturer? = null
+    private var surfaceHelper: SurfaceTextureHelper? = null
+
+    private var localVideoTrack: VideoTrack? = null
+    private var remoteVideoTrack by mutableStateOf<VideoTrack?>(null)
+
+    private val pendingIce = CopyOnWriteArrayList<IceCandidate>()
+
+    private var targetIp = ""
+    private var isIncoming = false
+    private var remoteOffer: String? = null
+    private var remoteSdpSet = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        val targetIp = intent.getStringExtra("targetIp") ?: ""
-        val isIncoming = intent.getBooleanExtra("isIncoming", false)
+
+        identityRepo = IdentityRepository(this)
+
+        targetIp = intent.getStringExtra("targetIp") ?: ""
+        isIncoming = intent.getBooleanExtra("isIncoming", false)
+        remoteOffer = intent.getStringExtra("remoteSdp")
 
         initWebRTC()
+        bindSignaling()
 
-        setContent {
-            var isMuted by remember { mutableStateOf(false) }
-            var isCameraOn by remember { mutableStateOf(true) }
-
-            // Запрос разрешений перед началом
-            val permissionLauncher = rememberLauncherForActivityResult(
-                ActivityResultContracts.RequestMultiplePermissions()
-            ) { permissions ->
-                if (permissions.all { it.value }) {
-                    startLocalStream()
-                    if (isIncoming) answerCall(targetIp) else startCall(targetIp)
+        val permissionLauncher =
+            registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
+                if (granted.all { it.value }) {
+                    startLocalMedia()
+                    if (isIncoming && remoteOffer != null) {
+                        answerCall(remoteOffer!!)
+                    } else {
+                        startCall()
+                    }
                 }
             }
 
-            LaunchedEffect(Unit) {
-                permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
+        permissionLauncher.launch(
+            arrayOf(
+                Manifest.permission.CAMERA,
+                Manifest.permission.RECORD_AUDIO
+            )
+        )
+
+        setContent { CallUI() }
+    }
+
+    /* ----------------------------------------------------
+       UI
+     ---------------------------------------------------- */
+
+    @Composable
+    private fun CallUI() {
+        var muted by remember { mutableStateOf(false) }
+        var cameraOn by remember { mutableStateOf(true) }
+
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+
+            remoteVideoTrack?.let {
+                VideoRenderer(
+                    videoTrack = it,
+                    eglBaseContext = eglBase.eglBaseContext,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Установка P2P соединения…", color = Color.Cyan)
             }
 
-            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-                // Удаленное видео
-                remoteVideoTrack?.let {
-                    VideoRenderer(videoTrack = it, modifier = Modifier.fillMaxSize())
-                } ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Установка прямого соединения...", color = Color.Cyan)
-                }
-
-                // Локальное видео
-                if (isCameraOn) {
-                    localVideoTrack?.let {
-                        Box(modifier = Modifier.align(Alignment.TopEnd).padding(16.dp).size(120.dp, 180.dp)
-                            .clip(MaterialTheme.shapes.medium).background(Color.DarkGray)) {
-                            VideoRenderer(videoTrack = it, modifier = Modifier.fillMaxSize())
-                        }
+            if (cameraOn) {
+                localVideoTrack?.let {
+                    Box(
+                        Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(16.dp)
+                            .size(120.dp, 180.dp)
+                    ) {
+                        VideoRenderer(
+                            videoTrack = it,
+                            eglBaseContext = eglBase.eglBaseContext,
+                            modifier = Modifier.fillMaxSize()
+                        )
                     }
                 }
+            }
 
-                // Управление
-                Row(modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 48.dp).fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly) {
-                    
-                    FloatingActionButton(onClick = { isMuted = !isMuted }, containerColor = if (isMuted) Color.Red else Color.DarkGray) {
-                        Icon(if (isMuted) Icons.Default.MicOff else Icons.Default.Mic, null, tint = Color.White)
-                    }
+            Row(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(32.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
 
-                    FloatingActionButton(onClick = { endCall() }, containerColor = Color.Red, modifier = Modifier.size(70.dp)) {
-                        Icon(Icons.Default.CallEnd, null, tint = Color.White)
-                    }
+                FloatingActionButton(
+                    onClick = {
+                        muted = !muted
+                        peer.senders
+                            .mapNotNull { it.track() as? AudioTrack }
+                            .forEach { it.setEnabled(!muted) }
+                    },
+                    containerColor = if (muted) Color.Red else Color.DarkGray
+                ) {
+                    Icon(if (muted) Icons.Default.MicOff else Icons.Default.Mic, null, tint = Color.White)
+                }
 
-                    FloatingActionButton(onClick = { isCameraOn = !isCameraOn }, containerColor = if (!isCameraOn) Color.Red else Color.DarkGray) {
-                        Icon(if (isCameraOn) Icons.Default.Videocam else Icons.Default.VideocamOff, null, tint = Color.White)
-                    }
+                FloatingActionButton(
+                    onClick = { finish() },
+                    containerColor = Color.Red,
+                    modifier = Modifier.size(72.dp)
+                ) {
+                    Icon(Icons.Default.CallEnd, null, tint = Color.White)
+                }
+
+                FloatingActionButton(
+                    onClick = {
+                        cameraOn = !cameraOn
+                        localVideoTrack?.setEnabled(cameraOn)
+                    },
+                    containerColor = if (!cameraOn) Color.Red else Color.DarkGray
+                ) {
+                    Icon(
+                        if (cameraOn) Icons.Default.Videocam
+                        else Icons.Default.VideocamOff,
+                        null,
+                        tint = Color.White
+                    )
                 }
             }
         }
     }
 
+    /* ----------------------------------------------------
+       WEBRTC CORE
+     ---------------------------------------------------- */
+
     private fun initWebRTC() {
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(this).createInitializationOptions()
         )
-        
-        val options = PeerConnectionFactory.Options()
-        val videoEncoderFactory = DefaultVideoEncoderFactory(DefaultVideoCodecInfoFactory.createDefaultVideoCodecInfo())
-        val videoDecoderFactory = DefaultVideoDecoderFactory(DefaultVideoCodecInfoFactory.createDefaultVideoCodecInfo())
 
-        peerConnectionFactory = PeerConnectionFactory.builder()
-            .setOptions(options)
-            .setVideoEncoderFactory(videoEncoderFactory)
-            .setVideoDecoderFactory(videoDecoderFactory)
+        factory = PeerConnectionFactory.builder()
+            .setVideoEncoderFactory(DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true))
+            .setVideoDecoderFactory(DefaultVideoDecoderFactory(eglBase.eglBaseContext))
             .createPeerConnectionFactory()
 
-        val rtcConfig = PeerConnection.RTCConfiguration(listOf(
-            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
-        ))
+        val config = PeerConnection.RTCConfiguration(
+            listOf(
+                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
+            )
+        )
 
-        peerConnection = peerConnectionFactory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
+        peer = factory.createPeerConnection(config, object : PeerConnection.Observer {
+
             override fun onIceCandidate(candidate: IceCandidate) {
-                // ВАЖНО: Отправляем наш ICE-candidate собеседнику через UDP (IdentityRepository)
-                sendSignalingData("CANDIDATE", candidate.sdp)
+                identityRepo.sendSignaling(
+                    targetIp,
+                    "ICE",
+                    "${candidate.sdpMid}|${candidate.sdpMLineIndex}|${candidate.sdp}"
+                )
             }
-            override fun onAddTrack(receiver: RtpReceiver?, mediaStreams: Array<out MediaStream>?) {
-                val track = receiver?.track()
-                if (track is VideoTrack) { remoteVideoTrack = track }
+
+            override fun onTrack(transceiver: RtpTransceiver?) {
+                if (transceiver?.receiver?.track() is VideoTrack) {
+                    remoteVideoTrack = transceiver.receiver.track() as VideoTrack
+                }
             }
-            // Остальные методы observer...
+
+            override fun onAddStream(stream: MediaStream?) {
+                if (stream?.videoTracks?.isNotEmpty() == true) {
+                    remoteVideoTrack = stream.videoTracks[0]
+                }
+            }
+
             override fun onSignalingChange(p0: PeerConnection.SignalingState?) {}
             override fun onIceConnectionChange(p0: PeerConnection.IceConnectionState?) {}
             override fun onIceConnectionReceivingChange(p0: Boolean) {}
@@ -134,54 +208,118 @@ class CallActivity : ComponentActivity() {
             override fun onRemoveStream(p0: MediaStream?) {}
             override fun onDataChannel(p0: DataChannel?) {}
             override fun onRenegotiationNeeded() {}
+            override fun onConnectionChange(p0: PeerConnection.PeerConnectionState?) {}
         })!!
     }
 
-    private fun startLocalStream() {
-        surfaceTextureHelper = SurfaceTextureHelper.create("CaptureThread", null)
-        videoCapturer = Camera2Enumerator(this).let { enumerator ->
-            enumerator.deviceNames.find { enumerator.isFrontFacing(it) }?.let {
-                enumerator.createCapturer(it, null)
-            } ?: throw Exception("Камера не найдена")
-        }
+    private fun startLocalMedia() {
+        surfaceHelper = SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext)
 
-        val videoSource = peerConnectionFactory.createVideoSource(false)
-        videoCapturer.initialize(surfaceTextureHelper, this, videoSource.capturerObserver)
-        videoCapturer.startCapture(1280, 720, 30)
+        val enumerator = Camera2Enumerator(this)
+        val device = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }
+            ?: enumerator.deviceNames.firstOrNull() ?: return
 
-        localVideoTrack = peerConnectionFactory.createVideoTrack("101", videoSource)
-        val audioSource = peerConnectionFactory.createAudioSource(MediaConstraints())
-        val localAudioTrack = peerConnectionFactory.createAudioTrack("102", audioSource)
+        capturer = enumerator.createCapturer(device, null)
 
-        peerConnection.addTrack(localVideoTrack)
-        peerConnection.addTrack(localAudioTrack)
+        val videoSource = factory.createVideoSource(false)
+        capturer?.initialize(surfaceHelper, this, videoSource.capturerObserver)
+        capturer?.startCapture(1280, 720, 30)
+
+        localVideoTrack = factory.createVideoTrack("LOCAL_VIDEO", videoSource)
+        val audioTrack = factory.createAudioTrack(
+            "LOCAL_AUDIO",
+            factory.createAudioSource(MediaConstraints())
+        )
+
+        peer.addTrack(localVideoTrack)
+        peer.addTrack(audioTrack)
     }
 
-    private fun startCall(targetIp: String) {
-        peerConnection.createOffer(object : SdpObserver {
-            override fun onCreateSuccess(sdp: SessionDescription) {
-                peerConnection.setLocalDescription(this, sdp)
-                sendSignalingData("OFFER", sdp.description)
+    /* ----------------------------------------------------
+       SIGNALING
+     ---------------------------------------------------- */
+
+    private fun bindSignaling() {
+        identityRepo.onSignalingMessageReceived = { type, data, _ ->
+            when (type) {
+                "ANSWER" -> {
+                    val sdp = SessionDescription(SessionDescription.Type.ANSWER, data)
+                    peer.setRemoteDescription(object : SimpleSdpObserver {
+                        override fun onSetSuccess() {
+                            remoteSdpSet = true
+                            flushIce()
+                        }
+                    }, sdp)
+                }
+
+                "ICE" -> {
+                    val parts = data.split("|", limit = 3)
+                    if (parts.size == 3) {
+                        val ice = IceCandidate(parts[0], parts[1].toInt(), parts[2])
+                        if (remoteSdpSet) peer.addIceCandidate(ice)
+                        else pendingIce.add(ice)
+                    }
+                }
             }
-            override fun onSetSuccess() {}
-            override fun onCreateFailure(p0: String?) {}
-            override fun onSetFailure(p0: String?) {}
+        }
+    }
+
+    private fun flushIce() {
+        pendingIce.forEach { peer.addIceCandidate(it) }
+        pendingIce.clear()
+    }
+
+    private fun startCall() {
+        val constraints = MediaConstraints().apply {
+            mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true"))
+            mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
+        }
+
+        peer.createOffer(object : SimpleSdpObserver {
+            override fun onCreateSuccess(sdp: SessionDescription) {
+                peer.setLocalDescription(object : SimpleSdpObserver {}, sdp)
+                identityRepo.sendSignaling(targetIp, "OFFER", sdp.description)
+            }
+        }, constraints)
+    }
+
+    private fun answerCall(offer: String) {
+        peer.setRemoteDescription(
+            object : SimpleSdpObserver {
+                override fun onSetSuccess() {
+                    remoteSdpSet = true
+                }
+            },
+            SessionDescription(SessionDescription.Type.OFFER, offer)
+        )
+
+        peer.createAnswer(object : SimpleSdpObserver {
+            override fun onCreateSuccess(sdp: SessionDescription) {
+                peer.setLocalDescription(object : SimpleSdpObserver {}, sdp)
+                identityRepo.sendSignaling(targetIp, "ANSWER", sdp.description)
+                flushIce()
+            }
         }, MediaConstraints())
     }
 
-    private fun answerCall(targetIp: String) {
-        // Логика аналогична startCall, но вызывается createAnswer
+    override fun onDestroy() {
+        try {
+            capturer?.stopCapture()
+            capturer?.dispose()
+            surfaceHelper?.dispose()
+            peer.close()
+            factory.dispose()
+            eglBase.release()
+        } catch (_: Exception) {}
+        super.onDestroy()
     }
 
-    private fun sendSignalingData(type: String, data: String) {
-        // Здесь используется ваш IdentityRepository для отправки UDP пакета
-        // Например: identityRepo.sendRawUdp(targetIp, json(type, data))
-    }
-
-    private fun endCall() {
-        videoCapturer.stopCapture()
-        peerConnection.close()
-        finish()
+    // Изменено на open class для удобной реализации анонимных объектов
+    open class SimpleSdpObserver : SdpObserver {
+        override fun onCreateSuccess(p0: SessionDescription?) {}
+        override fun onSetSuccess() {}
+        override fun onCreateFailure(p0: String?) {}
+        override fun onSetFailure(p0: String?) {}
     }
 }
 
