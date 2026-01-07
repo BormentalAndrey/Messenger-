@@ -13,6 +13,7 @@ import org.json.JSONObject
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArraySet
@@ -20,9 +21,11 @@ import kotlin.math.abs
 
 /**
  * Репозиторий для управления P2P-идентификацией, DHT-таблицей и UDP-сигналингом.
+ * Исправлена работа с сокетами для предотвращения ошибки BindException (EADDRINUSE).
  */
 class IdentityRepository(private val context: Context) {
     private val prefs = context.getSharedPreferences("p2p_identity", Context.MODE_PRIVATE)
+    // Используем SupervisorJob, чтобы ошибка в одной корутине не валила весь скоуп
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // Локальный сегмент распределенной хеш-таблицы (DHT): Ключ -> (Значение, Время жизни)
@@ -99,9 +102,7 @@ class IdentityRepository(private val context: Context) {
     }
 
     suspend fun updateEmailBackup(email: String, pass: String): Boolean {
-        // В P2P логике email используется как ключ поиска ключа восстановления
-        // Здесь можно добавить логику шифрования приватного ключа паролем 'pass' 
-        // и отправку его в DHT. Пока используем базовый метод публикации.
+        // Публикуем email как альтернативный идентификатор
         return publishIdentity(email, "P2P_Backup_Node")
     }
 
@@ -122,8 +123,7 @@ class IdentityRepository(private val context: Context) {
     }
 
     /**
-     * Отправка бинарных данных (используется FileTransferWorker).
-     * Конвертирует ByteArray в Base64 для безопасной передачи внутри JSON-пакета.
+     * Отправка бинарных данных.
      */
     fun sendSignalingData(targetIp: String, type: String, data: ByteArray) {
         val base64Data = Base64.encodeToString(data, Base64.NO_WRAP)
@@ -145,46 +145,59 @@ class IdentityRepository(private val context: Context) {
 
     fun sendToSingleAddress(ip: String, message: String) = sendUdp(ip, message)
 
-    // --- UDP Engine ---
+    // --- UDP Engine (ИСПРАВЛЕНО) ---
 
     private fun startListening() {
         scope.launch {
-            val socket = DatagramSocket(P2P_PORT)
-            val buffer = ByteArray(65535)
-            while (isActive) {
-                try {
+            var socket: DatagramSocket? = null
+            try {
+                // ИСПРАВЛЕНИЕ: Используем reuseAddress = true
+                socket = DatagramSocket(null).apply {
+                    reuseAddress = true
+                    bind(InetSocketAddress(P2P_PORT))
+                }
+                
+                val buffer = ByteArray(65535)
+                while (isActive) {
                     val packet = DatagramPacket(buffer, buffer.size)
                     socket.receive(packet)
                     
                     val senderIp = packet.address.hostAddress ?: continue
                     val messageStr = String(packet.data, 0, packet.length)
-                    val json = JSONObject(messageStr)
                     
-                    // Проверка подписи отправителя
-                    if (!verify(json)) continue
+                    // Обработка JSON в отдельном блоке try-catch, чтобы битый пакет не уронил цикл
+                    try {
+                        val json = JSONObject(messageStr)
+                        
+                        // Проверка подписи отправителя
+                        if (!verify(json)) continue
 
-                    val type = json.getString("type")
-                    when (type) {
-                        "STORE" -> {
-                            val key = json.getString("key")
-                            val value = json.getString("value")
-                            localDhtSlice[key] = value to (System.currentTimeMillis() + DHT_TTL_MS)
-                        }
-                        "FIND" -> {
-                            val key = json.getString("key")
-                            localDhtSlice[key]?.let { (value, _) ->
-                                sendSignaling(senderIp, "STORE_RESPONSE", "$key:$value")
+                        val type = json.getString("type")
+                        when (type) {
+                            "STORE" -> {
+                                val key = json.getString("key")
+                                val value = json.getString("value")
+                                localDhtSlice[key] = value to (System.currentTimeMillis() + DHT_TTL_MS)
+                            }
+                            "FIND" -> {
+                                val key = json.getString("key")
+                                localDhtSlice[key]?.let { (value, _) ->
+                                    sendSignaling(senderIp, "STORE_RESPONSE", "$key:$value")
+                                }
+                            }
+                            "OFFER" -> launchIncomingCall(senderIp, json.optString("data"))
+                            else -> {
+                                onSignalingMessageReceived?.invoke(type, json.optString("data"), senderIp)
                             }
                         }
-                        "OFFER" -> launchIncomingCall(senderIp, json.optString("data"))
-                        else -> {
-                            // Прокидываем в UI (сообщения чата, ICE-кандидаты и бинарные данные)
-                            onSignalingMessageReceived?.invoke(type, json.optString("data"), senderIp)
-                        }
+                    } catch (e: Exception) {
+                        Log.e("P2P_NET", "Malformed packet from $senderIp", e)
                     }
-                } catch (e: Exception) {
-                    Log.e("P2P_NET", "Listen error", e)
                 }
+            } catch (e: Exception) {
+                Log.e("P2P_NET", "Critical Listen error", e)
+            } finally {
+                socket?.close()
             }
         }
     }
@@ -220,34 +233,47 @@ class IdentityRepository(private val context: Context) {
 
     private fun startDiscovery() {
         scope.launch {
+            var socket: DatagramSocket? = null
             try {
-                val socket = DatagramSocket(DISCOVERY_PORT)
+                // ИСПРАВЛЕНИЕ: Используем reuseAddress = true для порта обнаружения
+                socket = DatagramSocket(null).apply {
+                    reuseAddress = true
+                    bind(InetSocketAddress(DISCOVERY_PORT))
+                }
+
                 val buffer = ByteArray(512)
                 while (isActive) {
                     val packet = DatagramPacket(buffer, buffer.size)
                     socket.receive(packet)
                     val ip = packet.address.hostAddress ?: continue
+                    // Не добавляем свой собственный IP
                     if (ip != getLocalIp()) {
                         discoveredPeers.add(ip)
                     }
                 }
             } catch (e: Exception) {
                 Log.e("P2P_DISCOVERY", "Stopped", e)
+            } finally {
+                socket?.close()
             }
         }
     }
 
     private fun broadcastPresence() {
         scope.launch {
+            // Здесь reuseAddress не критичен, так как мы не делаем bind, а только отправляем
             val socket = DatagramSocket().apply { broadcast = true }
             val msg = "IAM_HERE".toByteArray()
             while (isActive) {
                 try {
                     val address = InetAddress.getByName("255.255.255.255")
                     socket.send(DatagramPacket(msg, msg.size, address, DISCOVERY_PORT))
-                } catch (e: Exception) {}
+                } catch (e: Exception) {
+                     Log.e("P2P_PRESENCE", "Broadcast failed", e)
+                }
                 delay(15_000)
             }
+            socket.close()
         }
     }
 
