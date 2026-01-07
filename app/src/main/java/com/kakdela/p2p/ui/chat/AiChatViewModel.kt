@@ -1,5 +1,6 @@
 package com.kakdela.p2p.ui.chat
 
+import androidx.compose.runtime.mutableStateListOf  // <-- добавлено
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kakdela.p2p.BuildConfig
@@ -20,6 +21,7 @@ data class ChatMessage(
 
 class AiChatViewModel : ViewModel() {
 
+    // Используем Compose mutableStateListOf для корректной реактивности UI
     private val _messages = mutableStateListOf(
         ChatMessage(
             text = "Привет! Я AI-помощник. Задай вопрос 🙂",
