@@ -214,7 +214,10 @@ class VideoPlayerActivity : ComponentActivity() {
                                 val seekAmount = (deltaX / playerView.width * SEEK_FULL_SWIPE_SECONDS * 1000).toLong()
                                 val newPos = (initialSeekPos + seekAmount).coerceIn(0L, player.duration)
                                 player.seekTo(newPos)
-                                showCenterIndicator("\( {if (seekAmount > 0) "+" else "-"} \){formatTime(kotlin.math.abs(seekAmount))}", neonGreen)
+                                // Было: showCenterIndicator("\( {if (seekAmount > 0) "+" else "-"} \){formatTime(kotlin.math.abs(seekAmount))}", neonGreen)
+                                val sign = if (seekAmount > 0) "+" else "-"
+                                showCenterIndicator("$sign${formatTime(kotlin.math.abs(seekAmount))}", neonGreen)
+
                             }
                             2 -> {
                                 val deltaY = touchStartY - event.y
