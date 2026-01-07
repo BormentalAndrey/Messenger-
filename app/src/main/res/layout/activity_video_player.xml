@@ -33,7 +33,7 @@
             android:shadowColor="#FF00FF"
             android:shadowRadius="30" />
 
-        <!-- Иконка блокировки экрана -->
+        <!-- Иконка блокировки экрана (по центру при locked) -->
         <ImageView
             android:id="@+id/lock_icon"
             android:layout_width="100dp"
@@ -176,7 +176,6 @@
                 android:layout_height="0dp"
                 android:layout_weight="1" />
 
-            <!-- Кнопка скорости (рекомендуется создать свой drawable ic_speed или заменить на системный) -->
             <ImageButton
                 android:id="@+id/btn_speed"
                 android:layout_width="48dp"
@@ -209,7 +208,7 @@
                 android:layout_height="48dp"
                 android:layout_marginStart="12dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:src="@android:drawable/ic_media_pip"
+                android:src="@drawable/ic_pip"
                 android:tint="#00FFFF"
                 android:visibility="gone" />
 
