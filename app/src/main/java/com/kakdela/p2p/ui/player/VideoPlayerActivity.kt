@@ -8,14 +8,17 @@ import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.graphics.Rational
+import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.media.AudioManager
+import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.util.Rational
 import android.util.Size
 import android.view.*
 import android.view.animation.AlphaAnimation
@@ -32,15 +35,16 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.kakdela.p2p.R
+import android.Manifest
 import android.app.PictureInPictureParams
-import android.util.Rational
+import android.content.ContentUris
 import java.text.SimpleDateFormat
 import java.util.*
 
 data class VideoModel(
     val id: Long,
     val title: String,
-    val uri: android.net.Uri
+    val uri: Uri
 )
 
 class VideoPlayerActivity : ComponentActivity() {
@@ -97,7 +101,7 @@ class VideoPlayerActivity : ComponentActivity() {
     private var initialVolume = 0
     private var initialBrightness = 0.5f
 
-    private val SEEK_FULL_SWIPE_SECONDS = 60L // полный свайп = 60 сек перемотки
+    private val SEEK_FULL_SWIPE_SECONDS = 60L
 
     private lateinit var audioManager: AudioManager
 
@@ -154,7 +158,7 @@ class VideoPlayerActivity : ComponentActivity() {
     private fun initPlayer() {
         player = ExoPlayer.Builder(this).build()
         playerView.player = player
-        playerView.useController = false // отключаем стандартный контроллер
+        playerView.useController = false
 
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
@@ -180,76 +184,75 @@ class VideoPlayerActivity : ComponentActivity() {
     private fun setupGestures() {
         playerView.setOnTouchListener { _, event ->
             if (isLocked) {
-                return@setOnTouchListener false // пропускаем к overlay (для разблокировки)
-            }
-
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    touchStartX = event.x
-                    touchStartY = event.y
-                    touchAction = 0
-                    initialSeekPos = player.currentPosition
-                    initialVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                    val lp = window.attributes
-                    initialBrightness = if (lp.screenBrightness > 0) lp.screenBrightness else 0.5f
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    if (touchAction == 0) {
-                        val deltaX = event.x - touchStartX
-                        val deltaY = event.y - touchStartY
-                        if (kotlin.math.abs(deltaX) > 60 && kotlin.math.abs(deltaX) > kotlin.math.abs(deltaY)) {
-                            touchAction = 1 // seek
-                        } else if (kotlin.math.abs(deltaY) > 60 && kotlin.math.abs(deltaY) > kotlin.math.abs(deltaX)) {
-                            touchAction = if (touchStartX < playerView.width / 2f) 2 else 3
-                        }
+                // При locked тачи идут только на разблокировку (lockIcon clickable)
+                false
+            } else {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        touchStartX = event.x
+                        touchStartY = event.y
+                        touchAction = 0
+                        initialSeekPos = player.currentPosition
+                        initialVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                        val lp = window.attributes
+                        initialBrightness = if (lp.screenBrightness > 0) lp.screenBrightness else 0.5f
                     }
-
-                    when (touchAction) {
-                        1 -> { // seek
+                    MotionEvent.ACTION_MOVE -> {
+                        if (touchAction == 0) {
                             val deltaX = event.x - touchStartX
-                            val seekAmount = (deltaX / playerView.width * SEEK_FULL_SWIPE_SECONDS * 1000).toLong()
-                            val newPos = (initialSeekPos + seekAmount).coerceIn(0L, player.duration)
-                            player.seekTo(newPos)
-                            showCenterIndicator(getSeekText(seekAmount), neonGreen)
+                            val deltaY = event.y - touchStartY
+                            if (kotlin.math.abs(deltaX) > 60 && kotlin.math.abs(deltaX) > kotlin.math.abs(deltaY)) {
+                                touchAction = 1 // seek
+                            } else if (kotlin.math.abs(deltaY) > 60 && kotlin.math.abs(deltaY) > kotlin.math.abs(deltaX)) {
+                                touchAction = if (touchStartX < playerView.width / 2f) 2 else 3
+                            }
                         }
-                        2 -> { // brightness
-                            val deltaY = touchStartY - event.y // вверх — увеличение
-                            val delta = deltaY / playerView.height
-                            val newBright = (initialBrightness + delta).coerceIn(0.1f, 1.0f)
-                            window.attributes = window.attributes.apply { screenBrightness = newBright }
-                            showCenterIndicator("🔆 ${(newBright * 100).toInt()}%", neonCyan)
-                        }
-                        3 -> { // volume
-                            val deltaY = touchStartY - event.y
-                            val delta = deltaY / playerView.height
-                            val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                            val newVol = (initialVolume + (delta * maxVol)).coerceIn(0, maxVol)
-                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
-                            showCenterIndicator("🔊 ${(newVol * 100 / maxVol).toInt()}%", neonPink)
-                        }
-                    }
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    if (touchAction != 0) {
-                        hideCenterIndicatorDelayed()
-                        showControlsTemporarily()
-                    }
-                    touchAction = 0
-                }
-            }
-            true
-        }
-    }
 
-    private fun getSeekText(deltaMs: Long): String {
-        val abs = kotlin.math.abs(deltaMs)
-        val sign = if (deltaMs > 0) "+" else "-"
-        return "\( sign \){formatTime(abs)}"
+                        when (touchAction) {
+                            1 -> {
+                                val deltaX = event.x - touchStartX
+                                val seekAmount = (deltaX / playerView.width * SEEK_FULL_SWIPE_SECONDS * 1000).toLong()
+                                val newPos = (initialSeekPos + seekAmount).coerceIn(0L, player.duration)
+                                player.seekTo(newPos)
+                                showCenterIndicator("\( {if (seekAmount > 0) "+" else "-"} \){formatTime(kotlin.math.abs(seekAmount))}", neonGreen)
+                            }
+                            2 -> {
+                                val deltaY = touchStartY - event.y
+                                val delta = deltaY / playerView.height
+                                val newBright = (initialBrightness + delta).coerceIn(0.1f, 1.0f)
+                                window.attributes = window.attributes.apply { screenBrightness = newBright }
+                                showCenterIndicator("Brightness ${(newBright * 100).toInt()}%", neonCyan)
+                            }
+                            3 -> {
+                                val deltaY = touchStartY - event.y
+                                val delta = deltaY / playerView.height
+                                val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                                val newVol = (initialVolume + (delta * maxVol)).toInt().coerceIn(0, maxVol)
+                                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVol, 0)
+                                showCenterIndicator("Volume ${(newVol * 100 / maxVol).toInt()}%", neonPink)
+                            }
+                        }
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        if (touchAction != 0) {
+                            hideCenterIndicatorDelayed()
+                            showControlsTemporarily()
+                        }
+                        touchAction = 0
+                    }
+                }
+                true
+            }
+        }
+
+        // Разблокировка по тапу на lockIcon
+        lockIcon.setOnClickListener { toggleLock() }
     }
 
     private fun showCenterIndicator(text: String, color: Int = Color.WHITE) {
         centerIndicator.text = text
         centerIndicator.setTextColor(color)
+        centerIndicator.setShadowLayer(30f, 0f, 0f, neonPink)
         centerIndicator.visibility = View.VISIBLE
         handler.removeCallbacks(hideIndicatorRunnable)
         handler.postDelayed(hideIndicatorRunnable, 1500)
@@ -274,7 +277,7 @@ class VideoPlayerActivity : ComponentActivity() {
         btnSpeed.setOnClickListener {
             currentSpeedIndex = (currentSpeedIndex + 1) % speeds.size
             player.setPlaybackSpeed(speeds[currentSpeedIndex])
-            Toast.makeText(this, "${speeds[currentSpeedIndex]}×", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "${speeds[currentSpeedIndex]}x", Toast.LENGTH_SHORT).show()
             showControlsTemporarily()
         }
 
@@ -283,8 +286,6 @@ class VideoPlayerActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             btnPip.visibility = View.VISIBLE
             btnPip.setOnClickListener { enterPictureInPicture() }
-        } else {
-            btnPip.visibility = View.GONE
         }
 
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
@@ -304,14 +305,12 @@ class VideoPlayerActivity : ComponentActivity() {
         if (isLocked) {
             hideControls()
             lockIcon.visibility = View.VISIBLE
-            lockIcon.setImageResource(android.R.drawable.ic_lock_lock) // или ваша иконка unlock
-            overlayContainer.setOnTouchListener { _, _ -> true } // потребляем тачи вне иконки
+            btnLock.setImageResource(android.R.drawable.ic_lock_lock)
         } else {
             lockIcon.visibility = View.GONE
-            overlayContainer.setOnTouchListener(null)
+            btnLock.setImageResource(android.R.drawable.ic_lock_idle_lock)
             showControlsTemporarily()
         }
-        btnLock.setImageResource(if (isLocked) android.R.drawable.ic_lock_lock else android.R.drawable.ic_lock_idle_lock)
     }
 
     private fun enterPictureInPicture() {
@@ -347,7 +346,6 @@ class VideoPlayerActivity : ComponentActivity() {
     }
 
     private fun applyNeonStyle() {
-        // Текст и свечение
         videoTitle.setTextColor(neonPink)
         videoTitle.setShadowLayer(20f, 0f, 0f, neonPink)
 
@@ -361,15 +359,11 @@ class VideoPlayerActivity : ComponentActivity() {
         batteryText.setTextColor(neonGreen)
         batteryText.setShadowLayer(10f, 0f, 0f, neonGreen)
 
-        centerIndicator.setTextColor(Color.WHITE)
-        centerIndicator.setShadowLayer(30f, 0f, 0f, neonPink)
-        centerIndicator.textSize = 48f
+        centerIndicator.setTextSize(48f)
 
-        // SeekBar
         seekBar.progressTintList = android.content.res.ColorStateList.valueOf(neonCyan)
         seekBar.thumbTintList = android.content.res.ColorStateList.valueOf(neonPink)
 
-        // Кнопки
         val tintCyan = android.content.res.ColorStateList.valueOf(neonCyan)
         val tintPink = android.content.res.ColorStateList.valueOf(neonPink)
         val tintPurple = android.content.res.ColorStateList.valueOf(neonPurple)
@@ -466,7 +460,6 @@ class VideoPlayerActivity : ComponentActivity() {
     }
 
     private fun loadVideos() {
-        // (тот же код загрузки видео, что и раньше — без изменений)
         val uri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         val projection = arrayOf(MediaStore.Video.Media._ID, MediaStore.Video.Media.DISPLAY_NAME)
         val cursor = contentResolver.query(uri, projection, null, null, null)
@@ -495,94 +488,8 @@ class VideoPlayerActivity : ComponentActivity() {
     }
 
     private fun showPlaylist() {
-        // (тот же код плейлиста с миниатюрами, подсветкой и адаптером)
         val dialog = BottomSheetDialog(this)
         val view = layoutInflater.inflate(R.layout.layout_playlist, null)
         val rv = view.findViewById<RecyclerView>(R.id.rv_playlist)
         rv.layoutManager = LinearLayoutManager(this)
-        rv.adapter = PlaylistAdapter(playlist, currentIndex) { pos ->
-            player.seekTo(pos, C.TIME_UNSET)
-            player.play()
-            dialog.dismiss()
-        }
-        dialog.setContentView(view)
-        dialog.show()
-    }
-
-    private fun toggleFullscreen() {
-        isFullscreen = !isFullscreen
-        requestedOrientation = if (isFullscreen) ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-
-        WindowInsetsControllerCompat(window, window.decorView).apply {
-            if (isFullscreen) hide(WindowInsetsCompat.Type.systemBars()) else show(WindowInsetsCompat.Type.systemBars())
-            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        }
-    }
-
-    private fun checkPermission() {
-        val perm = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_VIDEO else Manifest.permission.READ_EXTERNAL_STORAGE
-        if (ContextCompat.checkSelfPermission(this, perm) == PackageManager.PERMISSION_GRANTED) {
-            loadVideos()
-        } else {
-            permissionLauncher.launch(perm)
-        }
-    }
-
-    private fun formatTime(ms: Long): String {
-        if (ms <= 0 || ms == C.TIME_UNSET) return "00:00"
-        val totalSecs = ms / 1000
-        val secs = totalSecs % 60
-        val mins = (totalSecs / 60) % 60
-        val hours = totalSecs / 3600
-        return if (hours > 0) String.format("%d:%02d:%02d", hours, mins, secs) else String.format("%02d:%02d", mins, secs)
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        player.release()
-        handler.removeCallbacksAndMessages(null)
-        batteryReceiver?.let { unregisterReceiver(it) }
-    }
-
-    // Адаптер плейлиста (с миниатюрами и подсветкой текущего) — тот же, что в предыдущей версии
-    inner class PlaylistAdapter(
-        private val list: List<VideoModel>,
-        private val currentPos: Int,
-        private val onClick: (Int) -> Unit
-    ) : RecyclerView.Adapter<PlaylistAdapter.VH>() {
-
-        inner class VH(view: View) : RecyclerView.ViewHolder(view) {
-            val title: TextView = view.findViewById(R.id.tv_video_title)
-            val thumb: ImageView = view.findViewById(R.id.iv_thumbnail)
-        }
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
-            VH(LayoutInflater.from(parent.context).inflate(R.layout.item_video, parent, false))
-
-        @SuppressLint("NewApi")
-        override fun onBindViewHolder(holder: VH, pos: Int) {
-            val item = list[pos]
-            holder.title.text = item.title
-            if (pos == currentPos) {
-                holder.title.setTextColor(neonPink)
-                holder.title.setShadowLayer(15f, 0f, 0f, neonPink)
-                holder.title.setTypeface(null, Typeface.BOLD)
-            } else {
-                holder.title.setTextColor(Color.WHITE)
-                holder.title.setShadowLayer(5f, 0f, 0f, neonCyan)
-            }
-
-            val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                contentResolver.loadThumbnail(ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, item.id), Size(320, 180), null)
-            } else {
-                @Suppress("DEPRECATION")
-                MediaStore.Video.Thumbnails.getThumbnail(contentResolver, item.id, MediaStore.Video.Thumbnails.MINI_KIND, null)
-            }
-            holder.thumb.setImageBitmap(bitmap)
-
-            holder.itemView.setOnClickListener { onClick(pos) }
-        }
-
-        override fun getItemCount() = list.size
-    }
-}
+        rv.adapter = PlaylistAdapte
