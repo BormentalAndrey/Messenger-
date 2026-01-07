@@ -2,6 +2,7 @@ package com.kakdela.p2p.ui.call
 
 import android.Manifest
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -57,7 +58,7 @@ class CallActivity : ComponentActivity() {
             registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { granted ->
                 if (granted.all { it.value }) {
                     startLocalMedia()
-                    if (isIncoming && remoteOffer != null) {
+                    if (isIncoming && !remoteOffer.isNullOrEmpty()) {
                         answerCall(remoteOffer!!)
                     } else {
                         startCall()
@@ -90,7 +91,10 @@ class CallActivity : ComponentActivity() {
                 VideoRenderer(
                     videoTrack = it,
                     eglBaseContext = eglBase.eglBaseContext,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    rendererEvents = object : VideoSink {
+                        override fun onFrame(frame: VideoFrame?) {}
+                    }
                 )
             } ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("Установка P2P соединения…", color = Color.Cyan)
@@ -107,7 +111,10 @@ class CallActivity : ComponentActivity() {
                         VideoRenderer(
                             videoTrack = it,
                             eglBaseContext = eglBase.eglBaseContext,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize(),
+                            rendererEvents = object : VideoSink {
+                                override fun onFrame(frame: VideoFrame?) {}
+                            }
                         )
                     }
                 }
@@ -179,7 +186,6 @@ class CallActivity : ComponentActivity() {
         )
 
         peer = factory.createPeerConnection(config, object : PeerConnection.Observer {
-
             override fun onIceCandidate(candidate: IceCandidate) {
                 identityRepo.sendSignaling(
                     targetIp,
@@ -208,19 +214,21 @@ class CallActivity : ComponentActivity() {
             override fun onRemoveStream(p0: MediaStream?) {}
             override fun onDataChannel(p0: DataChannel?) {}
             override fun onRenegotiationNeeded() {}
-            override fun onConnectionChange(p0: PeerConnection.PeerConnectionState?) {}
+            override fun onConnectionChange(state: PeerConnection.PeerConnectionState?) {
+                if (state == PeerConnection.PeerConnectionState.DISCONNECTED || state == PeerConnection.PeerConnectionState.FAILED) {
+                    finish()
+                }
+            }
         })!!
     }
 
     private fun startLocalMedia() {
         surfaceHelper = SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext)
-
         val enumerator = Camera2Enumerator(this)
         val device = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }
             ?: enumerator.deviceNames.firstOrNull() ?: return
 
         capturer = enumerator.createCapturer(device, null)
-
         val videoSource = factory.createVideoSource(false)
         capturer?.initialize(surfaceHelper, this, videoSource.capturerObserver)
         capturer?.startCapture(1280, 720, 30)
@@ -236,28 +244,29 @@ class CallActivity : ComponentActivity() {
     }
 
     /* ----------------------------------------------------
-       SIGNALING
+       SIGNALING (Чистое P2P)
      ---------------------------------------------------- */
 
     private fun bindSignaling() {
-        identityRepo.onSignalingMessageReceived = { type, data, _ ->
-            when (type) {
-                "ANSWER" -> {
-                    val sdp = SessionDescription(SessionDescription.Type.ANSWER, data)
-                    peer.setRemoteDescription(object : SimpleSdpObserver {
-                        override fun onSetSuccess() {
-                            remoteSdpSet = true
-                            flushIce()
+        identityRepo.onSignalingMessageReceived = { type, data, fromIp ->
+            if (fromIp == targetIp) {
+                when (type) {
+                    "ANSWER" -> {
+                        val sdp = SessionDescription(SessionDescription.Type.ANSWER, data)
+                        peer.setRemoteDescription(object : SimpleSdpObserver() {
+                            override fun onSetSuccess() {
+                                remoteSdpSet = true
+                                flushIce()
+                            }
+                        }, sdp)
+                    }
+                    "ICE" -> {
+                        val parts = data.split("|", limit = 3)
+                        if (parts.size == 3) {
+                            val ice = IceCandidate(parts[0], parts[1].toInt(), parts[2])
+                            if (remoteSdpSet) peer.addIceCandidate(ice)
+                            else pendingIce.add(ice)
                         }
-                    }, sdp)
-                }
-
-                "ICE" -> {
-                    val parts = data.split("|", limit = 3)
-                    if (parts.size == 3) {
-                        val ice = IceCandidate(parts[0], parts[1].toInt(), parts[2])
-                        if (remoteSdpSet) peer.addIceCandidate(ice)
-                        else pendingIce.add(ice)
                     }
                 }
             }
@@ -275,9 +284,9 @@ class CallActivity : ComponentActivity() {
             mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
         }
 
-        peer.createOffer(object : SimpleSdpObserver {
+        peer.createOffer(object : SimpleSdpObserver() {
             override fun onCreateSuccess(sdp: SessionDescription) {
-                peer.setLocalDescription(object : SimpleSdpObserver {}, sdp)
+                peer.setLocalDescription(object : SimpleSdpObserver() {}, sdp)
                 identityRepo.sendSignaling(targetIp, "OFFER", sdp.description)
             }
         }, constraints)
@@ -285,21 +294,20 @@ class CallActivity : ComponentActivity() {
 
     private fun answerCall(offer: String) {
         peer.setRemoteDescription(
-            object : SimpleSdpObserver {
+            object : SimpleSdpObserver() {
                 override fun onSetSuccess() {
                     remoteSdpSet = true
+                    peer.createAnswer(object : SimpleSdpObserver() {
+                        override fun onCreateSuccess(sdp: SessionDescription) {
+                            peer.setLocalDescription(object : SimpleSdpObserver() {}, sdp)
+                            identityRepo.sendSignaling(targetIp, "ANSWER", sdp.description)
+                            flushIce()
+                        }
+                    }, MediaConstraints())
                 }
             },
             SessionDescription(SessionDescription.Type.OFFER, offer)
         )
-
-        peer.createAnswer(object : SimpleSdpObserver {
-            override fun onCreateSuccess(sdp: SessionDescription) {
-                peer.setLocalDescription(object : SimpleSdpObserver {}, sdp)
-                identityRepo.sendSignaling(targetIp, "ANSWER", sdp.description)
-                flushIce()
-            }
-        }, MediaConstraints())
     }
 
     override fun onDestroy() {
@@ -310,16 +318,18 @@ class CallActivity : ComponentActivity() {
             peer.close()
             factory.dispose()
             eglBase.release()
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.e("CallActivity", "Cleanup error: ${e.message}")
+        }
         super.onDestroy()
     }
 
-    // Изменено на open class для удобной реализации анонимных объектов
+    // ИСПРАВЛЕНО: Реализация интерфейса через open class
     open class SimpleSdpObserver : SdpObserver {
         override fun onCreateSuccess(p0: SessionDescription?) {}
         override fun onSetSuccess() {}
-        override fun onCreateFailure(p0: String?) {}
-        override fun onSetFailure(p0: String?) {}
+        override fun onCreateFailure(p0: String?) { Log.e("WebRTC", "SDP Create Failure: $p0") }
+        override fun onSetFailure(p0: String?) { Log.e("WebRTC", "SDP Set Failure: $p0") }
     }
 }
 
