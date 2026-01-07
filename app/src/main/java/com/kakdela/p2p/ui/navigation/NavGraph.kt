@@ -34,31 +34,6 @@ import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.viewmodel.ChatViewModel
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
-/**
- * Объект с константами маршрутов. 
- * Убедитесь, что "text_editor" совпадает с тем, что вы вызываете в navController.navigate()
- */
-object Routes {
-    const val SPLASH = "splash"
-    const val CHOICE = "choice"
-    const val AUTH_EMAIL = "auth_email"
-    const val AUTH_PHONE = "auth_phone"
-    const val CHATS = "chats"
-    const val CONTACTS = "contacts"
-    const val DEALS = "deals"
-    const val ENTERTAINMENT = "entertainment"
-    const val SETTINGS = "settings"
-    const val MUSIC = "music"
-    const val CALCULATOR = "calculator"
-    const val TIC_TAC_TOE = "tic_tac_toe"
-    const val CHESS = "chess"
-    const val PACMAN = "pacman"
-    const val JEWELS = "jewels"
-    const val SUDOKU = "sudoku"
-    const val AI_CHAT = "ai_chat"
-    const val TEXT_EDITOR = "text_editor" // Добавленный маршрут
-}
-
 @Composable
 fun rememberIsOnline(): State<Boolean> {
     val context = LocalContext.current
@@ -166,7 +141,6 @@ fun NavGraph(
             }
         }
     ) { paddingValues ->
-        // NavHost теперь работает всегда, независимо от интернета
         NavHost(
             navController = navController,
             startDestination = Routes.SPLASH,
@@ -235,7 +209,6 @@ fun NavGraph(
                 )
             }
 
-            // --- ОСНОВНЫЕ ОФЛАЙН ЭКРАНЫ ---
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
@@ -247,12 +220,11 @@ fun NavGraph(
             composable(Routes.JEWELS) { JewelsBlastScreen() }
             composable(Routes.SUDOKU) { SudokuScreen() }
             
-            // Исправление: Регистрация Текстового Редактора
+            // Регистрация редактора
             composable(Routes.TEXT_EDITOR) { 
                 TextEditorScreen(navController = navController) 
             }
 
-            // --- ЭКРАНЫ С ПРОВЕРКОЙ ИНТЕРНЕТА ---
             composable(
                 route = "webview/{url}/{title}",
                 arguments = listOf(
@@ -263,7 +235,6 @@ fun NavGraph(
                 val url = e.arguments?.getString("url").orEmpty()
                 val title = e.arguments?.getString("title").orEmpty()
                 
-                // Заглушка только для WebView
                 if (isOnline) {
                     WebViewScreen(url, title, navController)
                 } else {
@@ -272,7 +243,6 @@ fun NavGraph(
             }
 
             composable(Routes.AI_CHAT) {
-                // AI чат обычно тоже требует интернет
                 if (isOnline) AiChatScreen() else NoInternetScreen()
             }
         }
