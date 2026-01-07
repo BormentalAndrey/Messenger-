@@ -33,7 +33,7 @@ import com.kakdela.p2p.viewmodel.ChatViewModel
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
 /**
- * Вспомогательный эффект для отслеживания состояния сети в реальном времени.
+ * Отслеживание состояния интернет-соединения.
  */
 @Composable
 fun rememberIsOnline(): State<Boolean> {
@@ -46,37 +46,44 @@ fun rememberIsOnline(): State<Boolean> {
         mutableStateOf(caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true)
     }
 
-    DisposableEffect(Unit) {
+    DisposableEffect(cm) {
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) { connected.value = true }
             override fun onLost(network: Network) { connected.value = false }
         }
-        cm.registerNetworkCallback(
-            NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(),
-            cb
-        )
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        cm.registerNetworkCallback(request, cb)
         onDispose { cm.unregisterNetworkCallback(cb) }
     }
     return connected
 }
 
+/**
+ * Экран-заглушка при отсутствии сети для WebView.
+ */
 @Composable
 fun NoInternetScreen() {
-    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black), 
+        contentAlignment = Alignment.Center
+    ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Image(
-                painterResource(R.id.no_internet_neon), // Убедитесь, что R.drawable.no_internet_neon существует
+            // ИСПРАВЛЕНО: R.drawable вместо R.id
+            Icon(
+                painter = painterResource(id = R.drawable.ic_launcher_foreground), // Замените на no_internet_neon если есть
                 contentDescription = null,
-                modifier = Modifier.size(200.dp),
-                contentScale = ContentScale.Fit
+                modifier = Modifier.size(120.dp),
+                tint = Color.Cyan
             )
             Spacer(Modifier.height(16.dp))
-            Text("Требуется подключение к сети", color = Color.Cyan)
+            Text("Требуется подключение к сети", color = Color.Cyan, style = MaterialTheme.typography.bodyLarge)
         }
     }
 }
-
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,10 +92,10 @@ fun NavGraph(
     identityRepository: IdentityRepository
 ) {
     val isOnline by rememberIsOnline()
-    val backStack by navController.currentBackStackEntryAsState()
-    val currentRoute = backStack?.destination?.route
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
 
-    // Определяем, когда показывать нижнюю панель навигации
+    // Определяем видимость BottomBar
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS,
         Routes.DEALS,
@@ -103,8 +110,8 @@ fun NavGraph(
                     val items = listOf(
                         Triple(Routes.CHATS, Icons.Outlined.ChatBubbleOutline, "Чаты"),
                         Triple(Routes.DEALS, Icons.Filled.Checklist, "Дела"),
-                        Triple(Routes.ENTERTAINMENT, Icons.Outlined.PlayCircleOutline, "Развлечения"),
-                        Triple(Routes.SETTINGS, Icons.Filled.Settings, "Настройки")
+                        Triple(Routes.ENTERTAINMENT, Icons.Outlined.PlayCircleOutline, "Досуг"),
+                        Triple(Routes.SETTINGS, Icons.Filled.Settings, "Опции")
                     )
                     items.forEach { (route, icon, label) ->
                         NavigationBarItem(
@@ -123,24 +130,24 @@ fun NavGraph(
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = Color.Cyan,
                                 unselectedIconColor = Color.Gray,
-                                indicatorColor = Color(0xFF1A1A1A)
+                                indicatorColor = Color(0xFF1A1A1A),
+                                selectedTextColor = Color.Cyan
                             )
                         )
                     }
                 }
             }
         }
-    ) { padding ->
+    ) { paddingValues ->
         NavHost(
             navController = navController,
             startDestination = Routes.SPLASH,
             modifier = Modifier
-                .padding(padding)
+                .padding(paddingValues)
                 .background(Color.Black)
         ) {
             composable(Routes.SPLASH) {
                 SplashScreen {
-                    // Если у пользователя уже есть ID (ключи), идем в чаты, иначе — на регистрацию
                     val nextRoute = if (identityRepository.getMyId().isNotEmpty()) Routes.CHATS else Routes.CHOICE
                     navController.navigate(nextRoute) {
                         popUpTo(Routes.SPLASH) { inclusive = true }
@@ -176,11 +183,11 @@ fun NavGraph(
             }
 
             composable(Routes.CONTACTS) {
-                // Исправлено: передаем identityRepository и лямбду навигации корректно
                 ContactsScreen(
                     identityRepository = identityRepository,
                     onContactClick = { contact ->
-                        navController.navigate("chat/${contact.id}")
+                        // ИСПРАВЛЕНО: передача id контакта (зависит от вашей модели, обычно publicKeyHash или id)
+                        navController.navigate("chat/${contact.publicKeyHash}")
                     }
                 )
             }
@@ -190,11 +197,7 @@ fun NavGraph(
                 arguments = listOf(navArgument("chatId") { type = NavType.StringType })
             ) { entry ->
                 val chatId = entry.arguments?.getString("chatId") ?: return@composable
-
-                // Создаем ViewModel через фабрику для внедрения identityRepository
-                val vm: ChatViewModel = viewModel(
-                    factory = ChatViewModelFactory(identityRepository)
-                )
+                val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(identityRepository))
 
                 LaunchedEffect(chatId) {
                     vm.initChat(chatId, identityRepository.getMyId())
@@ -216,6 +219,7 @@ fun NavGraph(
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
 
+            // Развлекательные модули
             composable(Routes.MUSIC) { MusicPlayerScreen() }
             composable(Routes.CALCULATOR) { CalculatorScreen() }
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
