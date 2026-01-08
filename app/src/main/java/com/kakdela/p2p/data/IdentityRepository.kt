@@ -2,15 +2,16 @@ package com.kakdela.p2p.data
 
 import android.content.Context
 import android.content.Intent
-import android.net.wifi.WifiManager
-import android.text.format.Formatter
 import android.util.Base64
 import android.util.Log
 import com.kakdela.p2p.security.CryptoManager
 import com.kakdela.p2p.ui.call.CallActivity
 import kotlinx.coroutines.*
 import org.json.JSONObject
-import java.net.*
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.abs
@@ -25,9 +26,10 @@ class IdentityRepository(private val context: Context) {
 
     /* ===================== SIGNAL BUS ===================== */
 
-    private val listeners = CopyOnWriteArrayList<(String, String, String) -> Unit>()
+    private val listeners =
+        CopyOnWriteArrayList<(type: String, data: String, fromIp: String) -> Unit>()
 
-    fun addListener(cb: (type: String, data: String, fromIp: String) -> Unit) {
+    fun addListener(cb: (String, String, String) -> Unit) {
         listeners += cb
     }
 
@@ -38,7 +40,9 @@ class IdentityRepository(private val context: Context) {
     /* ===================== ID ===================== */
 
     fun getMyId(): String {
-        if (!CryptoManager.isKeyReady()) CryptoManager.generateKeys(context)
+        if (!CryptoManager.isKeyReady()) {
+            CryptoManager.generateKeys(context)
+        }
         return sha256(CryptoManager.getMyPublicKeyStr())
     }
 
@@ -46,86 +50,110 @@ class IdentityRepository(private val context: Context) {
 
     init {
         startUdpListener()
-        startDiscovery()
-        broadcastPresence()
+        startDiscoveryListener()
+        startPresenceBroadcast()
     }
 
     /* ===================== DHT ===================== */
 
     fun findPeerInDHT(keyHash: String) {
-        broadcast(json {
-            put("type", "FIND")
-            put("key", keyHash)
-        })
+        val json = JSONObject()
+        json.put("type", "FIND")
+        json.put("key", keyHash)
+        broadcast(json)
     }
 
     fun sendBroadcastPacket(type: String, key: String, value: String) {
-        broadcast(json {
-            put("type", type)
-            put("key", key)
-            put("value", value)
-        })
+        val json = JSONObject()
+        json.put("type", type)
+        json.put("key", key)
+        json.put("value", value)
+        broadcast(json)
     }
 
     /* ===================== SIGNALING ===================== */
 
     fun sendSignaling(ip: String, type: String, data: String) {
-        send(ip, json {
-            put("type", type)
-            put("data", data)
-        })
+        val json = JSONObject()
+        json.put("type", type)
+        json.put("data", data)
+        send(ip, json)
     }
 
     fun sendSignalingData(ip: String, type: String, bytes: ByteArray) {
-        sendSignaling(ip, type, Base64.encodeToString(bytes, Base64.NO_WRAP))
+        sendSignaling(
+            ip,
+            type,
+            Base64.encodeToString(bytes, Base64.NO_WRAP)
+        )
     }
 
-    /* ===================== UDP ===================== */
+    /* ===================== UDP LISTENER ===================== */
 
     private fun startUdpListener() = scope.launch {
-        val socket = DatagramSocket(P2P_PORT)
-        val buf = ByteArray(65535)
+        DatagramSocket(P2P_PORT).use { socket ->
+            val buffer = ByteArray(65_535)
 
-        while (isActive) {
-            val packet = DatagramPacket(buf, buf.size)
-            socket.receive(packet)
-            val ip = packet.address.hostAddress ?: continue
-            val msg = String(packet.data, 0, packet.length)
+            while (isActive) {
+                try {
+                    val packet = DatagramPacket(buffer, buffer.size)
+                    socket.receive(packet)
 
-            try {
-                val json = JSONObject(msg)
-                if (!verify(json)) continue
+                    val fromIp = packet.address.hostAddress ?: continue
+                    val msg = String(packet.data, 0, packet.length)
 
-                val type = json.getString("type")
-                val data = json.optString("data")
+                    val json = JSONObject(msg)
+                    if (!verify(json)) continue
 
-                if (type == "OFFER") {
-                    launchCall(ip, data)
-                } else {
-                    listeners.forEach { it(type, data, ip) }
+                    val type = json.getString("type")
+                    val data = json.optString("data")
+
+                    if (type == "OFFER") {
+                        launchCall(fromIp, data)
+                    } else {
+                        listeners.forEach { it(type, data, fromIp) }
+                    }
+
+                } catch (e: Exception) {
+                    Log.e("P2P", "UDP packet error", e)
                 }
-            } catch (e: Exception) {
-                Log.e("P2P", "Bad packet", e)
             }
         }
     }
 
-    private fun startDiscovery() = scope.launch {
-        val socket = DatagramSocket(null).apply {
+    /* ===================== DISCOVERY ===================== */
+
+    private fun startDiscoveryListener() = scope.launch {
+        DatagramSocket(null).apply {
             reuseAddress = true
             bind(InetSocketAddress(DISCOVERY_PORT))
+        }.use { socket ->
+            val buf = ByteArray(128)
+            while (isActive) {
+                socket.receive(DatagramPacket(buf, buf.size))
+            }
         }
-        val buf = ByteArray(128)
-        while (isActive) socket.receive(DatagramPacket(buf, buf.size))
     }
 
-    private fun broadcastPresence() = scope.launch {
-        val socket = DatagramSocket().apply { broadcast = true }
-        val msg = "IAM".toByteArray()
-        while (isActive) {
-            socket.send(DatagramPacket(msg, msg.size,
-                InetAddress.getByName("255.255.255.255"), DISCOVERY_PORT))
-            delay(15_000)
+    private fun startPresenceBroadcast() = scope.launch {
+        DatagramSocket().use { socket ->
+            socket.broadcast = true
+            val msg = "IAM".toByteArray()
+
+            while (isActive) {
+                try {
+                    socket.send(
+                        DatagramPacket(
+                            msg,
+                            msg.size,
+                            InetAddress.getByName("255.255.255.255"),
+                            DISCOVERY_PORT
+                        )
+                    )
+                } catch (_: Exception) {
+                }
+                delay(15_000)
+            }
         }
     }
 
@@ -141,45 +169,53 @@ class IdentityRepository(private val context: Context) {
         sendUdp("255.255.255.255", json.toString())
     }
 
-    private fun enrich(j: JSONObject) {
-        j.put("from", getMyId())
-        j.put("timestamp", System.currentTimeMillis())
-        j.put("signature", sign(j))
+    private fun enrich(json: JSONObject) {
+        json.put("from", getMyId())
+        json.put("timestamp", System.currentTimeMillis())
+        json.put("signature", sign(json))
     }
 
     private fun sendUdp(ip: String, msg: String) {
         scope.launch {
             try {
-                DatagramSocket().use {
-                    it.send(DatagramPacket(
-                        msg.toByteArray(),
-                        msg.length,
-                        InetAddress.getByName(ip),
-                        P2P_PORT
-                    ))
+                DatagramSocket().use { socket ->
+                    socket.send(
+                        DatagramPacket(
+                            msg.toByteArray(),
+                            msg.length,
+                            InetAddress.getByName(ip),
+                            P2P_PORT
+                        )
+                    )
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
         }
     }
 
-    private fun verify(j: JSONObject): Boolean {
-        val ts = j.getLong("timestamp")
+    private fun verify(json: JSONObject): Boolean {
+        val ts = json.optLong("timestamp", 0L)
         if (abs(System.currentTimeMillis() - ts) > MAX_DRIFT) return false
         return true
     }
 
-    private fun sign(j: JSONObject): String {
-        val clean = JSONObject(j.toString()).apply { remove("signature") }.toString()
+    private fun sign(json: JSONObject): String {
+        val clean = JSONObject(json.toString()).apply {
+            remove("signature")
+        }.toString()
+
         return Base64.encodeToString(
             CryptoManager.sign(clean.toByteArray()),
             Base64.NO_WRAP
         )
     }
 
-    private fun sha256(s: String) =
+    private fun sha256(s: String): String =
         MessageDigest.getInstance("SHA-256")
             .digest(s.toByteArray())
             .joinToString("") { "%02x".format(it) }
+
+    /* ===================== CALL ===================== */
 
     private fun launchCall(ip: String, sdp: String) {
         context.startActivity(
