@@ -38,7 +38,7 @@ class CallActivity : ComponentActivity() {
     /* ===================== SIGNAL LISTENER ===================== */
     private val signalingListener: (String, String, String) -> Unit =
         { type, data, fromIp ->
-            if (fromIp != targetIp) return@let
+            if (fromIp != targetIp) return@signalingListener
 
             when (type) {
                 "ANSWER" -> handleAnswer(data)
@@ -87,9 +87,6 @@ class CallActivity : ComponentActivity() {
                 localTrack = localVideoTrack,
                 remoteTrack = remoteVideoTrack,
                 eglBaseContext = eglBase.eglBaseContext,
-                rendererEvents = object : VideoRenderer.Callbacks {
-                    override fun renderFrame(frame: VideoRenderer.I420Frame?) {}
-                },
                 onHangup = { finish() }
             )
         }
