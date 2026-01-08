@@ -65,9 +65,9 @@ class CallActivity : ComponentActivity() {
                 if (it.all { p -> p.value }) {
                     setupLocalStream()
 
-                    if (isIncoming && remoteSdp != null) {
-                        handleIncomingOffer(remoteSdp)
-                    } else {
+                    remoteSdp?.let {
+                        if (isIncoming) handleIncomingOffer(it)
+                    } ?: run {
                         makeOffer()
                     }
                 } else {
@@ -83,10 +83,13 @@ class CallActivity : ComponentActivity() {
         )
 
         setContent {
-            // TODO: подключить свой Compose UI компонент CallUI
             CallUI(
                 localTrack = localVideoTrack,
                 remoteTrack = remoteVideoTrack,
+                eglBaseContext = eglBase.eglBaseContext,
+                rendererEvents = object : VideoRenderer.Callbacks {
+                    override fun renderFrame(frame: VideoRenderer.I420Frame?) {}
+                },
                 onHangup = { finish() }
             )
         }
