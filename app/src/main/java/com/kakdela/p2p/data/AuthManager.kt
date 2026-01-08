@@ -4,7 +4,7 @@ import android.content.Context
 import com.kakdela.p2p.api.MyServerApi
 import com.kakdela.p2p.data.local.ChatDatabase
 import com.kakdela.p2p.data.local.NodeEntity
-import com.kakdela.p2p.security.CryptoUtils
+import com.kakdela.p2p.security.CryptoManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import retrofit2.Retrofit
@@ -12,6 +12,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.POST
+import java.security.MessageDigest
 
 /**
  * Менеджер аутентификации пользователя.
@@ -31,12 +32,21 @@ class AuthManager(context: Context) {
     }
 
     /**
+     * SHA-256 хеширование пароля
+     */
+    private fun hashPassword(password: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val hashBytes = digest.digest(password.toByteArray(Charsets.UTF_8))
+        return hashBytes.joinToString("") { "%02x".format(it) }
+    }
+
+    /**
      * Логин пользователя по email и паролю.
      * @return true, если логин успешен (локально или через сервер)
      */
     suspend fun login(email: String, password: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            val inputPassHash = CryptoUtils.sha256(password)
+            val inputPassHash = hashPassword(password)
 
             // 1️⃣ Локальная проверка через DHT-кэш
             val localUser: NodeEntity? = nodeDao.getUserByEmail(email)
@@ -66,7 +76,7 @@ class AuthManager(context: Context) {
      */
     suspend fun register(email: String, password: String, phone: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            val passHash = CryptoUtils.sha256(password)
+            val passHash = hashPassword(password)
             val response = api.serverRegister(email, passHash, phone)
             if (response.success) {
                 nodeDao.insert(response.userNode)
