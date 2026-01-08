@@ -1,6 +1,7 @@
 package com.kakdela.p2p.ui.auth
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -22,6 +23,10 @@ import com.kakdela.p2p.data.IdentityRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/**
+ * Экран регистрации через телефон с SMS
+ * Создает уникальную P2P личность оффлайн.
+ */
 @Composable
 fun PhoneAuthScreen(
     identityRepository: IdentityRepository,
@@ -39,7 +44,7 @@ fun PhoneAuthScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var permissionDenied by remember { mutableStateOf(false) }
 
-    // Автоматический перехват кода из SMS через SmsCodeStore
+    // Перехват кода из SmsCodeStore
     LaunchedEffect(sentCode) {
         if (sentCode != null) {
             while (true) {
@@ -47,7 +52,7 @@ fun PhoneAuthScreen(
                 if (received != null && received == sentCode) {
                     inputCode = received
                     SmsCodeStore.lastReceivedCode = null
-                    break 
+                    break
                 }
                 delay(1000)
             }
@@ -134,13 +139,9 @@ fun PhoneAuthScreen(
                             isLoading = true
                             scope.launch {
                                 try {
-                                    // Генерация ключей и публикация в DHT
-                                    val success = identityRepository.publishIdentity(phone, name)
-                                    if (success) onSuccess()
-                                    else {
-                                        error = "Ошибка создания ключей"
-                                        isLoading = false
-                                    }
+                                    // Генерация локального P2P ID
+                                    identityRepository.generateUserHash(phone, name, inputCode)
+                                    onSuccess()
                                 } catch (e: Exception) {
                                     error = "Сбой P2P: ${e.localizedMessage}"
                                     isLoading = false
@@ -157,7 +158,7 @@ fun PhoneAuthScreen(
                         Text("Создать профиль")
                     }
                 }
-                
+
                 TextButton(onClick = { sentCode = null; inputCode = "" }) {
                     Text("Назад", color = Color.Gray)
                 }
@@ -179,9 +180,9 @@ fun PhoneAuthScreen(
             }
 
             error?.let {
-                Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 16.dp))
+                Spacer(Modifier.height(16.dp))
+                Text(it, color = MaterialTheme.colorScheme.error)
             }
         }
     }
 }
-
