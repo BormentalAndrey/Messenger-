@@ -38,7 +38,8 @@ class CallActivity : ComponentActivity() {
     /* ===================== SIGNAL LISTENER ===================== */
     private val signalingListener: (String, String, String) -> Unit =
         { type, data, fromIp ->
-            if (fromIp != targetIp) return@signalingListener
+            // Исправлено: обычный return без @
+            if (fromIp != targetIp) return
 
             when (type) {
                 "ANSWER" -> handleAnswer(data)
@@ -61,13 +62,13 @@ class CallActivity : ComponentActivity() {
         initWebRTC()
 
         val permissionLauncher =
-            registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-                if (it.all { p -> p.value }) {
+            registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+                if (result.all { it.value }) {
                     setupLocalStream()
 
-                    remoteSdp?.let {
-                        if (isIncoming) handleIncomingOffer(it)
-                    } ?: run {
+                    if (isIncoming && remoteSdp != null) {
+                        handleIncomingOffer(remoteSdp)
+                    } else {
                         makeOffer()
                     }
                 } else {
@@ -87,6 +88,9 @@ class CallActivity : ComponentActivity() {
                 localTrack = localVideoTrack,
                 remoteTrack = remoteVideoTrack,
                 eglBaseContext = eglBase.eglBaseContext,
+                rendererEvents = object : VideoRenderer.Callbacks {
+                    override fun renderFrame(frame: VideoRenderer.I420Frame?) {}
+                },
                 onHangup = { finish() }
             )
         }
@@ -138,8 +142,7 @@ class CallActivity : ComponentActivity() {
             object : PeerConnection.Observer {
 
                 override fun onIceCandidate(candidate: IceCandidate) {
-                    val payload =
-                        "${candidate.sdpMid}|${candidate.sdpMLineIndex}|${candidate.sdp}"
+                    val payload = "${candidate.sdpMid}|${candidate.sdpMLineIndex}|${candidate.sdp}"
                     identityRepo.sendSignaling(targetIp, "ICE", payload)
                 }
 
@@ -166,13 +169,10 @@ class CallActivity : ComponentActivity() {
     /* ===================== LOCAL MEDIA ===================== */
     private fun setupLocalStream() {
         val videoSource = factory.createVideoSource(false)
-        val surfaceHelper =
-            SurfaceTextureHelper.create("WebRTC", eglBase.eglBaseContext)
+        val surfaceHelper = SurfaceTextureHelper.create("WebRTC", eglBase.eglBaseContext)
 
         val enumerator = Camera2Enumerator(this)
-        val cameraName =
-            enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }
-                ?: return
+        val cameraName = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) } ?: return
 
         val capturer = enumerator.createCapturer(cameraName, null)
         capturer.initialize(surfaceHelper, this, videoSource.capturerObserver)
@@ -201,11 +201,7 @@ class CallActivity : ComponentActivity() {
                 peerConnection?.createAnswer(
                     SdpAdapter { answer ->
                         peerConnection?.setLocalDescription(SdpAdapter(), answer)
-                        identityRepo.sendSignaling(
-                            targetIp,
-                            "ANSWER",
-                            answer.description
-                        )
+                        identityRepo.sendSignaling(targetIp, "ANSWER", answer.description)
                     },
                     MediaConstraints()
                 )
@@ -218,11 +214,7 @@ class CallActivity : ComponentActivity() {
         peerConnection?.createOffer(
             SdpAdapter { offer ->
                 peerConnection?.setLocalDescription(SdpAdapter(), offer)
-                identityRepo.sendSignaling(
-                    targetIp,
-                    "OFFER",
-                    offer.description
-                )
+                identityRepo.sendSignaling(targetIp, "OFFER", offer.description)
             },
             MediaConstraints()
         )
@@ -244,11 +236,7 @@ class CallActivity : ComponentActivity() {
         val parts = data.split("|")
         if (parts.size != 3) return
 
-        val candidate = IceCandidate(
-            parts[0],
-            parts[1].toInt(),
-            parts[2]
-        )
+        val candidate = IceCandidate(parts[0], parts[1].toInt(), parts[2])
 
         if (isRemoteSdpSet) {
             peerConnection?.addIceCandidate(candidate)
