@@ -14,10 +14,6 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 class CallActivity : ComponentActivity() {
 
-    companion object {
-        private const val TAG = "CallActivity"
-    }
-
     private lateinit var identityRepo: IdentityRepository
     private lateinit var factory: PeerConnectionFactory
     private var peerConnection: PeerConnection? = null
@@ -31,8 +27,8 @@ class CallActivity : ComponentActivity() {
     private val pendingIce = CopyOnWriteArrayList<IceCandidate>()
     @Volatile private var isRemoteSdpSet = false
 
-    // Исправлено: корректный return для лямбды
-    private val signalingListener: (String, String, String) -> Unit = { type, data, fromIp ->
+    // Исправлено: 4 аргумента в слушателе
+    private val signalingListener: (String, String, String, String) -> Unit = { type, data, fromIp, fromId ->
         if (fromIp == targetIp) {
             when (type) {
                 "ANSWER" -> handleAnswer(data)
@@ -44,12 +40,7 @@ class CallActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Инициализация репозитория
-        val app = application as? MyApplication
-        if (app == null) {
-            finish()
-            return
-        }
+        val app = application as MyApplication
         identityRepo = app.identityRepository
 
         targetIp = intent.getStringExtra("targetIp") ?: ""
@@ -57,7 +48,6 @@ class CallActivity : ComponentActivity() {
         val remoteSdp = intent.getStringExtra("remoteSdp")
 
         identityRepo.addListener(signalingListener)
-
         initWebRTC()
 
         val permissionLauncher = registerForActivityResult(
@@ -65,24 +55,14 @@ class CallActivity : ComponentActivity() {
         ) { permissions ->
             if (permissions.values.all { it }) {
                 setupLocalStream()
-                if (isIncoming && remoteSdp != null) {
-                    handleIncomingOffer(remoteSdp)
-                } else {
-                    makeOffer()
-                }
-            } else {
-                Log.e(TAG, "Permissions denied for WebRTC")
-                finish()
-            }
+                if (isIncoming && remoteSdp != null) handleIncomingOffer(remoteSdp)
+                else makeOffer()
+            } else { finish() }
         }
 
-        permissionLauncher.launch(arrayOf(
-            Manifest.permission.CAMERA, 
-            Manifest.permission.RECORD_AUDIO
-        ))
+        permissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO))
 
         setContent {
-            // Исправлено: передаем контекст eglBase, как того требует UI компонент
             CallUI(
                 localTrack = localVideoTrack,
                 remoteTrack = remoteVideoTrack,
@@ -92,21 +72,8 @@ class CallActivity : ComponentActivity() {
         }
     }
 
-    override fun onDestroy() {
-        identityRepo.removeListener(signalingListener)
-        peerConnection?.dispose() // Правильнее использовать dispose для очистки нативных ресурсов
-        peerConnection = null
-        factory.dispose()
-        eglBase.release()
-        super.onDestroy()
-    }
-
     private fun initWebRTC() {
-        val options = PeerConnectionFactory.InitializationOptions.builder(this)
-            .setEnableInternalTracer(true)
-            .createInitializationOptions()
-        PeerConnectionFactory.initialize(options)
-
+        PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(this).createInitializationOptions())
         val encoderFactory = DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true)
         val decoderFactory = DefaultVideoDecoderFactory(eglBase.eglBaseContext)
 
@@ -115,28 +82,19 @@ class CallActivity : ComponentActivity() {
             .setVideoDecoderFactory(decoderFactory)
             .createPeerConnectionFactory()
 
-        val iceServers = listOf(
+        val rtcConfig = PeerConnection.RTCConfiguration(listOf(
             PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
-        )
-        
-        val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
-            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-        }
+        )).apply { sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN }
 
         peerConnection = factory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
             override fun onIceCandidate(candidate: IceCandidate) {
                 val payload = "${candidate.sdpMid}|${candidate.sdpMLineIndex}|${candidate.sdp}"
                 identityRepo.sendSignaling(targetIp, "ICE", payload)
             }
-
             override fun onTrack(transceiver: RtpTransceiver?) {
-                val track = transceiver?.receiver?.track()
-                if (track is VideoTrack) {
-                    remoteVideoTrack = track
-                }
+                (transceiver?.receiver?.track() as? VideoTrack)?.let { remoteVideoTrack = it }
             }
-
-            override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
+            override fun onSignalingChange(p0: PeerConnection.SignalingState?) {}
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
                 if (state == PeerConnection.IceConnectionState.DISCONNECTED) finish()
             }
@@ -154,19 +112,15 @@ class CallActivity : ComponentActivity() {
         val videoSource = factory.createVideoSource(false)
         val surfaceHelper = SurfaceTextureHelper.create("WebRTC", eglBase.eglBaseContext)
         val enumerator = Camera2Enumerator(this)
-        val cameraName = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) } 
-            ?: enumerator.deviceNames.firstOrNull() ?: return
-            
+        val cameraName = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) } ?: enumerator.deviceNames.first()
+        
         val capturer = enumerator.createCapturer(cameraName, null)
         capturer.initialize(surfaceHelper, this, videoSource.capturerObserver)
         capturer.startCapture(1280, 720, 30)
 
         localVideoTrack = factory.createVideoTrack("LOCAL_VIDEO", videoSource)
         peerConnection?.addTrack(localVideoTrack)
-        
-        val audioSource = factory.createAudioSource(MediaConstraints())
-        val audioTrack = factory.createAudioTrack("AUDIO", audioSource)
-        peerConnection?.addTrack(audioTrack)
+        peerConnection?.addTrack(factory.createAudioTrack("AUDIO", factory.createAudioSource(MediaConstraints())))
     }
 
     private fun handleIncomingOffer(sdpStr: String) {
@@ -189,22 +143,18 @@ class CallActivity : ComponentActivity() {
     }
 
     private fun handleAnswer(sdpStr: String) {
-        val answer = SessionDescription(SessionDescription.Type.ANSWER, sdpStr)
         peerConnection?.setRemoteDescription(SdpAdapter {
             isRemoteSdpSet = true
             drainIce()
-        }, answer)
+        }, SessionDescription(SessionDescription.Type.ANSWER, sdpStr))
     }
 
     private fun handleRemoteIce(data: String) {
         val parts = data.split("|")
         if (parts.size < 3) return
         val candidate = IceCandidate(parts[0], parts[1].toInt(), parts[2])
-        if (isRemoteSdpSet) {
-            peerConnection?.addIceCandidate(candidate)
-        } else {
-            pendingIce.add(candidate)
-        }
+        if (isRemoteSdpSet) peerConnection?.addIceCandidate(candidate)
+        else pendingIce.add(candidate)
     }
 
     private fun drainIce() {
@@ -212,10 +162,18 @@ class CallActivity : ComponentActivity() {
         pendingIce.clear()
     }
 
+    override fun onDestroy() {
+        identityRepo.removeListener(signalingListener)
+        peerConnection?.dispose()
+        factory.dispose()
+        eglBase.release()
+        super.onDestroy()
+    }
+
     private open class SdpAdapter(val onSuccess: (SessionDescription) -> Unit = {}) : SdpObserver {
         override fun onCreateSuccess(desc: SessionDescription?) { desc?.let(onSuccess) }
         override fun onSetSuccess() {}
-        override fun onCreateFailure(p0: String?) { Log.e(TAG, "SDP create error: $p0") }
-        override fun onSetFailure(p0: String?) { Log.e(TAG, "SDP set error: $p0") }
+        override fun onCreateFailure(p0: String?) {}
+        override fun onSetFailure(p0: String?) {}
     }
 }
