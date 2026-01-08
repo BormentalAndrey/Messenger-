@@ -6,9 +6,10 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
     id("com.google.gms.google-services")
+    kotlin("kapt")
 }
 
-// 1. Загружаем данные из local.properties (для сборки на твоем компьютере)
+// Загружаем данные из local.properties
 val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
@@ -25,7 +26,6 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
 
@@ -37,7 +37,7 @@ android {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
         }
 
-        // ✅ ДОБАВЛЕНО: API-ключ Gemini для умного чата
+        // API-ключ Gemini
         buildConfigField(
             "String",
             "GEMINI_API_KEY",
@@ -48,16 +48,12 @@ android {
     signingConfigs {
         create("release") {
             storeFile = file("my-release-key.jks")
-
             storePassword = System.getenv("KEYSTORE_PASSWORD")
                 ?: localProperties.getProperty("RELEASE_STORE_PASSWORD") ?: ""
-
             keyAlias = System.getenv("KEY_ALIAS")
                 ?: localProperties.getProperty("RELEASE_KEY_ALIAS") ?: ""
-
             keyPassword = System.getenv("KEY_PASSWORD")
                 ?: localProperties.getProperty("RELEASE_KEY_PASSWORD") ?: ""
-
             enableV1Signing = true
             enableV2Signing = true
         }
@@ -67,7 +63,6 @@ android {
         release {
             isMinifyEnabled = true
             signingConfig = signingConfigs.getByName("release")
-
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -89,8 +84,6 @@ android {
 
     buildFeatures {
         compose = true
-
-        // ✅ ДОБАВЛЕНО: нужно для BuildConfig.GEMINI_API_KEY
         buildConfig = true
     }
 
@@ -161,7 +154,7 @@ dependencies {
     implementation("com.google.firebase:firebase-storage-ktx")
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
 
-    // Security
+    // Security Crypto
     implementation("com.google.crypto.tink:tink-android:1.20.0")
 
     // Media3
@@ -192,6 +185,13 @@ dependencies {
 
     // Apache POI для DOCX
     implementation("org.apache.poi:poi-ooxml:5.3.0")
+
+    // ✅ Retrofit + Gson (добавлено)
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+
+    // ✅ libphonenumber
+    implementation("com.googlecode.libphonenumber:libphonenumber:8.13.22")
 }
 
 // Задача для извлечения нативных библиотек libGDX
@@ -213,9 +213,7 @@ val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
     into(layout.buildDirectory.dir("gdx-natives"))
 }
 
-tasks.matching {
-    it.name.contains("merge") && it.name.contains("JniLibFolders")
-}.configureEach {
+tasks.matching { it.name.contains("merge") && it.name.contains("JniLibFolders") }.configureEach {
     dependsOn(copyAndroidNatives)
 }
 
