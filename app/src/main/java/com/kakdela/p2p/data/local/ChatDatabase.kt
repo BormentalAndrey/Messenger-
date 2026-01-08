@@ -1,41 +1,40 @@
 package com.kakdela.p2p.data.local
 
 import android.content.Context
-import androidx.room.*
-import kotlinx.coroutines.flow.Flow
+import androidx.room.Database
+import androidx.room.Room
+import androidx.room.RoomDatabase
 
-@Dao
-interface MessageDao {
-
-    @Query("SELECT * FROM messages WHERE chatId = :chatId ORDER BY timestamp ASC")
-    fun observeMessages(chatId: String): Flow<List<MessageEntity>>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(message: MessageEntity)
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAll(messages: List<MessageEntity>)
-}
-
+/**
+ * Единая Room-база для мессенджера:
+ * - сообщения
+ * - P2P / DHT узлы
+ */
 @Database(
-    entities = [MessageEntity::class],
-    version = 1,
+    entities = [
+        MessageEntity::class,
+        NodeEntity::class
+    ],
+    version = 2, // увеличена версия из-за добавления NodeEntity
     exportSchema = false
 )
 abstract class ChatDatabase : RoomDatabase() {
 
     abstract fun messageDao(): MessageDao
+    abstract fun nodeDao(): NodeDao
 
     companion object {
-        @Volatile private var INSTANCE: ChatDatabase? = null
+        @Volatile
+        private var INSTANCE: ChatDatabase? = null
 
         fun getDatabase(context: Context): ChatDatabase {
             return INSTANCE ?: synchronized(this) {
-                Room.databaseBuilder(
+                INSTANCE ?: Room.databaseBuilder(
                     context.applicationContext,
                     ChatDatabase::class.java,
                     "chat_db"
                 )
+                    // в проде допустимо, т.к. данные P2P кэшируемые
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }
