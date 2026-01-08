@@ -1,56 +1,110 @@
 package com.kakdela.p2p.data
 
-import com.google.firebase.auth.ktx.auth
-import com.google.firebase.firestore.ktx.firestore
-import com.google.firebase.ktx.Firebase
-import kotlinx.coroutines.tasks.await
+import android.content.Context
+import com.kakdela.p2p.api.MyServerApi
+import com.kakdela.p2p.data.local.ChatDatabase
+import com.kakdela.p2p.data.local.NodeEntity
+import com.kakdela.p2p.security.CryptoUtils
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.http.Field
+import retrofit2.http.FormUrlEncoded
+import retrofit2.http.POST
 
-class AuthManager {
-    private val db = Firebase.firestore
-    private val auth = Firebase.auth
+/**
+ * Менеджер аутентификации пользователя.
+ * Работает с локальной базой (Room) и сервером через PHP/MySQL.
+ */
+class AuthManager(context: Context) {
 
-    suspend fun completeSignIn(userName: String, phoneNumber: String): Boolean {
-        return try {
-            // 1. Авторизация (получаем UID)
-            if (auth.currentUser == null) {
-                auth.signInAnonymously().await()
+    private val nodeDao = ChatDatabase.getDatabase(context).nodeDao()
+
+    // Retrofit API для сервера
+    private val api: MyServerApi by lazy {
+        Retrofit.Builder()
+            .baseUrl("https://yourdomain.infinityfreeapp.com/") // Замените на свой домен
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(MyServerApi::class.java)
+    }
+
+    /**
+     * Логин пользователя по email и паролю.
+     * @return true, если логин успешен (локально или через сервер)
+     */
+    suspend fun login(email: String, password: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val inputPassHash = CryptoUtils.sha256(password)
+
+            // 1️⃣ Локальная проверка через DHT-кэш
+            val localUser: NodeEntity? = nodeDao.getUserByEmail(email)
+            if (localUser != null && localUser.passwordHash == inputPassHash) {
+                return@withContext true
             }
 
-            val uid = auth.currentUser?.uid ?: return false
-
-            // 2. Исправление номера (Нормализация)
-            val digitsOnly = phoneNumber.filter { it.isDigit() }
-            val cleanPhone = if (digitsOnly.startsWith("8") && digitsOnly.length == 11) {
-                "7" + digitsOnly.substring(1)
-            } else {
-                digitsOnly
+            // 2️⃣ Проверка через сервер
+            val response = api.serverLogin(email, inputPassHash)
+            if (response.success) {
+                // Сохраняем пользователя в локальный кэш
+                nodeDao.insert(response.userNode)
+                return@withContext true
             }
 
-            // 3. Сохранение в базу
-            val userRef = db.collection("users").document(uid)
-            val snapshot = userRef.get().await()
-            
-            val userData = mapOf(
-                "uid" to uid,
-                "name" to userName,
-                "phoneNumber" to cleanPhone,
-                "status" to "online",
-                "createdAt" to System.currentTimeMillis()
-            )
+            return@withContext false
 
-            if (!snapshot.exists()) {
-                userRef.set(userData).await()
-            } else {
-                userRef.update(mapOf(
-                    "status" to "online",
-                    "name" to userName,
-                    "phoneNumber" to cleanPhone
-                )).await()
-            }
-            true
         } catch (e: Exception) {
             e.printStackTrace()
-            false
+            return@withContext false
+        }
+    }
+
+    /**
+     * Регистрация нового пользователя на сервере
+     * и сохранение локально.
+     */
+    suspend fun register(email: String, password: String, phone: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val passHash = CryptoUtils.sha256(password)
+            val response = api.serverRegister(email, passHash, phone)
+            if (response.success) {
+                nodeDao.insert(response.userNode)
+                return@withContext true
+            }
+            return@withContext false
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return@withContext false
         }
     }
 }
+
+/**
+ * Retrofit API для сервера
+ */
+interface MyServerApi {
+
+    @FormUrlEncoded
+    @POST("auth/login.php")
+    suspend fun serverLogin(
+        @Field("email") email: String,
+        @Field("passwordHash") passwordHash: String
+    ): LoginResponse
+
+    @FormUrlEncoded
+    @POST("auth/register.php")
+    suspend fun serverRegister(
+        @Field("email") email: String,
+        @Field("passwordHash") passwordHash: String,
+        @Field("phone") phone: String
+    ): LoginResponse
+}
+
+/**
+ * Ответ от сервера при логине или регистрации
+ */
+data class LoginResponse(
+    val success: Boolean,
+    val userNode: NodeEntity
+)
