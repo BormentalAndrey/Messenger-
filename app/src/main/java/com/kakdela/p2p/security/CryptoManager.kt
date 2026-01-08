@@ -27,15 +27,23 @@ object CryptoManager {
     private var myPrivateKey: com.google.crypto.tink.KeysetHandle? = null
     private var mySigningKey: com.google.crypto.tink.KeysetHandle? = null
 
-    // Кэш публичных ключей других пользователей: hash -> keyString
+    // Кэш публичных ключей других пользователей: hash -> ключ
     private val publicKeyCache = mutableMapOf<String, String>()
+
+    init {
+        try {
+            HybridConfig.register()
+            SignatureConfig.register()
+        } catch (e: Exception) {
+            Log.e("CryptoManager", "Tink config registration failed", e)
+        }
+    }
 
     // -------------------- ИНИЦИАЛИЗАЦИЯ --------------------
 
     fun init(context: Context) {
-        HybridConfig.register()
-        SignatureConfig.register()
         loadKeysFromPrefs(context)
+        if (!isKeyReady()) generateKeys(context)
     }
 
     fun isKeyReady(): Boolean = myPrivateKey != null && mySigningKey != null
@@ -82,9 +90,9 @@ object CryptoManager {
 
     // -------------------- ШИФРОВАНИЕ / РАСШИФРОВКА --------------------
 
-    fun encryptFor(pubKey: String, data: ByteArray): ByteArray {
+    fun encryptFor(pubKeyStr: String, data: ByteArray): ByteArray {
         return try {
-            val handle = CleartextKeysetHandle.read(JsonKeysetReader.withString(pubKey))
+            val handle = CleartextKeysetHandle.read(JsonKeysetReader.withString(pubKeyStr))
             val encrypt = handle.getPrimitive(HybridEncrypt::class.java)
             encrypt.encrypt(data, null)
         } catch (e: Exception) { ByteArray(0) }
@@ -98,7 +106,10 @@ object CryptoManager {
     }
 
     fun encryptMessage(text: String, recipientPubKey: String): String {
-        return Base64.encodeToString(encryptFor(recipientPubKey, text.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
+        return Base64.encodeToString(
+            encryptFor(recipientPubKey, text.toByteArray(Charsets.UTF_8)),
+            Base64.NO_WRAP
+        )
     }
 
     fun decryptMessage(cipherText: String): String {
@@ -174,13 +185,20 @@ object CryptoManager {
             CleartextKeysetHandle.write(it, JsonKeysetWriter.withOutputStream(stream))
             prefs.edit().putString("pri_key", stream.toString("UTF-8")).apply()
         }
+        val signStream = ByteArrayOutputStream()
+        mySigningKey?.let {
+            CleartextKeysetHandle.write(it, JsonKeysetWriter.withOutputStream(signStream))
+            prefs.edit().putString("sign_key", signStream.toString("UTF-8")).apply()
+        }
     }
 
     private fun loadKeysFromPrefs(context: Context) {
         val prefs = context.getSharedPreferences("crypto_keys", Context.MODE_PRIVATE)
-        val priStr = prefs.getString("pri_key", null)
-        if (!priStr.isNullOrBlank()) {
-            myPrivateKey = CleartextKeysetHandle.read(JsonKeysetReader.withString(priStr))
+        prefs.getString("pri_key", null)?.let {
+            myPrivateKey = CleartextKeysetHandle.read(JsonKeysetReader.withString(it))
+        }
+        prefs.getString("sign_key", null)?.let {
+            mySigningKey = CleartextKeysetHandle.read(JsonKeysetReader.withString(it))
         }
     }
 }
