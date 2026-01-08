@@ -1,11 +1,9 @@
 package com.kakdela.p2p.data
 
-import android.util.Base64
 import com.google.firebase.firestore.FirebaseFirestore
 import com.kakdela.p2p.security.CryptoManager
 import kotlinx.coroutines.tasks.await
 
-// Убрали (private val crypto: CryptoManager) из конструктора, так как это Object
 class MessageRepository {
 
     private val db = FirebaseFirestore.getInstance()
@@ -16,9 +14,8 @@ class MessageRepository {
         recipientPublicKey: String,
         text: String
     ) {
-        // Используем Singleton объект напрямую
-        val encryptedBytes = CryptoManager.encryptMessage(text, recipientPublicKey)
-        val encryptedBase64 = Base64.encodeToString(encryptedBytes, Base64.NO_WRAP)
+        // CryptoManager.encryptMessage возвращает уже готовую Base64 строку
+        val encryptedBase64 = CryptoManager.encryptMessage(text, recipientPublicKey)
 
         val envelope = mapOf(
             "sender_id" to senderId,
@@ -44,22 +41,17 @@ class MessageRepository {
                     val data = change.document.data
                     val payload = data["payload"] as? String ?: return@forEach
                     
-                    try {
-                        val cipherBytes = Base64.decode(payload, Base64.NO_WRAP)
-                        // Используем Singleton объект напрямую
-                        val decryptedText = CryptoManager.decryptMessage(cipherBytes)
-                        
-                        onMessage(Message(
-                            text = decryptedText,
-                            senderId = data["sender_id"] as String,
-                            timestamp = data["timestamp"] as Long,
-                            isP2P = false
-                        ))
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
+                    // Метод decryptMessage принимает строку и возвращает строку
+                    val decryptedText = CryptoManager.decryptMessage(payload)
+                    
+                    onMessage(Message(
+                        id = change.document.id,
+                        text = decryptedText,
+                        senderId = data["sender_id"] as String,
+                        timestamp = data["timestamp"] as Long,
+                        isMe = false
+                    ))
                 }
             }
     }
 }
-
