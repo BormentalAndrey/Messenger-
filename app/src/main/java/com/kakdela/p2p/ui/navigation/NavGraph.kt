@@ -195,7 +195,8 @@ fun NavGraph(
                 val chatId = entry.arguments?.getString("chatId") ?: return@composable
                 val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(identityRepository))
 
-                LaunchedEffect(chatId) { vm.initChat(chatId, identityRepository.getMyId()) }
+                // Исправленный вызов: передаём только chatId
+                LaunchedEffect(chatId) { vm.initChat(chatId) }
 
                 ChatScreen(
                     chatPartnerId = chatId,
