@@ -3,13 +3,18 @@ package com.kakdela.p2p.security
 import android.content.Context
 import android.util.Base64
 import android.util.Log
-import com.google.crypto.tink.*
+import com.google.crypto.tink.CleartextKeysetHandle
+import com.google.crypto.tink.JsonKeysetReader
+import com.google.crypto.tink.JsonKeysetWriter
 import com.google.crypto.tink.hybrid.HybridConfig
+import com.google.crypto.tink.hybrid.HybridDecrypt
+import com.google.crypto.tink.hybrid.HybridEncrypt
 import com.google.crypto.tink.hybrid.HybridKeyTemplates
 import com.google.crypto.tink.signature.SignatureConfig
 import com.google.crypto.tink.signature.SignatureKeyTemplates
+import com.google.crypto.tink.PublicKeySign
+import com.google.crypto.tink.PublicKeyVerify
 import java.io.ByteArrayOutputStream
-import java.security.MessageDigest
 import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
@@ -18,31 +23,38 @@ import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
 
 object CryptoManager {
-    private var myPrivateKey: KeysetHandle? = null
-    private var mySigningKey: KeysetHandle? = null
 
-    // Кэш публичных ключей других пользователей: Hash -> Keyset (String)
+    private var myPrivateKey: com.google.crypto.tink.KeysetHandle? = null
+    private var mySigningKey: com.google.crypto.tink.KeysetHandle? = null
+
+    // Кэш публичных ключей других пользователей: hash -> keyString
     private val publicKeyCache = mutableMapOf<String, String>()
+
+    // -------------------- ИНИЦИАЛИЗАЦИЯ --------------------
 
     fun init(context: Context) {
         HybridConfig.register()
         SignatureConfig.register()
-        // Пытаемся загрузить ключи, если они уже были созданы
         loadKeysFromPrefs(context)
     }
 
     fun isKeyReady(): Boolean = myPrivateKey != null && mySigningKey != null
 
-    /**
-     * Генерация ключей: ECIES для шифрования и ECDSA для подписей.
-     */
+    fun generateKeysIfNeeded(context: Context) {
+        if (!isKeyReady()) generateKeys(context)
+    }
+
     fun generateKeys(context: Context) {
         try {
             if (myPrivateKey == null) {
-                myPrivateKey = KeysetHandle.generateNew(HybridKeyTemplates.ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM)
+                myPrivateKey = com.google.crypto.tink.KeysetHandle.generateNew(
+                    HybridKeyTemplates.ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM
+                )
             }
             if (mySigningKey == null) {
-                mySigningKey = KeysetHandle.generateNew(SignatureKeyTemplates.ECDSA_P256)
+                mySigningKey = com.google.crypto.tink.KeysetHandle.generateNew(
+                    SignatureKeyTemplates.ECDSA_P256
+                )
             }
             saveKeysToPrefs(context)
         } catch (e: Exception) {
@@ -50,7 +62,7 @@ object CryptoManager {
         }
     }
 
-    // --- ПОДПИСЬ И ПРОВЕРКА (Signature) ---
+    // -------------------- ПОДПИСЬ / ПРОВЕРКА --------------------
 
     fun sign(data: ByteArray): ByteArray {
         return try {
@@ -59,34 +71,44 @@ object CryptoManager {
         } catch (e: Exception) { ByteArray(0) }
     }
 
-    fun verify(data: ByteArray, signature: ByteArray, publicKeyStr: String): Boolean {
+    fun verify(signature: ByteArray, data: ByteArray, pubKeyStr: String): Boolean {
         return try {
-            val publicHandle = CleartextKeysetHandle.read(JsonKeysetReader.withString(publicKeyStr))
-            val verifier = publicHandle.getPrimitive(PublicKeyVerify::class.java)
+            val handle = CleartextKeysetHandle.read(JsonKeysetReader.withString(pubKeyStr))
+            val verifier = handle.getPrimitive(PublicKeyVerify::class.java)
             verifier.verify(signature, data)
             true
         } catch (e: Exception) { false }
     }
 
-    // --- ШИФРОВАНИЕ СООБЩЕНИЙ (Hybrid E2EE) ---
+    // -------------------- ШИФРОВАНИЕ / РАСШИФРОВКА --------------------
 
-    fun encryptMessage(text: String, recipientPublicKeyStr: String): ByteArray {
+    fun encryptFor(pubKey: String, data: ByteArray): ByteArray {
         return try {
-            val publicHandle = CleartextKeysetHandle.read(JsonKeysetReader.withString(recipientPublicKeyStr))
-            val hybridEncrypt = publicHandle.getPrimitive(HybridEncrypt::class.java)
-            hybridEncrypt.encrypt(text.toByteArray(Charsets.UTF_8), null)
+            val handle = CleartextKeysetHandle.read(JsonKeysetReader.withString(pubKey))
+            val encrypt = handle.getPrimitive(HybridEncrypt::class.java)
+            encrypt.encrypt(data, null)
         } catch (e: Exception) { ByteArray(0) }
     }
 
-    fun decryptMessage(cipherBytes: ByteArray): String {
+    fun decrypt(data: ByteArray): ByteArray {
         return try {
-            val hybridDecrypt = myPrivateKey?.getPrimitive(HybridDecrypt::class.java)
-            val decryptedBytes = hybridDecrypt?.decrypt(cipherBytes, null)
-            String(decryptedBytes!!, Charsets.UTF_8)
+            val decrypt = myPrivateKey?.getPrimitive(HybridDecrypt::class.java)
+            decrypt?.decrypt(data, null) ?: ByteArray(0)
+        } catch (e: Exception) { ByteArray(0) }
+    }
+
+    fun encryptMessage(text: String, recipientPubKey: String): String {
+        return Base64.encodeToString(encryptFor(recipientPubKey, text.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
+    }
+
+    fun decryptMessage(cipherText: String): String {
+        return try {
+            val bytes = Base64.decode(cipherText, Base64.NO_WRAP)
+            String(decrypt(bytes), Charsets.UTF_8)
         } catch (e: Exception) { "[Ошибка расшифровки]" }
     }
 
-    // --- РАБОТА С ХЭШАМИ И ПАМЯТЬЮ ---
+    // -------------------- ПУБЛИЧНЫЕ КЛЮЧИ PEERS --------------------
 
     fun getPublicKeyByHash(hash: String): String? = publicKeyCache[hash]
 
@@ -101,11 +123,8 @@ object CryptoManager {
         return stream.toString("UTF-8")
     }
 
-    // --- ВОССТАНОВЛЕНИЕ ЛИЧНОСТИ (Email Backup / Restore) ---
+    // -------------------- BACKUP / RESTORE --------------------
 
-    /**
-     * Создает зашифрованный бэкап приватных ключей для загрузки на сервер.
-     */
     fun createBackupPayload(password: String): String {
         val stream = ByteArrayOutputStream()
         CleartextKeysetHandle.write(myPrivateKey!!, JsonKeysetWriter.withOutputStream(stream))
@@ -113,20 +132,15 @@ object CryptoManager {
         return encryptWithPassword(privateData, password)
     }
 
-    /**
-     * Восстанавливает личность из зашифрованной строки с сервера.
-     */
     fun restoreIdentity(encryptedData: String, password: String): Boolean {
         return try {
-            val decryptedJson = decryptWithPassword(encryptedData, password)
-            myPrivateKey = CleartextKeysetHandle.read(JsonKeysetReader.withString(decryptedJson))
-            // После восстановления шифрующего ключа, подписывающий ключ обычно создается заново
-            // или восстанавливается из того же бэкапа (в данном примере для простоты — шифрующий).
+            val decrypted = decryptWithPassword(encryptedData, password)
+            myPrivateKey = CleartextKeysetHandle.read(JsonKeysetReader.withString(decrypted))
             true
         } catch (e: Exception) { false }
     }
 
-    // --- ВНУТРЕННИЕ МЕТОДЫ AES-GCM ДЛЯ БЭКАПА ---
+    // -------------------- AES-GCM INTERNAL --------------------
 
     private fun encryptWithPassword(data: String, pass: String): String {
         val salt = ByteArray(16).apply { SecureRandom().nextBytes(this) }
@@ -135,7 +149,7 @@ object CryptoManager {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key)
         val iv = cipher.iv
-        val encrypted = cipher.doFinal(data.toByteArray())
+        val encrypted = cipher.doFinal(data.toByteArray(Charsets.UTF_8))
         return Base64.encodeToString(salt + iv + encrypted, Base64.NO_WRAP)
     }
 
@@ -148,8 +162,10 @@ object CryptoManager {
         val key = SecretKeySpec(SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1").generateSecret(spec).encoded, "AES")
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, iv))
-        return String(cipher.doFinal(data))
+        return String(cipher.doFinal(data), Charsets.UTF_8)
     }
+
+    // -------------------- PREFS STORAGE --------------------
 
     private fun saveKeysToPrefs(context: Context) {
         val prefs = context.getSharedPreferences("crypto_keys", Context.MODE_PRIVATE)
@@ -163,7 +179,7 @@ object CryptoManager {
     private fun loadKeysFromPrefs(context: Context) {
         val prefs = context.getSharedPreferences("crypto_keys", Context.MODE_PRIVATE)
         val priStr = prefs.getString("pri_key", null)
-        if (priStr != null) {
+        if (!priStr.isNullOrBlank()) {
             myPrivateKey = CleartextKeysetHandle.read(JsonKeysetReader.withString(priStr))
         }
     }
