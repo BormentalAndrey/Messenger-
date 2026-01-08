@@ -46,6 +46,17 @@ class IdentityRepository(private val context: Context) {
         return sha256(CryptoManager.getMyPublicKeyStr())
     }
 
+    /**
+     * Генерация уникального хэша пользователя для оффлайн/онлайн входа
+     * phone + email + password -> SHA256
+     */
+    fun generateUserHash(phone: String, email: String, password: String): String {
+        val combined = (phone.trim() + email.trim().lowercase() + password).toByteArray()
+        return MessageDigest.getInstance("SHA-256")
+            .digest(combined)
+            .joinToString("") { "%02x".format(it) }
+    }
+
     /* ===================== INIT ===================== */
 
     init {
