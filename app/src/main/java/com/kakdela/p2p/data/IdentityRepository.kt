@@ -1,7 +1,6 @@
 package com.kakdela.p2p.data
 
 import android.content.Context
-import android.content.Intent
 import android.net.wifi.WifiManager
 import android.telephony.SmsManager
 import android.text.format.Formatter
@@ -12,7 +11,6 @@ import com.kakdela.p2p.api.UserPayload
 import com.kakdela.p2p.data.local.ChatDatabase
 import com.kakdela.p2p.data.local.NodeEntity
 import com.kakdela.p2p.security.CryptoManager
-import com.kakdela.p2p.ui.call.CallActivity
 import com.kakdela.p2p.utils.ContactUtils
 import kotlinx.coroutines.*
 import org.json.JSONObject
@@ -28,7 +26,6 @@ import kotlin.math.abs
 
 /**
  * IdentityRepository: Гибридный мессенджер (P2P + Server + SMS)
- * Управляет пользователями, узлами DHT и шифрует сообщения.
  */
 class IdentityRepository(private val context: Context) {
 
@@ -37,16 +34,14 @@ class IdentityRepository(private val context: Context) {
 
     private val P2P_PORT = 8888
     private val DISCOVERY_PORT = 8889
-    private val MAX_DRIFT = 60_000L // 1 минута
+    private val MAX_DRIFT = 60_000L
 
-    private val listeners =
-        CopyOnWriteArrayList<(type: String, data: String, fromIp: String, fromId: String) -> Unit>()
+    private val listeners = CopyOnWriteArrayList<(type: String, data: String, fromIp: String, fromId: String) -> Unit>()
     private val nodeDao = ChatDatabase.getDatabase(context).nodeDao()
 
-    // Настройка API
     private val api: MyServerApi by lazy {
         Retrofit.Builder()
-            .baseUrl("http://kakdela.infinityfree.me/") // твой сервер
+            .baseUrl("http://kakdela.infinityfree.me/")
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(MyServerApi::class.java)
@@ -55,7 +50,7 @@ class IdentityRepository(private val context: Context) {
     private var mainSocket: DatagramSocket? = null
 
     init {
-        CryptoManager.generateKeysIfNeeded(context)
+        CryptoManager.init(context) // Инициализация Tink
         initMainSocket()
         startDiscoveryListener()
         startPresenceBroadcast()
@@ -65,33 +60,33 @@ class IdentityRepository(private val context: Context) {
     // ==================== Идентификация ====================
 
     fun getMyId(): String = sha256(CryptoManager.getMyPublicKeyStr())
-    private fun getMyPublicKeyStr(): String = CryptoManager.getMyPublicKeyStr()
+    
+    fun getMyPublicKeyStr(): String = CryptoManager.getMyPublicKeyStr()
 
-    suspend fun getMyContactList(): List<NodeEntity> = withContext(Dispatchers.IO) {
-        val localPhones = ContactUtils.getNormalizedPhoneNumbers(context)
-        nodeDao.getAllNodes().filter { node ->
-            val cleanPhone = node.phone.replace(Regex("[^0-9]"), "").takeLast(10)
-            localPhones.contains(cleanPhone)
-        }
+    fun savePeerPublicKey(hash: String, key: String) {
+        CryptoManager.savePeerPublicKey(hash, key)
     }
 
     // ==================== P2P: Listeners ====================
 
-    fun addListener(listener: (type: String, data: String, fromIp: String, fromId: String) -> Unit) {
+    fun addListener(listener: (String, String, String, String) -> Unit) {
         listeners.add(listener)
     }
 
-    fun removeListener(listener: (type: String, data: String, fromIp: String, fromId: String) -> Unit) {
+    fun removeListener(listener: (String, String, String, String) -> Unit) {
         listeners.remove(listener)
     }
 
-    suspend fun findPeerInDHT(hash: String): NodeEntity? = nodeDao.getNode(hash)
-
-    fun sendSignaling(targetHash: String, message: String) = scope.launch {
-        val targetNode = nodeDao.getNode(targetHash)
-        if (!targetNode?.ip.isNullOrBlank()) {
-            sendUdp(targetNode!!.ip, message)
+    /**
+     * Исправлено: Соответствие вызовам из WebRTC и FileTransfer.
+     */
+    fun sendSignaling(targetIp: String, type: String, data: String) = scope.launch {
+        val json = JSONObject().apply {
+            put("type", type)
+            put("data", data)
         }
+        enrich(json)
+        sendUdp(targetIp, json.toString())
     }
 
     // ==================== Сетевой уровень ====================
@@ -102,33 +97,33 @@ class IdentityRepository(private val context: Context) {
                 reuseAddress = true
                 bind(InetSocketAddress(P2P_PORT))
             }
-            Log.d(TAG, "P2P Socket ready on $P2P_PORT")
             startMainPacketListener()
         } catch (e: Exception) {
             Log.e(TAG, "Socket bind failed", e)
         }
     }
 
-    private suspend fun sendUdp(ip: String, message: String, isBroadcast: Boolean = false): Boolean {
-        return withContext(Dispatchers.IO) {
-            try {
-                DatagramSocket().use { socket ->
-                    socket.broadcast = isBroadcast
-                    val bytes = message.toByteArray()
-                    val packet = DatagramPacket(bytes, bytes.size, InetAddress.getByName(ip), P2P_PORT)
-                    socket.send(packet)
-                }
-                true
-            } catch (e: Exception) { false }
-        }
+    private suspend fun sendUdp(ip: String, message: String, isBroadcast: Boolean = false): Boolean = withContext(Dispatchers.IO) {
+        try {
+            if (ip.isBlank()) return@withContext false
+            DatagramSocket().use { socket ->
+                socket.broadcast = isBroadcast
+                val bytes = message.toByteArray()
+                val packet = DatagramPacket(bytes, bytes.size, InetAddress.getByName(ip), P2P_PORT)
+                socket.send(packet)
+            }
+            true
+        } catch (e: Exception) { false }
     }
 
     // ==================== Отправка сообщений ====================
 
     fun sendMessage(targetHash: String, messageText: String) = scope.launch {
         val targetNode = nodeDao.getNode(targetHash)
-
+        
+        // E2EE шифрование через Tink
         val (dataToSend, isEncrypted) = encryptIfPossible(targetNode?.publicKey, messageText)
+        
         val json = JSONObject().apply {
             put("type", "MESSAGE")
             put("data", dataToSend)
@@ -137,65 +132,29 @@ class IdentityRepository(private val context: Context) {
         enrich(json)
         val packetStr = json.toString()
 
-        // 1. Прямое соединение
-        if (!targetNode?.ip.isNullOrBlank() && targetNode.ip != "0.0.0.0") {
+        // 1. Direct P2P
+        if (targetNode != null && !targetNode.ip.isNullOrBlank() && targetNode.ip != "0.0.0.0") {
             if (sendUdp(targetNode.ip, packetStr)) return@launch
         }
 
-        // 2. Mesh Broadcast
-        sendUdp("255.255.255.255", packetStr, true)
-
-        // 3. Через сервер
+        // 2. DHT / Server Lookup
         try {
-            val serverInfo = api.findPeer(mapOf("hash" to targetHash))
-            if (!serverInfo.ip.isNullOrBlank()) {
-                if (sendUdp(serverInfo.ip, packetStr)) {
-                    updateNodeFromServer(targetHash, serverInfo)
+            val response = api.findPeer(mapOf("hash" to targetHash))
+            response.ip?.let { serverIp ->
+                if (sendUdp(serverIp, packetStr)) {
+                    updateNodeFromServer(targetHash, response)
                     return@launch
                 }
             }
-        } catch (_: Exception) {}
-
-        // 4. SMS fallback
-        targetNode?.phone?.takeIf { it.isNotBlank() }?.let {
-            sendSmsFallback(it, "Новое сообщение в KakDela")
+        } catch (e: Exception) {
+            Log.w(TAG, "Server lookup failed for $targetHash")
         }
-    }
 
-    // ==================== Torrent / Серверная синхронизация ====================
-
-    private fun startBackgroundSync() = scope.launch {
-        while (isActive) {
-            try {
-                val payload = UserPayload(
-                    hash = getMyId(),
-                    ip = getLocalIpAddress(),
-                    port = P2P_PORT,
-                    publicKey = getMyPublicKeyStr(),
-                    phone = getMyPhoneNumber()
-                )
-                api.announceSelf(payload)
-
-                val nodes = api.getAllNodes()
-                val entities = nodes.map { serverNode ->
-                    NodeEntity(
-                        userHash = serverNode.hash ?: "",
-                        email = serverNode.email ?: "",
-                        passwordHash = "",
-                        phone = serverNode.phone ?: "",
-                        ip = serverNode.ip ?: "",
-                        port = P2P_PORT,
-                        publicKey = serverNode.publicKey ?: "",
-                        lastSeen = System.currentTimeMillis()
-                    )
-                }
-                nodeDao.insertAll(entities)
-                nodeDao.trimDatabase()
-                Log.d(TAG, "DHT Synchronized: ${entities.size} nodes")
-            } catch (e: Exception) {
-                Log.w(TAG, "Sync failed: ${e.message}")
-            }
-            delay(600_000) // 10 мин
+        // 3. Mesh Broadcast & SMS Fallback
+        sendUdp("255.255.255.255", packetStr, true)
+        
+        targetNode?.phone?.takeIf { it.isNotBlank() }?.let {
+            sendSmsFallback(it, "Новое P2P сообщение")
         }
     }
 
@@ -209,22 +168,28 @@ class IdentityRepository(private val context: Context) {
                 mainSocket?.receive(packet) ?: continue
                 val msg = String(packet.data, 0, packet.length)
                 val json = JSONObject(msg)
+                
                 if (!verify(json)) continue
 
                 val fromId = json.getString("from")
                 val type = json.getString("type")
                 val data = json.optString("data")
-                val isEnc = json.optBoolean("encrypted")
-                val processedData = if (isEnc) decryptSafe(data) else data
+                
+                // Автоматическая расшифровка если помечено Tink
+                val processedData = if (json.optBoolean("encrypted")) {
+                    CryptoManager.decryptMessage(data)
+                } else data
 
                 withContext(Dispatchers.Main) {
                     listeners.forEach { it(type, processedData, packet.address.hostAddress, fromId) }
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                // Игнорируем битые пакеты
+            }
         }
     }
 
-    // ==================== Подпись и проверка ====================
+    // ==================== Безопасность ====================
 
     private fun enrich(json: JSONObject) {
         json.put("from", getMyId())
@@ -233,27 +198,83 @@ class IdentityRepository(private val context: Context) {
         json.put("signature", sign(json))
     }
 
-    private fun verify(json: JSONObject): Boolean = try {
-        val ts = json.getLong("timestamp")
-        if (abs(System.currentTimeMillis() - ts) > MAX_DRIFT) false
-        else {
-            val sig = Base64.decode(json.getString("signature"), Base64.NO_WRAP)
-            val pubKey = json.getString("pubkey")
-            val cleanJson = JSONObject(json.toString()).apply { remove("signature") }
-            CryptoManager.verify(sig, cleanJson.toString().toByteArray(), pubKey)
-        }
-    } catch (_: Exception) { false }
-
     private fun sign(json: JSONObject): String {
         val clean = JSONObject(json.toString()).apply { remove("signature") }
         val sig = CryptoManager.sign(clean.toString().toByteArray())
         return Base64.encodeToString(sig, Base64.NO_WRAP)
     }
 
+    private fun verify(json: JSONObject): Boolean = try {
+        val ts = json.getLong("timestamp")
+        if (abs(System.currentTimeMillis() - ts) > MAX_DRIFT) false
+        else {
+            val sig = Base64.decode(json.getString("signature"), Base64.NO_WRAP)
+            val pubKey = json.getString("pubkey")
+            val clean = JSONObject(json.toString()).apply { remove("signature") }
+            CryptoManager.verify(sig, clean.toString().toByteArray(), pubKey)
+        }
+    } catch (e: Exception) { false }
+
+    private fun encryptIfPossible(pubKey: String?, text: String): Pair<String, Boolean> {
+        if (pubKey.isNullOrBlank()) return text to false
+        val encrypted = CryptoManager.encryptMessage(text, pubKey)
+        return if (encrypted.startsWith("[Ошибка]")) text to false else encrypted to true
+    }
+
+    // ==================== Фоновые задачи ====================
+
+    private fun startBackgroundSync() = scope.launch {
+        while (isActive) {
+            try {
+                val payload = UserPayload(getMyId(), getLocalIpAddress(), P2P_PORT, getMyPublicKeyStr(), "")
+                api.announceSelf(payload)
+                
+                val nodes = api.getAllNodes()
+                nodeDao.insertAll(nodes.map { s ->
+                    NodeEntity(s.hash ?: "", s.email ?: "", "", s.phone ?: "", s.ip ?: "", P2P_PORT, s.publicKey ?: "", System.currentTimeMillis())
+                })
+            } catch (e: Exception) {
+                Log.e(TAG, "Sync error: ${e.message}")
+            }
+            delay(600_000)
+        }
+    }
+
+    private fun startDiscoveryListener() = scope.launch {
+        val dsSocket = DatagramSocket(null).apply {
+            reuseAddress = true
+            bind(InetSocketAddress(DISCOVERY_PORT))
+        }
+        val buffer = ByteArray(2048)
+        val packet = DatagramPacket(buffer, buffer.size)
+        while (isActive) {
+            try {
+                dsSocket.receive(packet)
+                val json = JSONObject(String(packet.data, 0, packet.length))
+                if (json.optString("type") == "IAM") {
+                    val fromId = json.getString("from")
+                    val pubKey = json.getString("pubkey")
+                    savePeerPublicKey(fromId, pubKey)
+                    nodeDao.insert(NodeEntity(fromId, "", "", "", packet.address.hostAddress, P2P_PORT, pubKey, System.currentTimeMillis()))
+                }
+            } catch (e: Exception) {}
+        }
+    }
+
+    private fun startPresenceBroadcast() = scope.launch {
+        while (isActive) {
+            val json = JSONObject().apply {
+                put("type", "IAM")
+                put("from", getMyId())
+                put("pubkey", getMyPublicKeyStr())
+            }
+            sendUdp("255.255.255.255", json.toString(), true)
+            delay(30_000)
+        }
+    }
+
     private fun sha256(input: String): String =
         MessageDigest.getInstance("SHA-256").digest(input.toByteArray()).joinToString("") { "%02x".format(it) }
-
-    // ==================== Утилиты ====================
 
     private fun getLocalIpAddress(): String {
         val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
@@ -261,86 +282,12 @@ class IdentityRepository(private val context: Context) {
     }
 
     private fun sendSmsFallback(phone: String, text: String) {
-        try { SmsManager.getDefault().sendTextMessage(phone, null, "[KakDela] $text", null, null) }
-        catch (_: Exception) {}
+        try { SmsManager.getDefault().sendTextMessage(phone, null, "[KakDela] $text", null, null) } catch (e: Exception) {}
     }
 
-    private fun decryptSafe(data: String) = try {
-        val bytes = Base64.decode(data, Base64.NO_WRAP)
-        String(CryptoManager.decrypt(bytes))
-    } catch (_: Exception) { "<ошибка расшифровки>" }
-
-    private fun encryptIfPossible(pubKey: String?, text: String): Pair<String, Boolean> {
-        if (pubKey.isNullOrBlank()) return text to false
-        return try {
-            val enc = CryptoManager.encryptFor(pubKey, text.toByteArray())
-            Base64.encodeToString(enc, Base64.NO_WRAP) to true
-        } catch (_: Exception) { text to false }
-    }
-
-    private fun updateNodeFromServer(hash: String, payload: UserPayload) {
+    private fun updateNodeFromServer(hash: String, p: UserPayload) {
         scope.launch {
-            nodeDao.insert(NodeEntity(
-                userHash = hash,
-                email = payload.email ?: "",
-                passwordHash = "",
-                phone = payload.phone ?: "",
-                ip = payload.ip ?: "",
-                port = P2P_PORT,
-                publicKey = payload.publicKey ?: "",
-                lastSeen = System.currentTimeMillis()
-            ))
-        }
-    }
-
-    private fun getMyPhoneNumber(): String = "" // Можно получить через UI
-
-    // ==================== Discovery / Presence ====================
-
-    private fun startDiscoveryListener() = scope.launch {
-        val socket = DatagramSocket(null).apply {
-            reuseAddress = true
-            bind(InetSocketAddress(DISCOVERY_PORT))
-        }
-        val buffer = ByteArray(1024)
-        val packet = DatagramPacket(buffer, buffer.size)
-        while (isActive) {
-            try {
-                socket.receive(packet)
-                val msg = String(packet.data, 0, packet.length)
-                val json = JSONObject(msg)
-                if (json.getString("type") == "IAM") {
-                    val fromId = json.getString("from")
-                    val ip = packet.address.hostAddress
-                    val pubKey = json.getString("pubkey")
-                    CryptoManager.savePeerPublicKey(fromId, pubKey)
-                    nodeDao.insert(NodeEntity(
-                        userHash = fromId,
-                        email = "",
-                        passwordHash = "",
-                        phone = "",
-                        ip = ip,
-                        port = P2P_PORT,
-                        publicKey = pubKey,
-                        lastSeen = System.currentTimeMillis()
-                    ))
-                }
-            } catch (_: Exception) {}
-        }
-    }
-
-    private fun startPresenceBroadcast() = scope.launch {
-        val broadcastIp = "255.255.255.255"
-        while (isActive) {
-            try {
-                val json = JSONObject().apply {
-                    put("type", "IAM")
-                    put("from", getMyId())
-                    put("pubkey", getMyPublicKeyStr())
-                }
-                sendUdp(broadcastIp, json.toString(), true)
-            } catch (_: Exception) {}
-            delay(30_000L) // каждые 30 секунд
+            nodeDao.insert(NodeEntity(hash, p.email ?: "", "", p.phone ?: "", p.ip ?: "", P2P_PORT, p.publicKey ?: "", System.currentTimeMillis()))
         }
     }
 
