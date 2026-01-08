@@ -29,10 +29,9 @@ fun RegistrationChoiceScreen(
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onBackground
             )
-            
+
             Spacer(Modifier.height(48.dp))
 
-            // Основной путь: сначала телефон (это создает ключи и ID)
             Button(
                 onClick = onPhone,
                 modifier = Modifier.fillMaxWidth()
@@ -41,7 +40,7 @@ fun RegistrationChoiceScreen(
             }
 
             Spacer(Modifier.height(16.dp))
-            
+
             Text(
                 text = "или",
                 style = MaterialTheme.typography.bodySmall,
@@ -59,4 +58,3 @@ fun RegistrationChoiceScreen(
         }
     }
 }
-
