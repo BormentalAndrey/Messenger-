@@ -19,7 +19,7 @@ class AiChatViewModel : ViewModel() {
 
     private val _messages = mutableStateListOf<ChatMessage>()
     val messages: SnapshotStateList<ChatMessage> get() = _messages
-    
+
     var isTyping = mutableStateOf(false)
         private set
 
@@ -27,6 +27,11 @@ class AiChatViewModel : ViewModel() {
 
     // 🔑 Тестовый ключ Gemini для локальной сборки
     private val GEMINI_API_KEY = "AIzaSyAi68xQGYNj3-45Y-71bV29sXa8KLfAyLQ"
+
+    companion object {
+        const val GEMINI_MODEL = "gemini-2.5-pro"
+        const val SAFETY_REJECT_CODE = 2
+    }
 
     init {
         // Начальное сообщение от ИИ
@@ -41,10 +46,9 @@ class AiChatViewModel : ViewModel() {
     fun sendMessage(text: String) {
         if (text.isBlank()) return
 
-        // Добавляем сообщение пользователя
         val userMsg = ChatMessage(text = text, isMine = true)
         _messages.add(userMsg)
-        
+
         isTyping.value = true
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -61,10 +65,8 @@ class AiChatViewModel : ViewModel() {
 
         return try {
             val historyJson = JSONArray()
-            
-            // Формируем историю для Gemini (последние 12 сообщений)
             _messages.takeLast(12).forEach { msg ->
-                val role = if (msg.isMine) "user" else "model"
+                val role = if (msg.isMine) "user" else "assistant"
                 historyJson.put(JSONObject().apply {
                     put("role", role)
                     put("parts", JSONArray().put(JSONObject().put("text", msg.text)))
@@ -72,39 +74,35 @@ class AiChatViewModel : ViewModel() {
             }
 
             val requestBody = JSONObject().apply {
-                put("contents", historyJson)
+                put("messages", historyJson)
                 put(
-                    "systemInstruction",
-                    JSONObject().put(
-                        "parts",
-                        JSONObject().put(
-                            "text",
-                            "Ты профессиональный ИИ-помощник в P2P мессенджере. Отвечай кратко, грамотно и с неоновым стилем киберпанка."
-                        )
-                    )
+                    "instructions",
+                    "Ты профессиональный ИИ-помощник в P2P мессенджере. Отвечай кратко, грамотно и с неоновым киберпанк-стилем."
                 )
             }
 
             val request = Request.Builder()
-                .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$GEMINI_API_KEY")
+                .url("https://generativelanguage.googleapis.com/v1/models/$GEMINI_MODEL:generateMessage?key=$GEMINI_API_KEY")
                 .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 
             client.newCall(request).execute().use { response ->
                 val responseData = response.body?.string() ?: ""
                 if (!response.isSuccessful) return "⚠️ Ошибка Gemini: ${response.code}"
-                
+
                 val json = JSONObject(responseData)
-                val candidates = json.optJSONArray("candidates")
-                if (candidates != null && candidates.length() > 0) {
-                    candidates.getJSONObject(0)
-                        .getJSONObject("content")
-                        .getJSONArray("parts")
-                        .getJSONObject(0)
-                        .getString("text")
-                } else {
-                    "ИИ не смог сгенерировать ответ. Попробуйте другой запрос."
+                val candidate = json.getJSONArray("candidates").getJSONObject(0)
+
+                // Проверка кода отклонения контента
+                val safetyCode = candidate.optInt("safetyRejectionCode", 0)
+                if (safetyCode == SAFETY_REJECT_CODE) {
+                    return "⚠️ Ответ отклонен системой безопасности"
                 }
+
+                candidate.getJSONObject("content")
+                    .getJSONArray("parts")
+                    .getJSONObject(0)
+                    .getString("text")
             }
         } catch (e: Exception) {
             "⚠️ Ошибка соединения: ${e.localizedMessage}"
