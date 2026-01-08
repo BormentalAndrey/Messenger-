@@ -14,19 +14,18 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Управляет синхронизацией телефонных контактов с P2P-сетью.
- *
- * 🔐 Приватность:
- *  – в сеть отправляется ТОЛЬКО SHA-256 хеш номера
- *  – номер телефона никогда не покидает устройство
- *
- * 📡 Сеть:
- *  – UDP + DHT-поиск
- *  – multicast listeners (без перетирания)
+ * * ✔ Приватность: В сеть уходят только хеши SHA-256.
+ * ✔ Совместимость: Исправлен слушатель (4 аргумента).
+ * ✔ Производительность: Использование Dispatchers.IO для работы с БД и контактами.
  */
 class ContactP2PManager(
     private val context: Context,
     private val identityRepo: IdentityRepository
 ) {
+
+    companion object {
+        private const val TAG = "ContactP2PManager"
+    }
 
     /**
      * phoneHash -> "publicKey|ip"
@@ -34,79 +33,72 @@ class ContactP2PManager(
     private val discoveryResults = ConcurrentHashMap<String, String>()
 
     /**
-     * Основной метод синхронизации контактов
+     * Основной метод синхронизации контактов.
+     * Проверяет локальные контакты и ищет их в DHT/сети.
      */
     suspend fun syncContacts(): List<AppContact> = withContext(Dispatchers.IO) {
 
-        /* ===================== PERMISSION ===================== */
-
-        if (
-            ContextCompat.checkSelfPermission(
+        // 1. Проверка разрешений
+        if (ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.READ_CONTACTS
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            Log.e("P2P_CONTACTS", "READ_CONTACTS permission not granted")
+            Log.e(TAG, "READ_CONTACTS permission not granted")
             return@withContext emptyList()
         }
 
-        /* ===================== LOAD CONTACTS ===================== */
-
+        // 2. Загрузка локальных контактов
         val localContacts = fetchLocalPhoneContacts()
         if (localContacts.isEmpty()) return@withContext emptyList()
 
         discoveryResults.clear()
 
-        /* ===================== LISTENER ===================== */
-
-        val listener = listener@{ type: String, data: String, fromIp: String ->
-
-            if (type != "STORE_RESPONSE") return@listener
-
-            // Ожидаемый формат: "<phoneHash>:<publicKey>"
-            val parts = data.split(":", limit = 2)
-            if (parts.size != 2) return@listener
-
-            val phoneHash = parts[0]
-            val publicKey = parts[1]
-
-            discoveryResults[phoneHash] = "$publicKey|$fromIp"
-
-            Log.d(
-                "P2P_CONTACTS",
-                "Found peer hash=$phoneHash ip=$fromIp"
-            )
+        // 3. Исправленный Слушатель (4 аргумента: type, data, fromIp, fromId)
+        val contactListener: (String, String, String, String) -> Unit = { type, data, fromIp, _ ->
+            if (type == "STORE_RESPONSE") {
+                try {
+                    // Ожидаемый формат данных: "<phoneHash>:<publicKey>"
+                    val parts = data.split(":", limit = 2)
+                    if (parts.size == 2) {
+                        val phoneHash = parts[0]
+                        val publicKey = parts[1]
+                        discoveryResults[phoneHash] = "$publicKey|$fromIp"
+                        Log.d(TAG, "Found contact match: $phoneHash at $fromIp")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error parsing STORE_RESPONSE", e)
+                }
+            }
         }
 
-        // НЕ перетираем другие слушатели
-        identityRepo.addListener(listener)
+        // Регистрируем слушатель в репозитории
+        identityRepo.addListener(contactListener)
 
         try {
-            /* ===================== DHT SEARCH ===================== */
-
+            // 4. Запуск поиска в DHT для каждого контакта
             localContacts.forEach { contact ->
                 val hash = sha256(contact.phoneNumber)
+                // Запускаем асинхронный поиск
                 identityRepo.findPeerInDHT(hash)
             }
 
-            /* ===================== WAIT ===================== */
-
-            // UDP асинхронный — ждём ответы
+            // 5. Ожидание ответов по UDP (асинхронная природа сети)
             delay(2500)
 
         } finally {
-            identityRepo.removeListener(listener)
+            // Обязательно удаляем слушатель, чтобы не было утечек памяти
+            identityRepo.removeListener(contactListener)
         }
 
-        /* ===================== MERGE ===================== */
-
+        // 6. Слияние (Merge) локальных данных и результатов поиска
         val merged = localContacts.map { contact ->
             val hash = sha256(contact.phoneNumber)
-            val found = discoveryResults[hash]
+            val foundData = discoveryResults[hash]
 
-            if (found != null) {
-                val parts = found.split("|", limit = 2)
-                val pubKey = parts[0]
+            if (foundData != null) {
+                val parts = foundData.split("|", limit = 2)
+                val pubKey = parts.getOrNull(0).orEmpty()
                 val ip = parts.getOrNull(1).orEmpty()
 
                 contact.copy(
@@ -119,17 +111,12 @@ class ContactP2PManager(
             }
         }
 
-        /* ===================== SORT ===================== */
-
+        // 7. Сортировка: сначала зарегистрированные, затем по алфавиту
         return@withContext merged.sortedWith(
             compareByDescending<AppContact> { it.isRegistered }
                 .thenBy { it.name.lowercase() }
         )
     }
-
-    /* ======================================================= */
-    /* ===================== CONTACTS ======================== */
-    /* ======================================================= */
 
     private fun fetchLocalPhoneContacts(): List<AppContact> {
         val contacts = mutableListOf<AppContact>()
@@ -140,45 +127,39 @@ class ContactP2PManager(
             ContactsContract.CommonDataKinds.Phone.NUMBER
         )
 
-        val cursor = context.contentResolver.query(
-            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-            projection,
-            null,
-            null,
-            null
-        )
+        try {
+            context.contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                projection,
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                val nameIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                val phoneIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
 
-        cursor?.use {
-            val nameIdx =
-                it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-            val phoneIdx =
-                it.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(nameIdx) ?: "Unknown"
+                    val rawPhone = cursor.getString(phoneIdx) ?: continue
+                    val phone = normalizePhone(rawPhone) ?: continue
 
-            while (it.moveToNext()) {
-                val name = it.getString(nameIdx) ?: "Unknown"
-                val rawPhone = it.getString(phoneIdx) ?: continue
-                val phone = normalizePhone(rawPhone) ?: continue
-
-                if (seenPhones.add(phone)) {
-                    contacts += AppContact(
-                        name = name,
-                        phoneNumber = phone
-                    )
+                    if (seenPhones.add(phone)) {
+                        contacts.add(AppContact(name = name, phoneNumber = phone))
+                    }
                 }
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching contacts", e)
         }
 
         return contacts
     }
 
-    /**
-     * Минимальная нормализация номера
-     * 8 (999) 123-45-67 → 79991234567
-     */
     private fun normalizePhone(raw: String): String? {
         var phone = raw.replace(Regex("[^0-9]"), "")
         if (phone.isEmpty()) return null
 
+        // Унификация форматов для СНГ (пример)
         if (phone.length == 11 && phone.startsWith("8")) {
             phone = "7" + phone.substring(1)
         } else if (phone.length == 10) {
@@ -188,9 +169,6 @@ class ContactP2PManager(
         return if (phone.length >= 10) phone else null
     }
 
-    /**
-     * SHA-256 хеш номера
-     */
     private fun sha256(input: String): String =
         MessageDigest.getInstance("SHA-256")
             .digest(input.toByteArray())
