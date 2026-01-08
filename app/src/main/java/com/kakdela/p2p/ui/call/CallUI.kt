@@ -4,13 +4,17 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import io.getstream.webrtc.android.compose.VideoRenderer
+import org.webrtc.EglBase
 import org.webrtc.VideoTrack
 
 @Composable
 fun CallUI(
     localTrack: VideoTrack?,
     remoteTrack: VideoTrack?,
+    eglBaseContext: EglBase.Context,
+    rendererEvents: VideoRenderer.Callbacks,
     onHangup: () -> Unit
 ) {
     Box(Modifier.fillMaxSize()) {
@@ -18,12 +22,16 @@ fun CallUI(
         remoteTrack?.let {
             VideoRenderer(
                 modifier = Modifier.fillMaxSize(),
-                videoTrack = it
+                videoTrack = it,
+                eglBaseContext = eglBaseContext,
+                rendererEvents = rendererEvents
             )
         }
 
         Column(
-            Modifier.fillMaxSize(),
+            Modifier
+                .fillMaxSize()
+                .padding(bottom = 16.dp),
             verticalArrangement = Arrangement.Bottom
         ) {
             localTrack?.let {
@@ -31,7 +39,9 @@ fun CallUI(
                     modifier = Modifier
                         .size(160.dp)
                         .padding(8.dp),
-                    videoTrack = it
+                    videoTrack = it,
+                    eglBaseContext = eglBaseContext,
+                    rendererEvents = rendererEvents
                 )
             }
 
