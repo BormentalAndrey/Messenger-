@@ -29,7 +29,6 @@ class ContactP2PManager(
 ) {
 
     /**
-     * Хранилище результатов:
      * phoneHash -> "publicKey|ip"
      */
     private val discoveryResults = ConcurrentHashMap<String, String>()
@@ -41,7 +40,8 @@ class ContactP2PManager(
 
         /* ===================== PERMISSION ===================== */
 
-        if (ContextCompat.checkSelfPermission(
+        if (
+            ContextCompat.checkSelfPermission(
                 context,
                 Manifest.permission.READ_CONTACTS
             ) != PackageManager.PERMISSION_GRANTED
@@ -59,12 +59,13 @@ class ContactP2PManager(
 
         /* ===================== LISTENER ===================== */
 
-        val listener: (String, String, String) -> Unit = { type, data, fromIp ->
-            if (type != "STORE_RESPONSE") return@let
+        val listener = listener@{ type: String, data: String, fromIp: String ->
 
-            // Формат: "<phoneHash>:<publicKey>"
+            if (type != "STORE_RESPONSE") return@listener
+
+            // Ожидаемый формат: "<phoneHash>:<publicKey>"
             val parts = data.split(":", limit = 2)
-            if (parts.size != 2) return@let
+            if (parts.size != 2) return@listener
 
             val phoneHash = parts[0]
             val publicKey = parts[1]
@@ -73,11 +74,11 @@ class ContactP2PManager(
 
             Log.d(
                 "P2P_CONTACTS",
-                "Found peer for hash=$phoneHash ip=$fromIp"
+                "Found peer hash=$phoneHash ip=$fromIp"
             )
         }
 
-        // Регистрируем слушатель (НЕ перетираем другие)
+        // НЕ перетираем другие слушатели
         identityRepo.addListener(listener)
 
         try {
@@ -90,24 +91,23 @@ class ContactP2PManager(
 
             /* ===================== WAIT ===================== */
 
-            // UDP асинхронный — даём сети время ответить
+            // UDP асинхронный — ждём ответы
             delay(2500)
 
         } finally {
-            // ОБЯЗАТЕЛЬНО снимаем подписку
             identityRepo.removeListener(listener)
         }
 
         /* ===================== MERGE ===================== */
 
-        val result = localContacts.map { contact ->
+        val merged = localContacts.map { contact ->
             val hash = sha256(contact.phoneNumber)
             val found = discoveryResults[hash]
 
             if (found != null) {
                 val parts = found.split("|", limit = 2)
                 val pubKey = parts[0]
-                val ip = parts.getOrNull(1) ?: ""
+                val ip = parts.getOrNull(1).orEmpty()
 
                 contact.copy(
                     isRegistered = true,
@@ -121,7 +121,7 @@ class ContactP2PManager(
 
         /* ===================== SORT ===================== */
 
-        return@withContext result.sortedWith(
+        return@withContext merged.sortedWith(
             compareByDescending<AppContact> { it.isRegistered }
                 .thenBy { it.name.lowercase() }
         )
@@ -172,8 +172,8 @@ class ContactP2PManager(
     }
 
     /**
-     * Приводит номер к E.164-подобному виду (минимально).
-     * Пример: 8 (999) 123-45-67 → 79991234567
+     * Минимальная нормализация номера
+     * 8 (999) 123-45-67 → 79991234567
      */
     private fun normalizePhone(raw: String): String? {
         var phone = raw.replace(Regex("[^0-9]"), "")
@@ -189,7 +189,7 @@ class ContactP2PManager(
     }
 
     /**
-     * SHA-256 хеш для приватного DHT-поиска
+     * SHA-256 хеш номера
      */
     private fun sha256(input: String): String =
         MessageDigest.getInstance("SHA-256")
