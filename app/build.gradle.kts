@@ -9,7 +9,6 @@ plugins {
     kotlin("kapt")
 }
 
-// Загружаем данные из local.properties
 val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
@@ -37,7 +36,6 @@ android {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
         }
 
-        // API-ключ Gemini
         buildConfigField(
             "String",
             "GEMINI_API_KEY",
@@ -174,7 +172,7 @@ dependencies {
     implementation("io.getstream:stream-webrtc-android:1.2.0")
     implementation("io.getstream:stream-webrtc-android-compose:1.1.2")
 
-    // libGDX Core
+    // libGDX Core (возвращаем как было)
     val gdxVersion = "1.12.1"
     implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
@@ -186,11 +184,11 @@ dependencies {
     // Apache POI для DOCX
     implementation("org.apache.poi:poi-ooxml:5.3.0")
 
-    // ✅ Retrofit + Gson (добавлено)
+    // Retrofit + Gson
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
 
-    // ✅ libphonenumber
+    // libphonenumber
     implementation("com.googlecode.libphonenumber:libphonenumber:8.13.22")
 }
 
