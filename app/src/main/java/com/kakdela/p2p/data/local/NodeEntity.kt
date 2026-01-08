@@ -7,71 +7,53 @@ import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 
-/**
- * Узел (Node) P2P/DHT сети + учётные данные пользователя.
- * Используется для:
- *  - аутентификации (email + passwordHash)
- *  - P2P соединений
- *  - DHT / torrent-синхронизации
- */
 @Entity(tableName = "dht_nodes")
 data class NodeEntity(
     @PrimaryKey
-    val userHash: String,      // SHA-256(publicKey) или hash(email+password)
-    val email: String,         // email пользователя
-    val passwordHash: String,  // SHA-256(password)
-    val phone: String,         // номер телефона
-    val ip: String,            // последний IP
-    val port: Int,             // P2P порт
-    val publicKey: String,     // публичный ключ
-    val lastSeen: Long         // timestamp последней активности
+    val userHash: String,      
+    val email: String,         
+    val passwordHash: String,  
+    val phone: String,         
+    val ip: String,            
+    val port: Int,             
+    val publicKey: String,     
+    val lastSeen: Long         
 )
 
-/**
- * DAO для работы с таблицей dht_nodes
- */
 @Dao
 interface NodeDao {
 
-    /**
-     * Получить узел по userHash (P2P / сообщения)
-     */
     @Query("SELECT * FROM dht_nodes WHERE userHash = :hash LIMIT 1")
     suspend fun getNode(hash: String): NodeEntity?
 
-    /**
-     * Получить пользователя по email (AuthManager)
-     */
     @Query("SELECT * FROM dht_nodes WHERE email = :email LIMIT 1")
     suspend fun getUserByEmail(email: String): NodeEntity?
 
-    /**
-     * Получить все узлы (DHT / контакты)
-     */
-    @Query("SELECT * FROM dht_nodes")
+    @Query("SELECT * FROM dht_nodes ORDER BY lastSeen DESC")
     suspend fun getAllNodes(): List<NodeEntity>
 
-    /**
-     * Вставка или обновление узла
-     */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(node: NodeEntity)
 
     /**
-     * Массовая вставка (torrent-синхронизация)
+     * Специальный метод для P2P-обучения. 
+     * Обновляет только сетевые данные, не затрагивая почту и хеш пароля.
      */
+    @Query("""
+        UPDATE dht_nodes 
+        SET ip = :newIp, lastSeen = :timestamp, publicKey = :pubKey 
+        WHERE userHash = :hash
+    """)
+    suspend fun updateNetworkInfo(hash: String, newIp: String, pubKey: String, timestamp: Long)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(nodes: List<NodeEntity>)
 
-    /**
-     * Ограничение DHT до 2500 последних узлов
-     * (защита от разрастания базы)
-     */
     @Query("""
-        DELETE FROM dht_nodes
+        DELETE FROM dht_nodes 
         WHERE userHash NOT IN (
-            SELECT userHash FROM dht_nodes
-            ORDER BY lastSeen DESC
+            SELECT userHash FROM dht_nodes 
+            ORDER BY lastSeen DESC 
             LIMIT 2500
         )
     """)
