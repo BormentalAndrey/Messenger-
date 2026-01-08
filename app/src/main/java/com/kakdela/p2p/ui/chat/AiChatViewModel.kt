@@ -5,7 +5,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.kakdela.p2p.BuildConfig
 import com.kakdela.p2p.model.ChatMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -25,6 +24,9 @@ class AiChatViewModel : ViewModel() {
         private set
 
     private val client = OkHttpClient()
+
+    // 🔑 Тестовый ключ Gemini для локальной сборки
+    private val GEMINI_API_KEY = "AIzaSyAi68xQGYNj3-45Y-71bV29sXa8KLfAyLQ"
 
     init {
         // Начальное сообщение от ИИ
@@ -55,13 +57,12 @@ class AiChatViewModel : ViewModel() {
     }
 
     private suspend fun askGeminiWithHistory(prompt: String): String {
-        val apiKey = BuildConfig.GEMINI_API_KEY
-        if (apiKey.isBlank()) return "❌ Ошибка: API ключ не найден в конфигурации."
+        if (GEMINI_API_KEY.isBlank()) return "❌ Ошибка: API ключ не найден."
 
         return try {
             val historyJson = JSONArray()
             
-            // Формируем историю для Gemini (последние 12 сообщений для экономии токенов)
+            // Формируем историю для Gemini (последние 12 сообщений)
             _messages.takeLast(12).forEach { msg ->
                 val role = if (msg.isMine) "user" else "model"
                 historyJson.put(JSONObject().apply {
@@ -72,12 +73,20 @@ class AiChatViewModel : ViewModel() {
 
             val requestBody = JSONObject().apply {
                 put("contents", historyJson)
-                put("systemInstruction", JSONObject().put("parts", JSONObject().put("text", 
-                    "Ты профессиональный ИИ-помощник в P2P мессенджере. Отвечай кратко, грамотно и в неоновом стиле киберпанка.")))
+                put(
+                    "systemInstruction",
+                    JSONObject().put(
+                        "parts",
+                        JSONObject().put(
+                            "text",
+                            "Ты профессиональный ИИ-помощник в P2P мессенджере. Отвечай кратко, грамотно и с неоновым стилем киберпанка."
+                        )
+                    )
+                )
             }
 
             val request = Request.Builder()
-                .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$apiKey")
+                .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$GEMINI_API_KEY")
                 .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 
