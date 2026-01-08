@@ -9,103 +9,166 @@ import com.kakdela.p2p.model.ChatMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 
 class AiChatViewModel : ViewModel() {
 
+    // ==============================
+    // 🔑 ВСТАВЬ СВОЙ API-КЛЮЧ СЮДА
+    // ==============================
+    private val GEMINI_API_KEY = "AIzaSyBjrYYkT6jcR3j8jaXhHGooRvKVlTjRoKI"
+
+    // ==============================
+    // 📦 Состояние чата
+    // ==============================
     private val _messages = mutableStateListOf<ChatMessage>()
     val messages: SnapshotStateList<ChatMessage> get() = _messages
 
-    var isTyping = mutableStateOf(false)
-        private set
+    val isTyping = mutableStateOf(false)
 
     private val client = OkHttpClient()
 
-    // 🔑 Тестовый ключ Gemini для локальной сборки
-    private val GEMINI_API_KEY = "AIzaSyAi68xQGYNj3-45Y-71bV29sXa8KLfAyLQ"
-
-    companion object {
-        const val GEMINI_MODEL = "gemini-2.5-pro"
-        const val SAFETY_REJECT_CODE = 2
-    }
+    // ==============================
+    // ✅ ТОЛЬКО РАБОЧИЕ МОДЕЛИ
+    // ==============================
+    private val models = listOf(
+        "gemini-2.5-flash",
+        "gemini-3-flash-preview",
+        "gemini-2.5-flash-lite"
+    )
 
     init {
-        // Начальное сообщение от ИИ
         _messages.add(
             ChatMessage(
-                text = "Привет! Я твой продвинутый ИИ-ассистент. Чем могу помочь?",
+                text = "ИИ подключён. Использую стабильные модели Gemini.",
                 isMine = false
             )
         )
     }
 
+    // ==============================
+    // 📤 Отправка сообщения
+    // ==============================
     fun sendMessage(text: String) {
         if (text.isBlank()) return
 
-        val userMsg = ChatMessage(text = text, isMine = true)
-        _messages.add(userMsg)
-
+        _messages.add(ChatMessage(text = text, isMine = true))
         isTyping.value = true
 
         viewModelScope.launch(Dispatchers.IO) {
-            val reply = askGeminiWithHistory(text)
+            val answer = requestWithFallback()
+
             withContext(Dispatchers.Main) {
                 isTyping.value = false
-                _messages.add(ChatMessage(text = reply, isMine = false))
+                _messages.add(ChatMessage(text = answer, isMine = false))
             }
         }
     }
 
-    private suspend fun askGeminiWithHistory(prompt: String): String {
-        if (GEMINI_API_KEY.isBlank()) return "❌ Ошибка: API ключ не найден."
+    // ==============================
+    // 🔁 Перебор моделей
+    // ==============================
+    private fun requestWithFallback(): String {
+        if (GEMINI_API_KEY.isBlank()) {
+            return "❌ API ключ не задан"
+        }
 
-        return try {
-            val historyJson = JSONArray()
-            _messages.takeLast(12).forEach { msg ->
-                val role = if (msg.isMine) "user" else "assistant"
-                historyJson.put(JSONObject().apply {
-                    put("role", role)
-                    put("parts", JSONArray().put(JSONObject().put("text", msg.text)))
-                })
-            }
+        var lastError = ""
 
-            val requestBody = JSONObject().apply {
-                put("messages", historyJson)
-                put(
-                    "instructions",
-                    "Ты профессиональный ИИ-помощник в P2P мессенджере. Отвечай кратко, грамотно и с неоновым киберпанк-стилем."
-                )
-            }
+        for (model in models) {
+            try {
+                return callGemini(model)
+            } catch (e: Exception) {
+                lastError = e.message ?: "Unknown error"
 
-            val request = Request.Builder()
-                .url("https://generativelanguage.googleapis.com/v1/models/$GEMINI_MODEL:generateMessage?key=$GEMINI_API_KEY")
-                .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                val responseData = response.body?.string() ?: ""
-                if (!response.isSuccessful) return "⚠️ Ошибка Gemini: ${response.code}"
-
-                val json = JSONObject(responseData)
-                val candidate = json.getJSONArray("candidates").getJSONObject(0)
-
-                // Проверка кода отклонения контента
-                val safetyCode = candidate.optInt("safetyRejectionCode", 0)
-                if (safetyCode == SAFETY_REJECT_CODE) {
-                    return "⚠️ Ответ отклонен системой безопасности"
+                // лимит → пробуем следующую модель
+                if (
+                    lastError.contains("429") ||
+                    lastError.contains("quota", true) ||
+                    lastError.contains("RESOURCE_EXHAUSTED", true)
+                ) {
+                    continue
                 }
 
-                candidate.getJSONObject("content")
-                    .getJSONArray("parts")
-                    .getJSONObject(0)
-                    .getString("text")
+                break
             }
-        } catch (e: Exception) {
-            "⚠️ Ошибка соединения: ${e.localizedMessage}"
+        }
+
+        return "🛑 Все модели временно недоступны\n$lastError"
+    }
+
+    // ==============================
+    // 🌐 Реальный вызов Gemini API
+    // ==============================
+    private fun callGemini(model: String): String {
+
+        val contents = JSONArray()
+
+        // Последние 8 сообщений — безопасно по лимитам
+        _messages.takeLast(8).forEach { msg ->
+            contents.put(
+                JSONObject().apply {
+                    put("role", if (msg.isMine) "user" else "model")
+                    put(
+                        "parts",
+                        JSONArray().put(
+                            JSONObject().put("text", msg.text)
+                        )
+                    )
+                }
+            )
+        }
+
+        val bodyJson = JSONObject().apply {
+            put("contents", contents)
+
+            // ВАЖНО: parts — это МАССИВ
+            put(
+                "systemInstruction",
+                JSONObject().put(
+                    "parts",
+                    JSONArray().put(
+                        JSONObject().put(
+                            "text",
+                            "Ты полезный ИИ-ассистент. Отвечай кратко, по делу и понятно."
+                        )
+                    )
+                )
+            )
+        }
+
+        val request = Request.Builder()
+            .url(
+                "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$GEMINI_API_KEY"
+            )
+            .post(
+                bodyJson
+                    .toString()
+                    .toRequestBody("application/json".toMediaType())
+            )
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            val body = response.body?.string() ?: ""
+
+            if (!response.isSuccessful) {
+                throw Exception("HTTP ${response.code}: $body")
+            }
+
+            val json = JSONObject(body)
+
+            return json
+                .getJSONArray("candidates")
+                .getJSONObject(0)
+                .getJSONObject("content")
+                .getJSONArray("parts")
+                .getJSONObject(0)
+                .getString("text")
         }
     }
 }
