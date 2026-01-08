@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import com.kakdela.p2p.data.IdentityRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.security.MessageDigest
 
 /**
  * Экран входа через Email + пароль.
@@ -92,14 +93,25 @@ fun EmailAuthScreen(
                     isLoading = true
                     error = null
                     scope.launch {
-                        delay(500) // имитация сетевого запроса
                         try {
-                            val hash = identityRepository.generateUserHash(phone, email, password)
-                            // В реальном приложении здесь загружаем P2P ключ по hash
-                            // Для примера считаем, что профиль всегда найден
-                            onAuthSuccess()
+                            // Генерация хеша на основе введенных данных
+                            val userHash = generateUserHash(phone, email, password)
+                            
+                            // Имитация поиска в сети DHT через репозиторий
+                            val node = identityRepository.findPeerInDHT(userHash).await()
+                            
+                            if (node != null) {
+                                // Если узел найден, сохраняем его публичный ключ как наш
+                                identityRepository.savePeerPublicKey(userHash, node.publicKey)
+                                onAuthSuccess()
+                            } else {
+                                // Если не найден, создаем "новую" личность для демонстрации
+                                // В продакшене здесь была бы регистрация на сервере
+                                delay(1000)
+                                onAuthSuccess()
+                            }
                         } catch (e: Exception) {
-                            error = "Не удалось восстановить профиль"
+                            error = "Ошибка сети или неверные данные"
                             isLoading = false
                         }
                     }
@@ -118,4 +130,15 @@ fun EmailAuthScreen(
             }
         }
     }
+}
+
+/**
+ * Локальная функция генерации хеша пользователя, чтобы исправить ошибку компиляции.
+ * Комбинирует телефон, email и пароль для создания уникального ID.
+ */
+private fun generateUserHash(phone: String, email: String, pass: String): String {
+    val input = "$phone|$email|$pass"
+    return MessageDigest.getInstance("SHA-256")
+        .digest(input.toByteArray())
+        .joinToString("") { "%02x".format(it) }
 }
