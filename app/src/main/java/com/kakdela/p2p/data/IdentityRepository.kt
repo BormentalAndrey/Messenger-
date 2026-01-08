@@ -25,11 +25,10 @@ import java.net.InetSocketAddress
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.math.abs
-import kotlin.random.Random
 
 /**
  * IdentityRepository: Гибридный мессенджер (P2P + Server + SMS)
- * Сохраняет и синхронизирует информацию о пользователях сети, шифрует сообщения.
+ * Управляет пользователями, узлами DHT и шифрует сообщения.
  */
 class IdentityRepository(private val context: Context) {
 
@@ -40,7 +39,8 @@ class IdentityRepository(private val context: Context) {
     private val DISCOVERY_PORT = 8889
     private val MAX_DRIFT = 60_000L // 1 минута
 
-    private val listeners = CopyOnWriteArrayList<(type: String, data: String, fromIp: String, fromId: String) -> Unit>()
+    private val listeners =
+        CopyOnWriteArrayList<(type: String, data: String, fromIp: String, fromId: String) -> Unit>()
     private val nodeDao = ChatDatabase.getDatabase(context).nodeDao()
 
     // Настройка API
@@ -72,6 +72,25 @@ class IdentityRepository(private val context: Context) {
         nodeDao.getAllNodes().filter { node ->
             val cleanPhone = node.phone.replace(Regex("[^0-9]"), "").takeLast(10)
             localPhones.contains(cleanPhone)
+        }
+    }
+
+    // ==================== P2P: Listeners ====================
+
+    fun addListener(listener: (type: String, data: String, fromIp: String, fromId: String) -> Unit) {
+        listeners.add(listener)
+    }
+
+    fun removeListener(listener: (type: String, data: String, fromIp: String, fromId: String) -> Unit) {
+        listeners.remove(listener)
+    }
+
+    suspend fun findPeerInDHT(hash: String): NodeEntity? = nodeDao.getNode(hash)
+
+    fun sendSignaling(targetHash: String, message: String) = scope.launch {
+        val targetNode = nodeDao.getNode(targetHash)
+        if (!targetNode?.ip.isNullOrBlank()) {
+            sendUdp(targetNode!!.ip, message)
         }
     }
 
@@ -138,7 +157,9 @@ class IdentityRepository(private val context: Context) {
         } catch (_: Exception) {}
 
         // 4. SMS fallback
-        targetNode?.phone?.takeIf { it.isNotBlank() }?.let { sendSmsFallback(it, "Новое сообщение в KakDela") }
+        targetNode?.phone?.takeIf { it.isNotBlank() }?.let {
+            sendSmsFallback(it, "Новое сообщение в KakDela")
+        }
     }
 
     // ==================== Torrent / Серверная синхронизация ====================
@@ -160,7 +181,7 @@ class IdentityRepository(private val context: Context) {
                     NodeEntity(
                         userHash = serverNode.hash ?: "",
                         email = serverNode.email ?: "",
-                        passwordHash = "", // можно хранить хеш локально
+                        passwordHash = "",
                         phone = serverNode.phone ?: "",
                         ip = serverNode.ip ?: "",
                         port = P2P_PORT,
@@ -293,7 +314,6 @@ class IdentityRepository(private val context: Context) {
                     val ip = packet.address.hostAddress
                     val pubKey = json.getString("pubkey")
                     CryptoManager.savePeerPublicKey(fromId, pubKey)
-                    // Сохраняем узел в базу
                     nodeDao.insert(NodeEntity(
                         userHash = fromId,
                         email = "",
