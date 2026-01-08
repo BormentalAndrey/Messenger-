@@ -9,7 +9,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import com.kakdela.p2p.MyApplication
 import com.kakdela.p2p.data.IdentityRepository
-import io.getstream.webrtc.android.compose.VideoRenderer
 import org.webrtc.*
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -25,12 +24,10 @@ class CallActivity : ComponentActivity() {
     private val eglBase = EglBase.create()
 
     /* ===================== UI STATE ===================== */
-
     private var remoteVideoTrack by mutableStateOf<VideoTrack?>(null)
     private var localVideoTrack by mutableStateOf<VideoTrack?>(null)
 
     /* ===================== CALL STATE ===================== */
-
     private var targetIp: String = ""
     private var isIncoming = false
 
@@ -39,7 +36,6 @@ class CallActivity : ComponentActivity() {
     private var isRemoteSdpSet = false
 
     /* ===================== SIGNAL LISTENER ===================== */
-
     private val signalingListener: (String, String, String) -> Unit =
         { type, data, fromIp ->
             if (fromIp != targetIp) return@let
@@ -51,7 +47,6 @@ class CallActivity : ComponentActivity() {
         }
 
     /* ===================== LIFECYCLE ===================== */
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -88,6 +83,7 @@ class CallActivity : ComponentActivity() {
         )
 
         setContent {
+            // TODO: подключить свой Compose UI компонент CallUI
             CallUI(
                 localTrack = localVideoTrack,
                 remoteTrack = remoteVideoTrack,
@@ -109,7 +105,6 @@ class CallActivity : ComponentActivity() {
     }
 
     /* ===================== WEBRTC INIT ===================== */
-
     private fun initWebRTC() {
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions
@@ -169,7 +164,6 @@ class CallActivity : ComponentActivity() {
     }
 
     /* ===================== LOCAL MEDIA ===================== */
-
     private fun setupLocalStream() {
         val videoSource = factory.createVideoSource(false)
         val surfaceHelper =
@@ -195,8 +189,7 @@ class CallActivity : ComponentActivity() {
         )
     }
 
-    /* ===================== SIGNALING ===================== */
-
+    /* ===================== SIGNALING HANDLERS ===================== */
     private fun handleIncomingOffer(sdpStr: String) {
         val offer = SessionDescription(SessionDescription.Type.OFFER, sdpStr)
 
@@ -270,7 +263,6 @@ class CallActivity : ComponentActivity() {
     }
 
     /* ===================== SDP ADAPTER ===================== */
-
     private class SdpAdapter(
         private val onSuccess: (SessionDescription) -> Unit = {}
     ) : SdpObserver {
