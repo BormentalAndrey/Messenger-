@@ -18,6 +18,7 @@ import kotlin.math.abs
 
 class IdentityRepository(private val context: Context) {
 
+    private val TAG = "P2P_Repo"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val P2P_PORT = 8888
@@ -46,10 +47,6 @@ class IdentityRepository(private val context: Context) {
         return sha256(CryptoManager.getMyPublicKeyStr())
     }
 
-    /**
-     * Генерация уникального хэша пользователя для оффлайн/онлайн входа
-     * phone + email + password -> SHA256
-     */
     fun generateUserHash(phone: String, email: String, password: String): String {
         val combined = (phone.trim() + email.trim().lowercase() + password).toByteArray()
         return MessageDigest.getInstance("SHA-256")
@@ -65,29 +62,38 @@ class IdentityRepository(private val context: Context) {
         startPresenceBroadcast()
     }
 
-    /* ===================== DHT ===================== */
+    /**
+     * Важно вызвать этот метод при уничтожении приложения/сервиса,
+     * чтобы остановить все фоновые процессы и освободить порты.
+     */
+    fun onDestroy() {
+        scope.cancel()
+    }
+
+    /* ===================== DHT / MESSAGING ===================== */
 
     fun findPeerInDHT(keyHash: String) {
-        val json = JSONObject()
-        json.put("type", "FIND")
-        json.put("key", keyHash)
+        val json = JSONObject().apply {
+            put("type", "FIND")
+            put("key", keyHash)
+        }
         broadcast(json)
     }
 
     fun sendBroadcastPacket(type: String, key: String, value: String) {
-        val json = JSONObject()
-        json.put("type", type)
-        json.put("key", key)
-        json.put("value", value)
+        val json = JSONObject().apply {
+            put("type", type)
+            put("key", key)
+            put("value", value)
+        }
         broadcast(json)
     }
 
-    /* ===================== SIGNALING ===================== */
-
     fun sendSignaling(ip: String, type: String, data: String) {
-        val json = JSONObject()
-        json.put("type", type)
-        json.put("data", data)
+        val json = JSONObject().apply {
+            put("type", type)
+            put("data", data)
+        }
         send(ip, json)
     }
 
@@ -99,72 +105,92 @@ class IdentityRepository(private val context: Context) {
         )
     }
 
-    /* ===================== UDP LISTENER ===================== */
+    /* ===================== UDP LISTENER (FIXED) ===================== */
 
     private fun startUdpListener() = scope.launch {
-        DatagramSocket(P2P_PORT).use { socket ->
-            val buffer = ByteArray(65_535)
+        try {
+            // Использование порта с флагом reuseAddress для исправления EADDRINUSE
+            DatagramSocket(null).apply {
+                reuseAddress = true
+                bind(InetSocketAddress(P2P_PORT))
+            }.use { socket ->
+                Log.d(TAG, "UDP Listener started on port $P2P_PORT")
+                val buffer = ByteArray(65_535)
+                val packet = DatagramPacket(buffer, buffer.size)
 
-            while (isActive) {
-                try {
-                    val packet = DatagramPacket(buffer, buffer.size)
-                    socket.receive(packet)
+                while (isActive) {
+                    try {
+                        socket.receive(packet)
 
-                    val fromIp = packet.address.hostAddress ?: continue
-                    val msg = String(packet.data, 0, packet.length)
+                        val fromIp = packet.address.hostAddress ?: continue
+                        val msg = String(packet.data, 0, packet.length)
 
-                    val json = JSONObject(msg)
-                    if (!verify(json)) continue
+                        val json = JSONObject(msg)
+                        if (!verify(json)) continue
 
-                    val type = json.getString("type")
-                    val data = json.optString("data")
+                        val type = json.getString("type")
+                        val data = json.optString("data")
 
-                    if (type == "OFFER") {
-                        launchCall(fromIp, data)
-                    } else {
-                        listeners.forEach { it(type, data, fromIp) }
+                        withContext(Dispatchers.Main) {
+                            if (type == "OFFER") {
+                                launchCall(fromIp, data)
+                            } else {
+                                listeners.forEach { it(type, data, fromIp) }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        if (isActive) Log.e(TAG, "Packet processing error", e)
                     }
-
-                } catch (e: Exception) {
-                    Log.e("P2P", "UDP packet error", e)
                 }
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Critical: Could not bind P2P_PORT $P2P_PORT", e)
         }
     }
 
-    /* ===================== DISCOVERY ===================== */
+    /* ===================== DISCOVERY (FIXED) ===================== */
 
     private fun startDiscoveryListener() = scope.launch {
-        DatagramSocket(null).apply {
-            reuseAddress = true
-            bind(InetSocketAddress(DISCOVERY_PORT))
-        }.use { socket ->
-            val buf = ByteArray(128)
-            while (isActive) {
-                socket.receive(DatagramPacket(buf, buf.size))
+        try {
+            DatagramSocket(null).apply {
+                reuseAddress = true
+                bind(InetSocketAddress(DISCOVERY_PORT))
+            }.use { socket ->
+                Log.d(TAG, "Discovery Listener started on port $DISCOVERY_PORT")
+                val buf = ByteArray(128)
+                val packet = DatagramPacket(buf, buf.size)
+                while (isActive) {
+                    try {
+                        socket.receive(packet)
+                        // Здесь можно добавить логику обработки обнаружения других узлов
+                    } catch (e: Exception) {
+                        if (isActive) Log.e(TAG, "Discovery receive error", e)
+                    }
+                }
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "Critical: Could not bind DISCOVERY_PORT $DISCOVERY_PORT", e)
         }
     }
 
     private fun startPresenceBroadcast() = scope.launch {
-        DatagramSocket().use { socket ->
-            socket.broadcast = true
-            val msg = "IAM".toByteArray()
-
-            while (isActive) {
-                try {
-                    socket.send(
-                        DatagramPacket(
-                            msg,
-                            msg.size,
-                            InetAddress.getByName("255.255.255.255"),
-                            DISCOVERY_PORT
-                        )
+        while (isActive) {
+            try {
+                DatagramSocket().use { socket ->
+                    socket.broadcast = true
+                    val msg = "IAM".toByteArray()
+                    val packet = DatagramPacket(
+                        msg,
+                        msg.size,
+                        InetAddress.getByName("255.255.255.255"),
+                        DISCOVERY_PORT
                     )
-                } catch (_: Exception) {
+                    socket.send(packet)
                 }
-                delay(15_000)
+            } catch (e: Exception) {
+                Log.e(TAG, "Presence broadcast error", e)
             }
+            delay(15_000)
         }
     }
 
@@ -190,24 +216,30 @@ class IdentityRepository(private val context: Context) {
         scope.launch {
             try {
                 DatagramSocket().use { socket ->
+                    // Если вещаем на broadcast адрес, нужно включить флаг
+                    if (ip == "255.255.255.255") {
+                        socket.broadcast = true
+                    }
+                    val bytes = msg.toByteArray()
                     socket.send(
                         DatagramPacket(
-                            msg.toByteArray(),
-                            msg.length,
+                            bytes,
+                            bytes.size,
                             InetAddress.getByName(ip),
                             P2P_PORT
                         )
                     )
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.e(TAG, "Send UDP error to $ip", e)
             }
         }
     }
 
     private fun verify(json: JSONObject): Boolean {
         val ts = json.optLong("timestamp", 0L)
-        if (abs(System.currentTimeMillis() - ts) > MAX_DRIFT) return false
-        return true
+        // Проверка на "протухание" пакета (защита от replay-атак)
+        return abs(System.currentTimeMillis() - ts) <= MAX_DRIFT
     }
 
     private fun sign(json: JSONObject): String {
@@ -229,12 +261,12 @@ class IdentityRepository(private val context: Context) {
     /* ===================== CALL ===================== */
 
     private fun launchCall(ip: String, sdp: String) {
-        context.startActivity(
-            Intent(context, CallActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra("targetIp", ip)
-                .putExtra("remoteSdp", sdp)
-                .putExtra("isIncoming", true)
-        )
+        val intent = Intent(context, CallActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra("targetIp", ip)
+            putExtra("remoteSdp", sdp)
+            putExtra("isIncoming", true)
+        }
+        context.startActivity(intent)
     }
 }
