@@ -8,6 +8,7 @@ import android.util.Base64
 import android.util.Log
 import com.kakdela.p2p.api.MyServerApi
 import com.kakdela.p2p.api.UserPayload
+import com.kakdela.p2p.api.UserRegistrationWrapper
 import com.kakdela.p2p.data.local.ChatDatabase
 import com.kakdela.p2p.data.local.NodeEntity
 import com.kakdela.p2p.security.CryptoManager
@@ -31,10 +32,13 @@ class IdentityRepository(private val context: Context) {
     private val db = ChatDatabase.getDatabase(context)
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
     private val SERVICE_TYPE = "_kakdela_p2p._udp"
+    
+    // Секретный "перец" для анонимизации номеров телефонов (ТЗ п.9)
+    private val PEPPER = "7fb8a1d2c3e4f5a6"
 
     private val api: MyServerApi by lazy {
         Retrofit.Builder()
-            .baseUrl("http://kakdela.infinityfree.me/")
+            .baseUrl("http://kakdela.infinityfree.me/") // Убедитесь, что URL верный
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(MyServerApi::class.java)
@@ -48,41 +52,59 @@ class IdentityRepository(private val context: Context) {
         startListening()
         registerInWifi()
         discoverInWifi()
-        startKeepAlive()
+        // Мы запускаем KeepAlive только после того, как личность создана
     }
 
-    // --- ПУБЛИЧНЫЕ МЕТОДЫ (API ДЛЯ UI И ДРУГИХ СЕРВИСОВ) ---
+    // --- УПРАВЛЕНИЕ ЛИЧНОСТЬЮ И ХЭШАМИ ---
 
-    fun generateUserHash(phone: String, email: String, pass: String): String {
-        return sha256("$phone:$email:$pass")
+    fun generateSecurityHash(phone: String, email: String, pass: String): String {
+        return sha256("$phone|$email|$pass")
+    }
+
+    fun generatePhoneDiscoveryHash(phone: String): String {
+        val cleanPhone = phone.replace(Regex("[^0-9]"), "").takeLast(10)
+        return sha256(cleanPhone + PEPPER)
     }
 
     fun savePeerPublicKey(hash: String, key: String) {
         CryptoManager.savePeerPublicKey(hash, key)
     }
 
+    // --- СЕТЕВЫЕ ОПЕРАЦИИ ---
+
+    /**
+     * Анонс себя на сервер (api.php) с использованием Discovery Hash.
+     */
+    suspend fun announceMyself(wrapper: UserRegistrationWrapper) {
+        try {
+            api.announceSelf(payload = wrapper)
+            Log.d(TAG, "Announced to server successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to announce: ${e.message}")
+            throw e
+        }
+    }
+
     fun findPeerInDHT(hash: String): Deferred<UserPayload?> = scope.async {
-        // 1. Проверка локального кэша
         swarmPeers[hash]?.let { ip ->
             return@async UserPayload(hash = hash, ip = ip, publicKey = "", port = 8888)
         }
-        // 2. Поиск через сервер
         return@async findPeerOnServer(hash).await()
     }
 
     fun sendMessageSmart(targetHash: String, targetPhone: String?, message: String) = scope.launch {
-        // 1. Прямой UDP через Wi-Fi
+        // 1. Wi-Fi Direct / NSD
         wifiPeers[targetHash]?.let { ip ->
             if (sendUdpInternal(ip, "CHAT", message)) return@launch
         }
 
-        // 2. Роевой поиск через соседей
+        // 2. Swarm (DHT)
         val swarmIp = searchInSwarm(targetHash).await()
         if (!swarmIp.isNullOrBlank()) {
             if (sendUdpInternal(swarmIp, "CHAT", message)) return@launch
         }
 
-        // 3. Поиск через глобальный сервер
+        // 3. Global Server
         val serverPeer = findPeerOnServer(targetHash).await()
         serverPeer?.ip?.let { ip ->
             if (ip.isNotBlank() && ip != "0.0.0.0") {
@@ -90,19 +112,13 @@ class IdentityRepository(private val context: Context) {
             }
         }
 
-        // 4. SMS как последний шанс
+        // 4. Fallback SMS
         if (!targetPhone.isNullOrBlank()) {
             sendAsSms(targetPhone, message)
         }
     }
 
-    fun sendSignaling(targetIp: String, type: String, data: String) {
-        if (targetIp.isNotBlank() && targetIp != "0.0.0.0") {
-            scope.launch { sendUdpInternal(targetIp, type, data) }
-        }
-    }
-
-    // --- СЕТЕВОЕ ОБНАРУЖЕНИЕ (NSD / WI-FI) ---
+    // --- WI-FI И СЕТЕВОЕ ОБНАРУЖЕНИЕ ---
 
     private fun registerInWifi() {
         try {
@@ -137,20 +153,17 @@ class IdentityRepository(private val context: Context) {
     }
 
     private fun searchInSwarm(targetHash: String): Deferred<String?> = scope.async {
-        val cachedNodes = db.nodeDao().getAllNodes().take(100)
+        val cachedNodes = db.nodeDao().getAllNodes().take(50)
         cachedNodes.forEach { node ->
-            // В NodeEntity ip не null (String), поэтому let используется только для логики
-            node.ip.let { safeIp ->
-                if (safeIp.isNotBlank() && safeIp != "0.0.0.0") {
-                    sendUdpInternal(safeIp, "QUERY_PEER", targetHash)
-                }
+            if (node.ip.isNotBlank() && node.ip != "0.0.0.0") {
+                sendUdpInternal(node.ip, "QUERY_PEER", targetHash)
             }
         }
-        delay(2000)
+        delay(1500)
         return@async swarmPeers[targetHash]
     }
 
-    // --- UDP ПРОСЛУШИВАНИЕ И ОБРАБОТКА ПАКЕТОВ ---
+    // --- UDP И ОБРАБОТКА ПАКЕТОВ ---
 
     private fun startListening() = scope.launch(Dispatchers.IO) {
         if (isListening) return@launch
@@ -179,17 +192,12 @@ class IdentityRepository(private val context: Context) {
         scope.launch {
             try {
                 val json = JSONObject(rawData)
-                val type = json.optString("type")
-                when (type) {
+                when (json.optString("type")) {
                     "QUERY_PEER" -> {
                         val target = json.getString("data")
-                        val node = db.nodeDao().getNodeByHash(target)
-                        node?.let { safeNode ->
-                            val response = JSONObject().apply {
-                                put("hash", safeNode.userHash)
-                                put("ip", safeNode.ip)
-                            }
-                            sendUdpInternal(fromIp, "PEER_FOUND", response.toString())
+                        db.nodeDao().getNodeByHash(target)?.let { node ->
+                            val resp = JSONObject().apply { put("hash", node.userHash); put("ip", node.ip) }
+                            sendUdpInternal(fromIp, "PEER_FOUND", resp.toString())
                         }
                     }
                     "PEER_FOUND" -> {
@@ -205,7 +213,7 @@ class IdentityRepository(private val context: Context) {
                             val dataToVerify = JSONObject(rawData).apply { remove("signature") }.toString().toByteArray()
                             if (CryptoManager.verify(sig, dataToVerify, pubKey)) {
                                 CryptoManager.savePeerPublicKey(senderHash, pubKey)
-                                listeners.forEach { it(type, json.getString("data"), fromIp, senderHash) }
+                                listeners.forEach { it(json.getString("type"), json.getString("data"), fromIp, senderHash) }
                             }
                         }
                     }
@@ -214,7 +222,7 @@ class IdentityRepository(private val context: Context) {
         }
     }
 
-    // --- СЕРВЕРНАЯ СИНХРОНИЗАЦИЯ ---
+    // --- СИНХРОНИЗАЦИЯ С СЕРВЕРОМ ---
 
     private fun findPeerOnServer(hash: String): Deferred<UserPayload?> = scope.async {
         try {
@@ -223,7 +231,8 @@ class IdentityRepository(private val context: Context) {
                 val entities = users.map { 
                     NodeEntity(
                         userHash = it.hash,
-                        ip = it.ip ?: "0.0.0.0", // Конвертация nullable String? -> String
+                        phone_hash = it.phone_hash ?: "", // Важно для Discovery
+                        ip = it.ip ?: "0.0.0.0",
                         port = it.port,
                         publicKey = it.publicKey,
                         phone = it.phone,
@@ -233,27 +242,30 @@ class IdentityRepository(private val context: Context) {
                 db.nodeDao().updateCache(entities)
                 return@async users.find { it.hash == hash }
             }
-        } catch (e: Exception) { Log.e(TAG, "Server sync failed: ${e.message}") }
+        } catch (e: Exception) { Log.e(TAG, "Server sync failed") }
         null
     }
 
-    private fun startKeepAlive() {
+    fun startKeepAlive(securityHash: String, phoneHash: String, email: String, phone: String) {
         scope.launch {
             while (isActive) {
                 try {
                     val myPayload = UserPayload(
-                        hash = getMyId(),
+                        hash = securityHash,
+                        phone_hash = phoneHash,
                         publicKey = getMyPublicKeyStr(),
+                        phone = phone,
+                        email = email,
                         port = 8888
                     )
-                    api.announceSelf(payload = myPayload)
+                    announceMyself(UserRegistrationWrapper(securityHash, myPayload))
                 } catch (e: Exception) { }
                 delay(180_000) // 3 минуты
             }
         }
     }
 
-    // --- УТИЛИТЫ ---
+    // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
     private suspend fun sendUdpInternal(ip: String, type: String, data: String): Boolean = withContext(Dispatchers.IO) {
         if (ip.isBlank() || ip == "0.0.0.0") return@withContext false
@@ -277,6 +289,7 @@ class IdentityRepository(private val context: Context) {
 
     fun getMyId() = sha256(CryptoManager.getMyPublicKeyStr())
     fun getMyPublicKeyStr() = CryptoManager.getMyPublicKeyStr()
+    
     fun addListener(l: (String, String, String, String) -> Unit) = listeners.add(l)
     fun removeListener(l: (String, String, String, String) -> Unit) = listeners.remove(l)
     
