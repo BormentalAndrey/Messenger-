@@ -8,123 +8,153 @@ import com.google.crypto.tink.hybrid.HybridConfig
 import com.google.crypto.tink.hybrid.HybridDecrypt
 import com.google.crypto.tink.hybrid.HybridEncrypt
 import com.google.crypto.tink.hybrid.HybridKeyTemplates
+import com.google.crypto.tink.signature.PublicKeySign
+import com.google.crypto.tink.signature.PublicKeyVerify
 import com.google.crypto.tink.signature.SignatureConfig
 import com.google.crypto.tink.signature.SignatureKeyTemplates
 import java.io.ByteArrayOutputStream
-import java.security.SecureRandom
-import javax.crypto.Cipher
-import javax.crypto.SecretKeyFactory
-import javax.crypto.spec.GCMParameterSpec
-import javax.crypto.spec.PBEKeySpec
-import javax.crypto.spec.SecretKeySpec
 
 object CryptoManager {
 
-    private var myPrivateKeyHandle: KeysetHandle? = null
-    private var mySigningKeyHandle: KeysetHandle? = null
+    private const val TAG = "CryptoManager"
+
+    private var myEncryptKeyset: KeysetHandle? = null
+    private var mySignKeyset: KeysetHandle? = null
+
+    private val peerPublicKeys = mutableMapOf<String, String>()
 
     init {
         try {
             HybridConfig.register()
             SignatureConfig.register()
         } catch (e: Exception) {
-            Log.e("CryptoManager", "Tink init failed", e)
+            Log.e(TAG, "Tink init error", e)
         }
     }
 
-    fun init(context: Context) {
-        loadKeysFromPrefs(context)
-        if (!isKeyReady()) generateKeys(context)
-    }
-
-    fun isKeyReady(): Boolean = myPrivateKeyHandle != null && mySigningKeyHandle != null
+    // ================= INIT =================
 
     fun generateKeysIfNeeded(context: Context) {
-        if (!isKeyReady()) generateKeys(context)
+        if (myEncryptKeyset == null || mySignKeyset == null) {
+            generateKeys(context)
+        }
     }
 
-    fun generateKeys(context: Context) {
+    private fun generateKeys(context: Context) {
+        myEncryptKeyset =
+            KeysetHandle.generateNew(HybridKeyTemplates.ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM)
+
+        mySignKeyset =
+            KeysetHandle.generateNew(SignatureKeyTemplates.ECDSA_P256)
+
+        saveKeys(context)
+    }
+
+    // ================= SIGN =================
+
+    fun sign(data: ByteArray): ByteArray =
         try {
-            myPrivateKeyHandle = KeysetHandle.generateNew(HybridKeyTemplates.ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM)
-            mySigningKeyHandle = KeysetHandle.generateNew(SignatureKeyTemplates.ECDSA_P256)
-            saveKeysToPrefs(context)
+            val signer = mySignKeyset!!
+                .getPrimitive(PublicKeySign::class.java)
+            signer.sign(data)
         } catch (e: Exception) {
-            Log.e("CryptoManager", "Generation error", e)
+            ByteArray(0)
         }
-    }
 
-    // -------------------- ПОДПИСЬ --------------------
+    fun verify(signature: ByteArray, data: ByteArray, pubKeyStr: String): Boolean =
+        try {
+            val handle =
+                CleartextKeysetHandle.read(JsonKeysetReader.withString(pubKeyStr))
+            val verifier =
+                handle.getPrimitive(PublicKeyVerify::class.java)
+            verifier.verify(signature, data)
+            true
+        } catch (e: Exception) {
+            false
+        }
 
-    fun sign(data: ByteArray): ByteArray = try {
-        val signer = mySigningKeyHandle?.getPrimitive(PublicKeySign::class.java)
-        signer?.sign(data) ?: ByteArray(0)
-    } catch (e: Exception) { ByteArray(0) }
+    // ================= ENCRYPT =================
 
-    fun verify(signature: ByteArray, data: ByteArray, pubKeyStr: String): Boolean = try {
-        val handle = CleartextKeysetHandle.read(JsonKeysetReader.withString(pubKeyStr))
-        val verifier = handle.getPrimitive(PublicKeyVerify::class.java)
-        verifier.verify(signature, data)
-        true
-    } catch (e: Exception) { false }
+    fun encryptMessage(message: String, peerPublicKey: String): String =
+        try {
+            val handle =
+                CleartextKeysetHandle.read(JsonKeysetReader.withString(peerPublicKey))
+            val encryptor =
+                handle.getPrimitive(HybridEncrypt::class.java)
 
-    // -------------------- ШИФРОВАНИЕ --------------------
+            val encrypted =
+                encryptor.encrypt(message.toByteArray(), null)
 
-    fun encryptFor(pubKeyStr: String, data: ByteArray): ByteArray = try {
-        val handle = CleartextKeysetHandle.read(JsonKeysetReader.withString(pubKeyStr))
-        val primitive = handle.getPrimitive(HybridEncrypt::class.java)
-        primitive.encrypt(data, null)
-    } catch (e: Exception) { ByteArray(0) }
+            Base64.encodeToString(encrypted, Base64.NO_WRAP)
+        } catch (e: Exception) {
+            "[Ошибка шифрования]"
+        }
 
-    fun decrypt(data: ByteArray): ByteArray = try {
-        val primitive = myPrivateKeyHandle?.getPrimitive(HybridDecrypt::class.java)
-        primitive?.decrypt(data, null) ?: ByteArray(0)
-    } catch (e: Exception) { ByteArray(0) }
+    fun decryptMessage(base64: String): String =
+        try {
+            val decryptor =
+                myEncryptKeyset!!
+                    .getPrimitive(HybridDecrypt::class.java)
 
-    fun getMyPublicKeyStr(): String = try {
-        val publicHandle = myPrivateKeyHandle?.publicKeysetHandle
-        val stream = ByteArrayOutputStream()
-        CleartextKeysetHandle.write(publicHandle, JsonKeysetWriter.withOutputStream(stream))
-        stream.toString("UTF-8")
-    } catch (e: Exception) { "" }
+            val decrypted =
+                decryptor.decrypt(Base64.decode(base64, Base64.NO_WRAP), null)
 
-    // -------------------- AES BACKUP --------------------
+            String(decrypted)
+        } catch (e: Exception) {
+            "[Ошибка дешифрования]"
+        }
 
-    private fun encryptWithPassword(data: String, pass: String): String {
-        val salt = ByteArray(16).apply { SecureRandom().nextBytes(this) }
-        val spec = PBEKeySpec(pass.toCharArray(), salt, 65536, 256)
-        val key = SecretKeySpec(SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1").generateSecret(spec).encoded, "AES")
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, key)
-        val encrypted = cipher.doFinal(data.toByteArray())
-        return Base64.encodeToString(salt + cipher.iv + encrypted, Base64.NO_WRAP)
-    }
+    // ================= KEYS =================
 
-    // -------------------- ХРАНЕНИЕ --------------------
-
-    private fun saveKeysToPrefs(context: Context) {
-        val prefs = context.getSharedPreferences("crypto_keys", Context.MODE_PRIVATE)
-        val editor = prefs.edit()
-        
-        myPrivateKeyHandle?.let {
+    fun getMyPublicKeyStr(): String =
+        try {
             val stream = ByteArrayOutputStream()
-            CleartextKeysetHandle.write(it, JsonKeysetWriter.withOutputStream(stream))
-            editor.putString("pri_key", stream.toString("UTF-8"))
+            CleartextKeysetHandle.write(
+                myEncryptKeyset!!.publicKeysetHandle,
+                JsonKeysetWriter.withOutputStream(stream)
+            )
+            stream.toString("UTF-8")
+        } catch (e: Exception) {
+            ""
         }
-        mySigningKeyHandle?.let {
-            val stream = ByteArrayOutputStream()
-            CleartextKeysetHandle.write(it, JsonKeysetWriter.withOutputStream(stream))
-            editor.putString("sign_key", stream.toString("UTF-8"))
-        }
-        editor.apply()
+
+    fun savePeerPublicKey(peerHash: String, key: String) {
+        peerPublicKeys[peerHash] = key
     }
 
-    private fun loadKeysFromPrefs(context: Context) {
+    fun getPeerPublicKey(peerHash: String): String? =
+        peerPublicKeys[peerHash]
+
+    // ================= STORAGE =================
+
+    private fun saveKeys(context: Context) {
         val prefs = context.getSharedPreferences("crypto_keys", Context.MODE_PRIVATE)
-        prefs.getString("pri_key", null)?.let {
-            myPrivateKeyHandle = CleartextKeysetHandle.read(JsonKeysetReader.withString(it))
+
+        prefs.edit().apply {
+            putString("enc_key", writeKey(myEncryptKeyset))
+            putString("sign_key", writeKey(mySignKeyset))
+            apply()
         }
+    }
+
+    fun loadKeys(context: Context) {
+        val prefs = context.getSharedPreferences("crypto_keys", Context.MODE_PRIVATE)
+
+        prefs.getString("enc_key", null)?.let {
+            myEncryptKeyset = readKey(it)
+        }
+
         prefs.getString("sign_key", null)?.let {
-            mySigningKeyHandle = CleartextKeysetHandle.read(JsonKeysetReader.withString(it))
+            mySignKeyset = readKey(it)
         }
     }
+
+    private fun writeKey(handle: KeysetHandle?): String {
+        val stream = ByteArrayOutputStream()
+        CleartextKeysetHandle.write(handle, JsonKeysetWriter.withOutputStream(stream))
+        return stream.toString("UTF-8")
+    }
+
+    private fun readKey(str: String): KeysetHandle =
+        CleartextKeysetHandle.read(JsonKeysetReader.withString(str))
 }
