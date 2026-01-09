@@ -12,14 +12,10 @@ import androidx.compose.ui.unit.dp
 import com.kakdela.p2p.data.AuthManager
 import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.api.UserPayload
+import com.kakdela.p2p.api.UserRegistrationWrapper
 import com.kakdela.p2p.security.CryptoManager
 import kotlinx.coroutines.launch
-import java.security.MessageDigest
 
-/**
- * Экран входа/регистрации через Email.
- * Реализует логику восстановления личности или создания нового P2P узла.
- */
 @Composable
 fun EmailAuthScreen(
     identityRepository: IdentityRepository,
@@ -35,40 +31,24 @@ fun EmailAuthScreen(
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = Color.Black
-    ) {
+    Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(32.dp),
+            modifier = Modifier.fillMaxSize().padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(
-                text = "P2P Личность",
-                style = MaterialTheme.typography.headlineMedium,
-                color = Color.Cyan
-            )
-            Text(
-                text = "Вход восстановит ваши ключи шифрования",
-                style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray
-            )
+            Text("P2P Личность", style = MaterialTheme.typography.headlineMedium, color = Color.Cyan)
+            Text("Вход восстановит ваши ключи шифрования", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
 
             Spacer(Modifier.height(32.dp))
 
             OutlinedTextField(
                 value = phone,
-                onValueChange = { phone = it.trim() },
+                onValueChange = { phone = it.filter { char -> char.isDigit() || char == '+' } },
                 label = { Text("Номер телефона") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White
-                )
+                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
             )
 
             Spacer(Modifier.height(12.dp))
@@ -79,10 +59,7 @@ fun EmailAuthScreen(
                 label = { Text("Email") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White
-                )
+                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
             )
 
             Spacer(Modifier.height(12.dp))
@@ -94,52 +71,45 @@ fun EmailAuthScreen(
                 visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White
-                )
+                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
             )
 
             Spacer(Modifier.height(24.dp))
 
             Button(
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.Cyan,
-                    contentColor = Color.Black
-                ),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan, contentColor = Color.Black),
                 enabled = email.isNotEmpty() && password.isNotEmpty() && phone.isNotEmpty() && !isLoading,
                 onClick = {
                     isLoading = true
                     error = null
                     scope.launch {
                         try {
-                            // 1. Пытаемся войти (проверка существования аккаунта)
-                            val isLoginSuccessful = authManager.login(email, password)
+                            // 1. Генерация хэшей согласно ТЗ (п. 4)
+                            val securityHash = identityRepository.generateSecurityHash(phone, email, password)
+                            val phoneDiscoveryHash = identityRepository.generatePhoneDiscoveryHash(phone)
+                            val myPubKey = CryptoManager.getMyPublicKeyStr()
+
+                            // 2. Регистрация/Вход через AuthManager
+                            val success = authManager.registerOrLogin(email, password, phone)
                             
-                            if (isLoginSuccessful) {
+                            if (success) {
+                                // 3. Анонс себя на сервер API.php для Discovery
+                                val payload = UserPayload(
+                                    hash = securityHash,
+                                    phone_hash = phoneDiscoveryHash,
+                                    publicKey = myPubKey,
+                                    phone = phone,
+                                    email = email
+                                )
+                                identityRepository.announceMyself(UserRegistrationWrapper(securityHash, payload))
+                                
                                 onAuthSuccess()
                             } else {
-                                // 2. Если вход не удался, пробуем зарегистрировать новый P2P узел
-                                val myPubKey = CryptoManager.getMyPublicKeyStr()
-                                val myHash = generateUserHash(phone, email, password)
-                                
-                                val registrationSuccess = authManager.register(
-                                    email = email,
-                                    password = password,
-                                    phone = phone
-                                )
-
-                                if (registrationSuccess) {
-                                    // ИСПРАВЛЕНО: передаем пустые строки вместо null, чтобы удовлетворить String-типу
-                                    identityRepository.savePeerPublicKey(myHash, myPubKey)
-                                    onAuthSuccess()
-                                } else {
-                                    error = "Не удалось создать или найти профиль"
-                                }
+                                error = "Ошибка авторизации"
                             }
                         } catch (e: Exception) {
-                            error = "Ошибка сети: ${e.localizedMessage}"
+                            error = "Ошибка: ${e.localizedMessage}"
                         } finally {
                             isLoading = false
                         }
@@ -147,35 +117,16 @@ fun EmailAuthScreen(
                 }
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = Color.Black
-                    )
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.Black)
                 } else {
                     Text("Войти / Создать")
                 }
             }
 
-            if (error != null) {
+            error?.let {
                 Spacer(Modifier.height(16.dp))
-                Text(
-                    text = error!!,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Text(text = it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
-}
-
-/**
- * Генерация уникального идентификатора узла.
- * Используется SHA-256 для детерминированного хеширования учетных данных.
- */
-private fun generateUserHash(phone: String, email: String, pass: String): String {
-    val input = "$phone|$email|$pass"
-    return MessageDigest.getInstance("SHA-256")
-        .digest(input.toByteArray())
-        .joinToString("") { "%02x".format(it) }
 }
