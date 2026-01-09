@@ -1,9 +1,7 @@
 package com.kakdela.p2p.ui.auth
 
 import android.Manifest
-import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -16,17 +14,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import com.kakdela.p2p.auth.SmsCodeManager
 import com.kakdela.p2p.auth.SmsCodeStore
 import com.kakdela.p2p.data.IdentityRepository
+import com.kakdela.p2p.api.UserPayload
+import com.kakdela.p2p.api.UserRegistrationWrapper
+import com.kakdela.p2p.security.CryptoManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/**
- * Экран регистрации через телефон с SMS
- * Создает уникальную P2P личность оффлайн.
- */
 @Composable
 fun PhoneAuthScreen(
     identityRepository: IdentityRepository,
@@ -39,12 +35,10 @@ fun PhoneAuthScreen(
     var phone by remember { mutableStateOf("") }
     var sentCode by remember { mutableStateOf<String?>(null) }
     var inputCode by remember { mutableStateOf("") }
-
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var permissionDenied by remember { mutableStateOf(false) }
 
-    // Перехват кода из SmsCodeStore
+    // Авто-подстановка кода из SMS
     LaunchedEffect(sentCode) {
         if (sentCode != null) {
             while (true) {
@@ -59,78 +53,43 @@ fun PhoneAuthScreen(
         }
     }
 
-    val smsPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        permissionDenied = !permissions.values.all { it }
-    }
-
-    LaunchedEffect(Unit) {
-        val needed = arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS, Manifest.permission.READ_SMS)
-            .filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }
-        if (needed.isNotEmpty()) smsPermissionLauncher.launch(needed.toTypedArray())
-    }
-
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
         Column(
             modifier = Modifier.fillMaxSize().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text("Создание P2P Личности", style = MaterialTheme.typography.headlineMedium, color = Color.Cyan)
-            Text("Номер телефона — ваш уникальный адрес", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-
+            Text("P2P Личность", style = MaterialTheme.typography.headlineMedium, color = Color.Cyan)
+            
             Spacer(Modifier.height(32.dp))
 
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Псевдоним") },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = sentCode == null,
-                singleLine = true
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            OutlinedTextField(
-                value = phone,
-                onValueChange = { phone = it },
-                label = { Text("Номер телефона (+...)") },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = sentCode == null,
-                singleLine = true
-            )
-
-            Spacer(Modifier.height(24.dp))
-
             if (sentCode == null) {
+                OutlinedTextField(
+                    value = phone,
+                    onValueChange = { phone = it },
+                    label = { Text("Номер телефона (+...)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(16.dp))
                 Button(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan, contentColor = Color.Black),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan),
                     onClick = {
-                        if (name.length < 2 || phone.length < 10) {
-                            error = "Проверьте имя и номер"
-                            return@Button
-                        }
-                        val code = SmsCodeManager.generateCode()
-                        sentCode = code
-                        SmsCodeManager.sendCode(context, phone, code)
+                        if (phone.length > 10) {
+                            val code = SmsCodeManager.generateCode()
+                            sentCode = code
+                            SmsCodeManager.sendCode(context, phone, code)
+                        } else { error = "Неверный номер" }
                     }
-                ) {
-                    Text("Получить код")
-                }
+                ) { Text("Получить SMS код", color = Color.Black) }
             } else {
                 OutlinedTextField(
                     value = inputCode,
                     onValueChange = { inputCode = it },
-                    label = { Text("Код подтверждения") },
-                    modifier = Modifier.fillMaxWidth(),
-                    supportingText = { Text("Ожидаем SMS...") }
+                    label = { Text("Код из SMS") },
+                    modifier = Modifier.fillMaxWidth()
                 )
-
                 Spacer(Modifier.height(16.dp))
-
                 Button(
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !isLoading,
@@ -139,50 +98,31 @@ fun PhoneAuthScreen(
                             isLoading = true
                             scope.launch {
                                 try {
-                                    // Генерация локального P2P ID
-                                    identityRepository.generateUserHash(phone, name, inputCode)
+                                    val securityHash = identityRepository.generateSecurityHash(phone, "no-email", inputCode)
+                                    val discoveryHash = identityRepository.generatePhoneDiscoveryHash(phone)
+                                    val pubKey = CryptoManager.getMyPublicKeyStr()
+
+                                    // Анонс на сервер для Discovery (Борменталь оживает тут)
+                                    val payload = UserPayload(
+                                        hash = securityHash,
+                                        phone_hash = discoveryHash,
+                                        publicKey = pubKey,
+                                        phone = phone
+                                    )
+                                    identityRepository.announceMyself(UserRegistrationWrapper(securityHash, payload))
+                                    
                                     onSuccess()
                                 } catch (e: Exception) {
-                                    error = "Сбой P2P: ${e.localizedMessage}"
+                                    error = e.localizedMessage
                                     isLoading = false
                                 }
                             }
-                        } else {
-                            error = "Неверный код"
-                        }
+                        } else { error = "Неверный код" }
                     }
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = Color.White)
-                    } else {
-                        Text("Создать профиль")
-                    }
-                }
-
-                TextButton(onClick = { sentCode = null; inputCode = "" }) {
-                    Text("Назад", color = Color.Gray)
-                }
+                ) { Text("Подтвердить") }
             }
 
-            if (permissionDenied) {
-                Spacer(Modifier.height(16.dp))
-                Button(
-                    onClick = {
-                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                            data = Uri.fromParts("package", context.packageName, null)
-                        }
-                        context.startActivity(intent)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("Разрешить SMS в настройках")
-                }
-            }
-
-            error?.let {
-                Spacer(Modifier.height(16.dp))
-                Text(it, color = MaterialTheme.colorScheme.error)
-            }
+            error?.let { Text(it, color = Color.Red, modifier = Modifier.padding(top = 16.dp)) }
         }
     }
 }
