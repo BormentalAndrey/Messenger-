@@ -4,18 +4,16 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.room.TypeConverters
 
 /**
- * Основная база данных мессенджера.
- * Хранит историю сообщений и распределенный кэш узлов (DHT/Gossip).
+ * Главная БД мессенджера.
  */
 @Database(
     entities = [
         MessageEntity::class, 
         NodeEntity::class
     ],
-    version = 3, // Обновлено для поддержки расширенных полей NodeEntity
+    version = 3, 
     exportSchema = false
 )
 abstract class ChatDatabase : RoomDatabase() {
@@ -27,10 +25,6 @@ abstract class ChatDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: ChatDatabase? = null
 
-        /**
-         * Получение синглтона базы данных.
-         * Использует Double-Check Locking для потокобезопасности.
-         */
         fun getDatabase(context: Context): ChatDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -38,10 +32,10 @@ abstract class ChatDatabase : RoomDatabase() {
                     ChatDatabase::class.java,
                     "chat_p2p_secure.db"
                 )
-                // Позволяет избежать крашей при обновлении схемы данных в P2P-сетях
                 .fallbackToDestructiveMigration()
-                // Оптимизация для многопоточной работы мини-сервера
-                .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING) 
+                // Режим WAL позволяет одновременно читать и писать в БД, 
+                // что важно, когда устройство работает как мини-сервер.
+                .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                 .build()
                 
                 INSTANCE = instance
