@@ -6,23 +6,28 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.kakdela.p2p.data.AuthManager
 import com.kakdela.p2p.data.IdentityRepository
-import kotlinx.coroutines.delay
+import com.kakdela.p2p.api.UserPayload
+import com.kakdela.p2p.security.CryptoManager
 import kotlinx.coroutines.launch
 import java.security.MessageDigest
 
 /**
- * Экран входа через Email + пароль.
- * Работает онлайн для восстановления P2P ключа.
+ * Экран входа/регистрации через Email.
+ * Реализует логику восстановления личности или создания нового P2P узла.
  */
 @Composable
 fun EmailAuthScreen(
     identityRepository: IdentityRepository,
     onAuthSuccess: () -> Unit
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val authManager = remember { AuthManager(context) }
 
     var email by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
@@ -42,12 +47,12 @@ fun EmailAuthScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "Восстановление личности",
+                text = "P2P Личность",
                 style = MaterialTheme.typography.headlineMedium,
                 color = Color.Cyan
             )
             Text(
-                text = "Ваш профиль будет загружен из P2P сети",
+                text = "Вход восстановит ваши ключи шифрования",
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.Gray
             )
@@ -59,7 +64,11 @@ fun EmailAuthScreen(
                 onValueChange = { phone = it.trim() },
                 label = { Text("Номер телефона") },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White
+                )
             )
 
             Spacer(Modifier.height(12.dp))
@@ -69,7 +78,11 @@ fun EmailAuthScreen(
                 onValueChange = { email = it.trim().lowercase() },
                 label = { Text("Email") },
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White
+                )
             )
 
             Spacer(Modifier.height(12.dp))
@@ -80,61 +93,85 @@ fun EmailAuthScreen(
                 label = { Text("Пароль") },
                 visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White
+                )
             )
 
             Spacer(Modifier.height(24.dp))
 
             Button(
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan, contentColor = Color.Black),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.Cyan,
+                    contentColor = Color.Black
+                ),
                 enabled = email.isNotEmpty() && password.isNotEmpty() && phone.isNotEmpty() && !isLoading,
                 onClick = {
                     isLoading = true
                     error = null
                     scope.launch {
                         try {
-                            // Генерация хеша на основе введенных данных
-                            val userHash = generateUserHash(phone, email, password)
+                            // 1. Пытаемся войти (проверка существования аккаунта)
+                            val isLoginSuccessful = authManager.login(email, password)
                             
-                            // Имитация поиска в сети DHT через репозиторий
-                            val node = identityRepository.findPeerInDHT(userHash).await()
-                            
-                            if (node != null) {
-                                // Если узел найден, сохраняем его публичный ключ как наш
-                                identityRepository.savePeerPublicKey(userHash, node.publicKey)
+                            if (isLoginSuccessful) {
                                 onAuthSuccess()
                             } else {
-                                // Если не найден, создаем "новую" личность для демонстрации
-                                // В продакшене здесь была бы регистрация на сервере
-                                delay(1000)
-                                onAuthSuccess()
+                                // 2. Если вход не удался, пробуем зарегистрировать новый P2P узел
+                                val myPubKey = CryptoManager.getMyPublicKeyStr()
+                                val myHash = generateUserHash(phone, email, password)
+                                
+                                val registrationSuccess = authManager.register(
+                                    email = email,
+                                    password = password,
+                                    phone = phone
+                                )
+
+                                if (registrationSuccess) {
+                                    // ИСПРАВЛЕНО: передаем пустые строки вместо null, чтобы удовлетворить String-типу
+                                    identityRepository.savePeerPublicKey(myHash, myPubKey)
+                                    onAuthSuccess()
+                                } else {
+                                    error = "Не удалось создать или найти профиль"
+                                }
                             }
                         } catch (e: Exception) {
-                            error = "Ошибка сети или неверные данные"
+                            error = "Ошибка сети: ${e.localizedMessage}"
+                        } finally {
                             isLoading = false
                         }
                     }
                 }
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.Black)
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = Color.Black
+                    )
                 } else {
-                    Text("Восстановить доступ")
+                    Text("Войти / Создать")
                 }
             }
 
             if (error != null) {
                 Spacer(Modifier.height(16.dp))
-                Text(text = error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    text = error!!,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
     }
 }
 
 /**
- * Локальная функция генерации хеша пользователя, чтобы исправить ошибку компиляции.
- * Комбинирует телефон, email и пароль для создания уникального ID.
+ * Генерация уникального идентификатора узла.
+ * Используется SHA-256 для детерминированного хеширования учетных данных.
  */
 private fun generateUserHash(phone: String, email: String, pass: String): String {
     val input = "$phone|$email|$pass"
