@@ -6,7 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 /**
- * Главная БД мессенджера.
+ * Главная база данных мессенджера.
+ * Хранит историю сообщений и кэш узлов распределенной сети.
  */
 @Database(
     entities = [
@@ -25,6 +26,10 @@ abstract class ChatDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: ChatDatabase? = null
 
+        /**
+         * Получение инстанса БД (Singleton).
+         * Используется Double-Checked Locking для потокобезопасности.
+         */
         fun getDatabase(context: Context): ChatDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -32,9 +37,13 @@ abstract class ChatDatabase : RoomDatabase() {
                     ChatDatabase::class.java,
                     "chat_p2p_secure.db"
                 )
+                // Разрешает деструктивную миграцию при изменении версии (удаляет данные).
+                // Для продакшена со стабильной схемой стоит использовать именованные миграции.
                 .fallbackToDestructiveMigration()
-                // Режим WAL позволяет одновременно читать и писать в БД, 
-                // что важно, когда устройство работает как мини-сервер.
+                
+                // Режим WAL (Write-Ahead Logging) критически важен для P2P:
+                // Он позволяет фоновым процессам (синхронизация узлов) писать в БД,
+                // не блокируя при этом чтение для UI (отображение сообщений).
                 .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
                 .build()
                 
