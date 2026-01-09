@@ -1,5 +1,6 @@
 package com.kakdela.p2p.ui.navigation
 
+import android.app.Application
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
@@ -44,6 +45,7 @@ fun NavGraph(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
+    // Определяем, когда показывать нижнюю панель навигации
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
     )
@@ -62,7 +64,7 @@ fun NavGraph(
                 .padding(paddingValues)
                 .background(Color.Black)
         ) {
-            // --- Сплеш и выбор авторизации ---
+            // --- Секция Авторизации ---
             composable(Routes.SPLASH) {
                 SplashScreen {
                     val nextRoute = if (identityRepository.getMyId().isNotEmpty()) Routes.CHATS else Routes.CHOICE
@@ -89,7 +91,7 @@ fun NavGraph(
                 }
             }
 
-            // --- Основные разделы ---
+            // --- Основные разделы (BottomBar) ---
             composable(Routes.CHATS) { 
                 ChatsListScreen(navController, identityRepository) 
             }
@@ -98,7 +100,7 @@ fun NavGraph(
                 ContactsScreen(
                     identityRepository = identityRepository,
                     onContactClick = { contact ->
-                        // ИСПРАВЛЕНО: использование publicKey вместо отсутствующего userHash
+                        // Важно: используем publicKey как идентификатор, если userHash отсутствует
                         val targetId = contact.publicKey ?: ""
                         if (targetId.isNotEmpty()) {
                             navController.navigate("chat/$targetId")
@@ -107,16 +109,17 @@ fun NavGraph(
                 )
             }
 
-            // --- P2P Чат ---
+            // --- Экран P2P Чата ---
             composable(
                 route = "chat/{chatId}",
                 arguments = listOf(navArgument("chatId") { type = NavType.StringType })
             ) { entry ->
                 val chatId = entry.arguments?.getString("chatId") ?: return@composable
+                val context = LocalContext.current.applicationContext as Application
                 
-                // ИСПРАВЛЕНО: удален лишний аргумент Context, если фабрика его не поддерживает
+                // Инициализация ViewModel через обновленную фабрику
                 val vm: ChatViewModel = viewModel(
-                    factory = ChatViewModelFactory(identityRepository)
+                    factory = ChatViewModelFactory(identityRepository, context)
                 )
 
                 LaunchedEffect(chatId) {
@@ -130,25 +133,18 @@ fun NavGraph(
                     messages = messages,
                     identityRepository = identityRepository,
                     onSendMessage = { text -> vm.sendMessage(text) },
-                    // ИСПРАВЛЕНО: добавлены проверки, если методы еще не реализованы в VM
-                    onSendFile = { uri, name -> 
-                        try { vm.sendMessage("📎 Файл: $name") } catch(e: Exception) {} 
-                    },
-                    onSendAudio = { uri, duration -> 
-                        try { vm.sendMessage("🎤 Аудио сообщение") } catch(e: Exception) {} 
-                    },
-                    onScheduleMessage = { text, time -> 
-                        try { vm.sendMessage("⏰ [Запланировано]: $text") } catch(e: Exception) {} 
-                    },
+                    onSendFile = { uri, name -> vm.sendFile(uri, name) },
+                    onSendAudio = { uri, duration -> vm.sendAudio(uri, duration) },
+                    onScheduleMessage = { text, time -> vm.scheduleMessage(text, time) },
                     onBack = { navController.popBackStack() }
                 )
             }
 
-            // --- Дополнительные модули ---
+            // --- Инструменты и развлечения ---
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             
-            // ИСПРАВЛЕНО: удален identityRepository, если SettingsScreen его не принимает
+            // Настройки (SettingsScreen в вашей версии принимает только navController)
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
             
             composable(Routes.MUSIC) { MusicPlayerScreen() }
@@ -160,6 +156,7 @@ fun NavGraph(
             composable(Routes.SUDOKU) { SudokuScreen() }
             composable(Routes.TEXT_EDITOR) { TextEditorScreen(navController) }
 
+            // --- Онлайн модули ---
             composable(
                 route = "webview/{url}/{title}",
                 arguments = listOf(
@@ -173,7 +170,6 @@ fun NavGraph(
             }
 
             composable(Routes.AI_CHAT) {
-                // ИСПРАВЛЕНО: корректный вызов без передачи navController как ViewModel
                 if (isOnline) AiChatScreen() else NoInternetScreen()
             }
         }
