@@ -79,14 +79,11 @@ class IdentityRepository(private val context: Context) {
 
     // --- МЕТОДЫ СОВМЕСТИМОСТИ (BRIDGES) ---
     
-    /** Используется WebRTC и FileTransfer для прямой отправки */
     fun sendSignaling(targetIp: String, type: String, data: String) {
         if (targetIp.isNotBlank() && targetIp != "0.0.0.0") {
             scope.launch { sendUdpInternal(targetIp, type, data) }
         } else {
-             scope.launch {
-                 Log.w(TAG, "sendSignaling: IP is empty")
-             }
+             Log.w(TAG, "sendSignaling: IP is empty")
         }
     }
 
@@ -105,12 +102,16 @@ class IdentityRepository(private val context: Context) {
     // --- WI-FI DISCOVERY ---
 
     private fun registerInWifi() {
-        val serviceInfo = NsdServiceInfo().apply {
-            serviceName = getMyId()
-            serviceType = SERVICE_TYPE
-            port = 8888
+        try {
+            val serviceInfo = NsdServiceInfo().apply {
+                serviceName = getMyId()
+                serviceType = SERVICE_TYPE
+                port = 8888
+            }
+            nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, null)
+        } catch (e: Exception) {
+            Log.e(TAG, "NSD Register failed: ${e.message}")
         }
-        nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, null)
     }
 
     private fun discoverInWifi() {
@@ -134,15 +135,16 @@ class IdentityRepository(private val context: Context) {
         })
     }
 
-    // --- РОЕВОЙ ПОИСК (ИСПРАВЛЕН NPE) ---
+    // --- РОЕВОЙ ПОИСК ---
 
     private fun searchInSwarm(targetHash: String): Deferred<String?> = scope.async {
         val cachedNodes = db.nodeDao().getAllNodes().take(100)
         cachedNodes.forEach { node ->
-            // Исправлена ошибка Type Mismatch: проверяем на null/empty перед вызовом
-            val nodeIp = node.ip
-            if (!nodeIp.isNullOrBlank()) {
-                sendUdpInternal(nodeIp, "QUERY_PEER", targetHash)
+            // ИСПРАВЛЕНИЕ: Используем safe call ?.let для преобразования String? в String
+            node.ip?.let { safeIp ->
+                if (safeIp.isNotBlank() && safeIp != "0.0.0.0") {
+                    sendUdpInternal(safeIp, "QUERY_PEER", targetHash)
+                }
             }
         }
         delay(2000)
@@ -167,7 +169,10 @@ class IdentityRepository(private val context: Context) {
                 val senderIp = packet.address.hostAddress ?: ""
                 handleIncomingPacket(rawData, senderIp)
             }
-        } catch (e: Exception) { isListening = false }
+        } catch (e: Exception) { 
+            Log.e(TAG, "Socket error: ${e.message}")
+            isListening = false 
+        }
     }
 
     private fun handleIncomingPacket(rawData: String, fromIp: String) {
@@ -180,9 +185,12 @@ class IdentityRepository(private val context: Context) {
                     val target = json.getString("data")
                     scope.launch {
                         db.nodeDao().getNodeByHash(target)?.let {
-                            sendUdpInternal(fromIp, "PEER_FOUND", JSONObject().apply {
-                                put("hash", it.userHash); put("ip", it.ip)
-                            }.toString())
+                            val nodeIp = it.ip
+                            if (!nodeIp.isNullOrBlank()) {
+                                sendUdpInternal(fromIp, "PEER_FOUND", JSONObject().apply {
+                                    put("hash", it.userHash); put("ip", nodeIp)
+                                }.toString())
+                            }
                         }
                     }
                 }
@@ -193,12 +201,16 @@ class IdentityRepository(private val context: Context) {
                 "CHAT", "WEBRTC_SIGNAL" -> {
                     val senderHash = json.getString("from")
                     val pubKey = json.getString("pubkey")
-                    val signature = Base64.decode(json.getString("signature"), Base64.NO_WRAP)
-                    val dataToVerify = JSONObject(rawData).apply { remove("signature") }.toString().toByteArray()
+                    val signatureBase64 = json.optString("signature", "")
+                    
+                    if (signatureBase64.isNotEmpty()) {
+                        val signature = Base64.decode(signatureBase64, Base64.NO_WRAP)
+                        val dataToVerify = JSONObject(rawData).apply { remove("signature") }.toString().toByteArray()
 
-                    if (CryptoManager.verify(signature, dataToVerify, pubKey)) {
-                        CryptoManager.savePeerPublicKey(senderHash, pubKey)
-                        listeners.forEach { it(type, json.getString("data"), fromIp, senderHash) }
+                        if (CryptoManager.verify(signature, dataToVerify, pubKey)) {
+                            CryptoManager.savePeerPublicKey(senderHash, pubKey)
+                            listeners.forEach { it(type, json.getString("data"), fromIp, senderHash) }
+                        }
                     }
                 }
             }
@@ -222,7 +234,7 @@ class IdentityRepository(private val context: Context) {
     private fun sendAsSms(phone: String, message: String) {
         try {
             SmsManager.getDefault().sendTextMessage(phone, null, "[P2P]$message", null, null)
-        } catch (e: Exception) { Log.e(TAG, "SMS failed") }
+        } catch (e: Exception) { Log.e(TAG, "SMS failed: ${e.message}") }
     }
 
     private suspend fun sendUdpInternal(ip: String, type: String, data: String): Boolean = withContext(Dispatchers.IO) {
@@ -236,7 +248,10 @@ class IdentityRepository(private val context: Context) {
             json.put("signature", Base64.encodeToString(sig, Base64.NO_WRAP))
 
             val bytes = json.toString().toByteArray()
-            DatagramSocket().use { it.send(DatagramPacket(bytes, bytes.size, InetAddress.getByName(ip), 8888)) }
+            val address = InetAddress.getByName(ip)
+            val packet = DatagramPacket(bytes, bytes.size, address, 8888)
+            
+            DatagramSocket().use { it.send(packet) }
             true
         } catch (e: Exception) { 
             Log.e(TAG, "UDP send failed to $ip: ${e.message}")
@@ -259,6 +274,16 @@ class IdentityRepository(private val context: Context) {
     fun getMyPublicKeyStr() = CryptoManager.getMyPublicKeyStr()
     fun addListener(l: (String, String, String, String) -> Unit) = listeners.add(l)
     fun removeListener(l: (String, String, String, String) -> Unit) = listeners.remove(l)
-    fun onDestroy() { repositoryJob.cancel(); isListening = false; mainSocket?.close() }
-    private fun sha256(s: String) = MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
+    
+    fun onDestroy() { 
+        repositoryJob.cancel()
+        isListening = false
+        mainSocket?.close() 
+    }
+    
+    private fun sha256(s: String): String {
+        return MessageDigest.getInstance("SHA-256")
+            .digest(s.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+    }
 }
