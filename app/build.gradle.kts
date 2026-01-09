@@ -153,7 +153,7 @@ dependencies {
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
 
     // Security Crypto
-    implementation("com.google.crypto.tink:tink-android:1.20.0")
+    implementation("com.google.crypto.tink:tink-android:1.8.0")
 
     // Media3
     val media3Version = "1.4.1"
