@@ -27,6 +27,7 @@ fun ContactsScreen(
     onContactClick: (AppContact) -> Unit
 ) {
     val context = LocalContext.current
+    // Используем remember для сохранения менеджера между рекомпозициями
     val contactManager = remember { ContactP2PManager(context, identityRepository) }
 
     var contacts by remember { mutableStateOf<List<AppContact>>(emptyList()) }
@@ -54,16 +55,8 @@ fun ContactsScreen(
     Scaffold(
         topBar = {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    "P2P Контакты",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = Color.Cyan
-                )
-                Text(
-                    "Поиск пользователей в распределенной сети...",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
+                Text("P2P Контакты", style = MaterialTheme.typography.headlineSmall, color = Color.Cyan)
+                Text("Поиск пользователей в распределенной сети...", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
             }
         },
         containerColor = Color.Black
@@ -74,7 +67,7 @@ fun ContactsScreen(
                     permissionLauncher.launch(Manifest.permission.READ_CONTACTS)
                 }
             }
-            isLoading -> {
+            isLoading && contacts.isEmpty() -> {
                 Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = Color.Cyan)
                 }
@@ -93,37 +86,24 @@ fun ContactList(
     onContactClick: (AppContact) -> Unit
 ) {
     LazyColumn(modifier = Modifier.padding(padding).fillMaxSize()) {
-        items(contacts) { contact ->
+        items(contacts, key = { it.phoneNumber }) { contact ->
             ListItem(
                 headlineContent = { Text(contact.name, color = Color.White) },
                 supportingContent = { Text(contact.phoneNumber, color = Color.Gray) },
                 trailingContent = {
                     if (contact.isRegistered) {
-                        Surface(
-                            color = Color(0xFF00FFF0),
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Text(
-                                "P2P", 
-                                color = Color.Black, 
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                style = MaterialTheme.typography.labelSmall
-                            )
+                        Surface(color = Color(0xFF00FFF0), shape = RoundedCornerShape(4.dp)) {
+                            Text("P2P", color = Color.Black, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall)
                         }
                     } else {
                         Text("OFFLINE", color = Color.DarkGray, style = MaterialTheme.typography.labelSmall)
                     }
                 },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                modifier = Modifier.clickable(enabled = contact.isRegistered) {
-                    onContactClick(contact)
-                }
+                // ФИКС: Убрали enabled = contact.isRegistered, чтобы чат открывался всегда
+                modifier = Modifier.clickable { onContactClick(contact) }
             )
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp), 
-                thickness = 0.5.dp, 
-                color = Color(0xFF1A1A1A)
-            )
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = Color(0xFF1A1A1A))
         }
     }
 }
@@ -134,14 +114,9 @@ fun PermissionRequestUI(padding: PaddingValues, onGrant: () -> Unit) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Доступ к контактам нужен для поиска друзей в сети", color = Color.White)
             Spacer(Modifier.height(16.dp))
-            Button(
-                onClick = onGrant,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.Cyan, 
-                    contentColor = Color.Black
-                )
-            ) { Text("Разрешить") }
+            Button(onClick = onGrant, colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan, contentColor = Color.Black)) {
+                Text("Разрешить")
+            }
         }
     }
 }
-
