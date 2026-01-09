@@ -15,7 +15,7 @@ import java.security.MessageDigest
 
 /**
  * Менеджер авторизации.
- * Управляет сессиями, регистрацией в DHT и локальным кэшированием профиля.
+ * Управляет сессиями, регистрацией и локальным кэшированием профиля.
  */
 class AuthManager(private val context: Context) {
 
@@ -38,32 +38,33 @@ class AuthManager(private val context: Context) {
 
     /**
      * 🔐 Вход пользователя.
-     * Сначала проверяет локальную БД (оффлайн), затем обращается к серверу.
+     * Исправлено: заменено response.userNode на response.users?.firstOrNull()
      */
     suspend fun login(email: String, password: String): Boolean =
         withContext(Dispatchers.IO) {
             try {
                 val passHash = sha256(password)
 
-                // 1. Локальный вход
+                // 1. Локальная проверка для оффлайн доступа
                 val localUser = nodeDao.getUserByEmail(email)
                 if (localUser != null && localUser.passwordHash == passHash) {
                     Log.d(TAG, "Local login success")
                     return@withContext true
                 }
 
-                // 2. Онлайн вход
-                // Исправлено: передаем Map, так как MyServerApi ожидает именованный параметр credentials
+                // 2. Онлайн вход через сервер
                 val credentials = mapOf(
                     "email" to email,
-                    "passwordHash" to passHash,
-                    "action" to "login"
+                    "passwordHash" to passHash
                 )
 
                 val response = api.serverLogin(credentials = credentials)
 
-                if (response.success && response.userNode != null) {
-                    saveUserToLocalDb(response.userNode, email, passHash)
+                // В продакшн API данные приходят в списке users
+                val userNode = response.users?.firstOrNull()
+
+                if (response.success && userNode != null) {
+                    saveUserToLocalDb(userNode, email, passHash)
                     return@withContext true
                 }
 
@@ -75,7 +76,8 @@ class AuthManager(private val context: Context) {
         }
 
     /**
-     * 🆕 Регистрация пользователя в P2P сети.
+     * 🆕 Регистрация пользователя.
+     * Исправлено: удален лишний параметр passwordHash из UserPayload
      */
     suspend fun register(
         email: String,
@@ -86,24 +88,25 @@ class AuthManager(private val context: Context) {
             val passHash = sha256(password)
             val pubKey = CryptoManager.getMyPublicKeyStr()
             
-            // Генерируем ID на основе публичного ключа
-            val myId = sha256(pubKey)
+            // Генерируем уникальный hash пользователя (номер+почта+пароль)
+            val myId = sha256("$phone:$email:$passHash")
 
             val payload = UserPayload(
                 hash = myId,
-                ip = "0.0.0.0", // Будет обновлено сервером при получении запроса
+                ip = "0.0.0.0",
                 port = 8888,
                 publicKey = pubKey,
                 phone = phone,
-                email = email,
-                passwordHash = passHash
+                email = email
             )
 
-            // Исправлено: передаем объект UserPayload напрямую в параметр payload
             val response = api.serverRegister(payload = payload)
+            
+            // Проверяем успешность и наличие данных пользователя в ответе
+            val registeredNode = response.users?.firstOrNull()
 
-            if (response.success && response.userNode != null) {
-                saveUserToLocalDb(response.userNode, email, passHash)
+            if (response.success && registeredNode != null) {
+                saveUserToLocalDb(registeredNode, email, passHash)
                 return@withContext true
             }
 
@@ -115,7 +118,7 @@ class AuthManager(private val context: Context) {
     }
 
     /**
-     * 💾 Сохранение профиля во внутреннюю БД для работы в оффлайне.
+     * 💾 Кэширование профиля в Room.
      */
     private suspend fun saveUserToLocalDb(
         node: UserPayload,
@@ -124,13 +127,13 @@ class AuthManager(private val context: Context) {
     ) {
         nodeDao.insert(
             NodeEntity(
-                userHash = node.hash ?: sha256(node.publicKey ?: ""),
+                userHash = node.hash,
                 email = email,
                 passwordHash = passHash,
                 phone = node.phone ?: "",
                 ip = node.ip ?: "0.0.0.0",
-                port = node.port ?: 8888,
-                publicKey = node.publicKey ?: "",
+                port = node.port,
+                publicKey = node.publicKey,
                 lastSeen = System.currentTimeMillis()
             )
         )
