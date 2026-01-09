@@ -23,11 +23,10 @@ class IdentityRepository(private val context: Context) {
     private val TAG = "IdentityRepository"
     private val repositoryJob = SupervisorJob()
     private val scope = CoroutineScope(repositoryJob + Dispatchers.IO)
-
     private val listeners = CopyOnWriteArrayList<(String, String, String, String) -> Unit>()
     
-    private val wifiPeers = mutableMapOf<String, String>() // Hash -> IP
-    private val swarmPeers = mutableMapOf<String, String>() // Hash -> IP
+    private val wifiPeers = mutableMapOf<String, String>()
+    private val swarmPeers = mutableMapOf<String, String>()
     
     private val db = ChatDatabase.getDatabase(context)
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
@@ -52,21 +51,16 @@ class IdentityRepository(private val context: Context) {
         startKeepAlive()
     }
 
-    // --- ГЛАВНАЯ ЛОГИКА ОТПРАВКИ ---
-
     fun sendMessageSmart(targetHash: String, targetPhone: String?, message: String) = scope.launch {
-        // 1. Поиск в локальном Wi-Fi
         wifiPeers[targetHash]?.let { ip ->
             if (sendUdpInternal(ip, "CHAT", message)) return@launch
         }
 
-        // 2. Роевой поиск
         val swarmIp = searchInSwarm(targetHash).await()
         if (!swarmIp.isNullOrBlank()) {
             if (sendUdpInternal(swarmIp, "CHAT", message)) return@launch
         }
 
-        // 3. Сервер
         val serverPeer = findPeerOnServer(targetHash).await()
         serverPeer?.ip?.let { ip ->
             if (ip.isNotBlank() && ip != "0.0.0.0") {
@@ -74,19 +68,14 @@ class IdentityRepository(private val context: Context) {
             }
         }
 
-        // 4. SMS
         if (!targetPhone.isNullOrBlank()) {
             sendAsSms(targetPhone, message)
         }
     }
 
-    // --- МЕТОДЫ СОВМЕСТИМОСТИ ---
-    
     fun sendSignaling(targetIp: String, type: String, data: String) {
         if (targetIp.isNotBlank() && targetIp != "0.0.0.0") {
             scope.launch { sendUdpInternal(targetIp, type, data) }
-        } else {
-             Log.w(TAG, "sendSignaling: IP is empty or invalid")
         }
     }
 
@@ -102,8 +91,6 @@ class IdentityRepository(private val context: Context) {
         return findPeerOnServer(hash).await()
     }
 
-    // --- WI-FI DISCOVERY ---
-
     private fun registerInWifi() {
         try {
             val serviceInfo = NsdServiceInfo().apply {
@@ -112,9 +99,7 @@ class IdentityRepository(private val context: Context) {
                 port = 8888
             }
             nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, null)
-        } catch (e: Exception) {
-            Log.e(TAG, "NSD Register failed: ${e.message}")
-        }
+        } catch (e: Exception) { Log.e(TAG, "NSD Register Error") }
     }
 
     private fun discoverInWifi() {
@@ -125,9 +110,7 @@ class IdentityRepository(private val context: Context) {
                     nsdManager.resolveService(service, object : NsdManager.ResolveListener {
                         override fun onServiceResolved(info: NsdServiceInfo) {
                             val host = info.host.hostAddress
-                            if (!host.isNullOrBlank()) {
-                                wifiPeers[info.serviceName] = host
-                            }
+                            if (!host.isNullOrBlank()) wifiPeers[info.serviceName] = host
                         }
                         override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {}
                     })
@@ -137,28 +120,19 @@ class IdentityRepository(private val context: Context) {
                 override fun onStartDiscoveryFailed(p0: String?, p1: Int) {}
                 override fun onStopDiscoveryFailed(p0: String?, p1: Int) {}
             })
-        } catch (e: Exception) {
-            Log.e(TAG, "NSD Discovery failed: ${e.message}")
-        }
+        } catch (e: Exception) { Log.e(TAG, "NSD Discover Error") }
     }
-
-    // --- РОЕВОЙ ПОИСК ---
 
     private fun searchInSwarm(targetHash: String): Deferred<String?> = scope.async {
         val cachedNodes = db.nodeDao().getAllNodes().take(100)
         cachedNodes.forEach { node ->
-            // Фикс: захватываем ip в локальную переменную safeIp
             node.ip?.let { safeIp ->
-                if (safeIp.isNotBlank() && safeIp != "0.0.0.0") {
-                    sendUdpInternal(safeIp, "QUERY_PEER", targetHash)
-                }
+                if (safeIp.isNotBlank()) sendUdpInternal(safeIp, "QUERY_PEER", targetHash)
             }
         }
         delay(2000)
         return@async swarmPeers[targetHash]
     }
-
-    // --- UDP ---
 
     private fun startListening() = scope.launch(Dispatchers.IO) {
         if (isListening) return@launch
@@ -169,44 +143,38 @@ class IdentityRepository(private val context: Context) {
             }
             isListening = true
             val buffer = ByteArray(16384)
-            
             while (isListening && isActive) {
-                try {
-                    val packet = DatagramPacket(buffer, buffer.size)
-                    mainSocket?.receive(packet)
-                    val rawData = String(packet.data, 0, packet.length)
-                    val senderIp = packet.address.hostAddress ?: ""
-                    handleIncomingPacket(rawData, senderIp)
-                } catch (e: Exception) {
-                    if (isListening) Log.e(TAG, "Receive error: ${e.message}")
+                val packet = DatagramPacket(buffer, buffer.size)
+                mainSocket?.receive(packet)
+                val rawData = String(packet.data, 0, packet.length)
+                val senderIp = packet.address.hostAddress // Это String?
+                
+                // Исправление ошибки 246: Гарантируем, что senderIp не null перед обработкой
+                senderIp?.let { safeIp ->
+                    handleIncomingPacket(rawData, safeIp)
                 }
             }
-        } catch (e: Exception) { 
-            Log.e(TAG, "Socket init error: ${e.message}")
-            isListening = false 
-        }
+        } catch (e: Exception) { isListening = false }
     }
 
     private fun handleIncomingPacket(rawData: String, fromIp: String) {
         scope.launch {
             try {
                 val json = JSONObject(rawData)
-                val type = json.optString("type")
-                
-                when (type) {
+                when (json.optString("type")) {
                     "QUERY_PEER" -> {
                         val target = json.getString("data")
                         val node = db.nodeDao().getNodeByHash(target)
-                        // ФИКС ОШИБКИ 253: Захватываем оба nullable свойства в локальные non-null переменные
                         node?.let { safeNode ->
                             val targetIp = safeNode.ip
                             val targetHash = safeNode.userHash
                             if (!targetIp.isNullOrBlank() && !targetHash.isNullOrBlank()) {
-                                val response = JSONObject().apply {
+                                val resp = JSONObject().apply {
                                     put("hash", targetHash)
                                     put("ip", targetIp)
                                 }
-                                sendUdpInternal(fromIp, "PEER_FOUND", response.toString())
+                                // Теперь fromIp гарантированно String (не null)
+                                sendUdpInternal(fromIp, "PEER_FOUND", resp.toString())
                             }
                         }
                     }
@@ -217,22 +185,18 @@ class IdentityRepository(private val context: Context) {
                     "CHAT", "WEBRTC_SIGNAL" -> {
                         val senderHash = json.getString("from")
                         val pubKey = json.getString("pubkey")
-                        val signatureBase64 = json.optString("signature", "")
-                        
-                        if (signatureBase64.isNotEmpty()) {
-                            val signature = Base64.decode(signatureBase64, Base64.NO_WRAP)
+                        val sigBase64 = json.optString("signature", "")
+                        if (sigBase64.isNotEmpty()) {
+                            val signature = Base64.decode(sigBase64, Base64.NO_WRAP)
                             val dataToVerify = JSONObject(rawData).apply { remove("signature") }.toString().toByteArray()
-
                             if (CryptoManager.verify(signature, dataToVerify, pubKey)) {
                                 CryptoManager.savePeerPublicKey(senderHash, pubKey)
-                                listeners.forEach { it(type, json.getString("data"), fromIp, senderHash) }
+                                listeners.forEach { it(json.getString("type"), json.getString("data"), fromIp, senderHash) }
                             }
                         }
                     }
                 }
-            } catch (e: Exception) { 
-                Log.e(TAG, "Parse error: ${e.message}") 
-            }
+            } catch (e: Exception) { Log.e(TAG, "Packet Error") }
         }
     }
 
@@ -241,81 +205,49 @@ class IdentityRepository(private val context: Context) {
             val response = api.getAllNodes()
             response.users?.let { users ->
                 val entities = users.map { 
-                    NodeEntity(
-                        userHash = it.hash, 
-                        ip = it.ip, 
-                        port = it.port, 
-                        publicKey = it.publicKey, 
-                        lastSeen = System.currentTimeMillis()
-                    ) 
+                    NodeEntity(it.hash, it.ip, it.port, it.publicKey, System.currentTimeMillis()) 
                 }
                 db.nodeDao().updateCache(entities)
                 return@async users.find { it.hash == hash }
             }
-        } catch (e: Exception) { Log.e(TAG, "Server error: ${e.message}") }
+        } catch (e: Exception) { }
         null
     }
 
     private fun sendAsSms(phone: String, message: String) {
         try {
             SmsManager.getDefault().sendTextMessage(phone, null, "[P2P]$message", null, null)
-        } catch (e: Exception) { Log.e(TAG, "SMS failed: ${e.message}") }
+        } catch (e: Exception) { }
     }
 
     private suspend fun sendUdpInternal(ip: String, type: String, data: String): Boolean = withContext(Dispatchers.IO) {
         if (ip.isBlank() || ip == "0.0.0.0") return@withContext false
         try {
             val json = JSONObject().apply {
-                put("type", type)
-                put("data", data)
-                put("from", getMyId())
-                put("pubkey", getMyPublicKeyStr())
-                put("timestamp", System.currentTimeMillis())
+                put("type", type); put("data", data); put("from", getMyId())
+                put("pubkey", getMyPublicKeyStr()); put("timestamp", System.currentTimeMillis())
             }
             val sig = CryptoManager.sign(json.toString().toByteArray())
             json.put("signature", Base64.encodeToString(sig, Base64.NO_WRAP))
-
             val bytes = json.toString().toByteArray()
-            val address = InetAddress.getByName(ip)
-            
-            DatagramSocket().use { socket ->
-                val packet = DatagramPacket(bytes, bytes.size, address, 8888)
-                socket.send(packet)
-            }
+            DatagramSocket().use { it.send(DatagramPacket(bytes, bytes.size, InetAddress.getByName(ip), 8888)) }
             true
-        } catch (e: Exception) { 
-            Log.e(TAG, "UDP send failed to $ip: ${e.message}")
-            false 
-        }
+        } catch (e: Exception) { false }
     }
 
     private fun startKeepAlive() {
         scope.launch {
             while (isActive) {
-                try {
-                    api.announceSelf(payload = UserPayload(hash = getMyId(), publicKey = getMyPublicKeyStr(), port = 8888))
-                } catch (e: Exception) { }
+                try { api.announceSelf(UserPayload(getMyId(), getMyPublicKeyStr(), 8888)) } catch (e: Exception) {}
                 delay(180_000)
             }
         }
     }
 
-    fun getMyId(): String = sha256(CryptoManager.getMyPublicKeyStr())
-    fun getMyPublicKeyStr(): String = CryptoManager.getMyPublicKeyStr()
-    
+    fun getMyId() = sha256(CryptoManager.getMyPublicKeyStr())
+    fun getMyPublicKeyStr() = CryptoManager.getMyPublicKeyStr()
     fun addListener(l: (String, String, String, String) -> Unit) = listeners.add(l)
     fun removeListener(l: (String, String, String, String) -> Unit) = listeners.remove(l)
-    
-    fun onDestroy() { 
-        repositoryJob.cancel()
-        isListening = false
-        mainSocket?.close()
-        mainSocket = null
-    }
-    
-    private fun sha256(s: String): String {
-        return MessageDigest.getInstance("SHA-256")
-            .digest(s.toByteArray())
-            .joinToString("") { "%02x".format(it) }
-    }
+    fun onDestroy() { repositoryJob.cancel(); isListening = false; mainSocket?.close() }
+    private fun sha256(s: String) = MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
 }
