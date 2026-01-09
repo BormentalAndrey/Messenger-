@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.kakdela.p2p.api.MyServerApi
 import com.kakdela.p2p.api.UserPayload
+import com.kakdela.p2p.api.UserRegistrationWrapper
 import com.kakdela.p2p.data.local.ChatDatabase
 import com.kakdela.p2p.data.local.NodeEntity
 import com.kakdela.p2p.security.CryptoManager
@@ -15,12 +16,15 @@ import java.security.MessageDigest
 
 /**
  * Менеджер авторизации.
- * Управляет сессиями, регистрацией и локальным кэшированием профиля.
+ * Управляет регистрацией в сети P2P и локальным кэшированием профиля.
  */
 class AuthManager(private val context: Context) {
 
     private val TAG = "AuthManager"
     private val nodeDao = ChatDatabase.getDatabase(context).nodeDao()
+    
+    // Используем тот же PEPPER, что и в IdentityRepository для консистентности хэшей
+    private val PEPPER = "7fb8a1d2c3e4f5a6"
 
     private val api: MyServerApi by lazy {
         Retrofit.Builder()
@@ -30,95 +34,65 @@ class AuthManager(private val context: Context) {
             .create(MyServerApi::class.java)
     }
 
-    private fun sha256(input: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        return digest.digest(input.toByteArray())
-            .joinToString("") { "%02x".format(it) }
-    }
-
     /**
-     * 🔐 Вход пользователя.
-     * Исправлено: заменено response.userNode на response.users?.firstOrNull()
+     * 🔐 Универсальный метод входа/регистрации (регистрация личности в P2P сети).
+     * В P2P авторизация — это подтверждение владения ключами и хэшем.
      */
-    suspend fun login(email: String, password: String): Boolean =
+    suspend fun registerOrLogin(email: String, password: String, phone: String): Boolean =
         withContext(Dispatchers.IO) {
             try {
                 val passHash = sha256(password)
+                val pubKey = CryptoManager.getMyPublicKeyStr()
+                
+                // 1. Генерируем Security Hash (ID пользователя)
+                val securityHash = sha256("$phone|$email|$passHash")
+                
+                // 2. Генерируем Phone Discovery Hash (для поиска контактами)
+                val cleanPhone = phone.replace(Regex("[^0-9]"), "").takeLast(10)
+                val phoneHash = sha256(cleanPhone + PEPPER)
 
-                // 1. Локальная проверка для оффлайн доступа
-                val localUser = nodeDao.getUserByEmail(email)
-                if (localUser != null && localUser.passwordHash == passHash) {
-                    Log.d(TAG, "Local login success")
-                    return@withContext true
-                }
-
-                // 2. Онлайн вход через сервер
-                val credentials = mapOf(
-                    "email" to email,
-                    "passwordHash" to passHash
+                // 3. Подготовка данных для сервера (соответствует ТЗ и api.php)
+                val payload = UserPayload(
+                    hash = securityHash,
+                    phone_hash = phoneHash,
+                    ip = "0.0.0.0", // Сервер сам определит IP отправителя
+                    port = 8888,
+                    publicKey = pubKey,
+                    phone = phone,
+                    email = email,
+                    lastSeen = System.currentTimeMillis()
                 )
 
-                val response = api.serverLogin(credentials = credentials)
+                val wrapper = UserRegistrationWrapper(
+                    securityHash = securityHash,
+                    userPayload = payload
+                )
 
-                // В продакшн API данные приходят в списке users
-                val userNode = response.users?.firstOrNull()
+                // 4. Отправка на сервер через api.php (action=add_user)
+                val response = api.announceSelf(payload = wrapper)
 
-                if (response.success && userNode != null) {
-                    saveUserToLocalDb(userNode, email, passHash)
+                if (response.success) {
+                    saveUserToLocalDb(payload, email, passHash)
+                    // Сохраняем состояние авторизации в SharedPreferences
+                    context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
+                        .edit()
+                        .putString("my_security_hash", securityHash)
+                        .putBoolean("is_logged_in", true)
+                        .apply()
+                    
+                    Log.d(TAG, "Auth success for: $securityHash")
                     return@withContext true
                 }
 
                 false
             } catch (e: Exception) {
-                Log.e(TAG, "Login failed: ${e.message}")
+                Log.e(TAG, "Auth failed: ${e.message}")
                 false
             }
         }
 
     /**
-     * 🆕 Регистрация пользователя.
-     * Исправлено: удален лишний параметр passwordHash из UserPayload
-     */
-    suspend fun register(
-        email: String,
-        password: String,
-        phone: String
-    ): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val passHash = sha256(password)
-            val pubKey = CryptoManager.getMyPublicKeyStr()
-            
-            // Генерируем уникальный hash пользователя (номер+почта+пароль)
-            val myId = sha256("$phone:$email:$passHash")
-
-            val payload = UserPayload(
-                hash = myId,
-                ip = "0.0.0.0",
-                port = 8888,
-                publicKey = pubKey,
-                phone = phone,
-                email = email
-            )
-
-            val response = api.serverRegister(payload = payload)
-            
-            // Проверяем успешность и наличие данных пользователя в ответе
-            val registeredNode = response.users?.firstOrNull()
-
-            if (response.success && registeredNode != null) {
-                saveUserToLocalDb(registeredNode, email, passHash)
-                return@withContext true
-            }
-
-            false
-        } catch (e: Exception) {
-            Log.e(TAG, "Registration failed: ${e.message}")
-            false
-        }
-    }
-
-    /**
-     * 💾 Кэширование профиля в Room.
+     * 💾 Кэширование профиля в локальную БД Room.
      */
     private suspend fun saveUserToLocalDb(
         node: UserPayload,
@@ -128,6 +102,7 @@ class AuthManager(private val context: Context) {
         nodeDao.insert(
             NodeEntity(
                 userHash = node.hash,
+                phone_hash = node.phone_hash ?: "",
                 email = email,
                 passwordHash = passHash,
                 phone = node.phone ?: "",
@@ -137,5 +112,11 @@ class AuthManager(private val context: Context) {
                 lastSeen = System.currentTimeMillis()
             )
         )
+    }
+
+    private fun sha256(input: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        return digest.digest(input.toByteArray())
+            .joinToString("") { "%02x".format(it) }
     }
 }
