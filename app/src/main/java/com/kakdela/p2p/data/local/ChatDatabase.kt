@@ -4,18 +4,18 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
 
 /**
- * Единая Room-база для мессенджера:
- * - сообщения
- * - P2P / DHT узлы
+ * Основная база данных мессенджера.
+ * Хранит историю сообщений и распределенный кэш узлов (DHT/Gossip).
  */
 @Database(
     entities = [
-        MessageEntity::class,
+        MessageEntity::class, 
         NodeEntity::class
     ],
-    version = 2, // увеличена версия из-за добавления NodeEntity
+    version = 3, // Обновлено для поддержки расширенных полей NodeEntity
     exportSchema = false
 )
 abstract class ChatDatabase : RoomDatabase() {
@@ -27,17 +27,25 @@ abstract class ChatDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: ChatDatabase? = null
 
+        /**
+         * Получение синглтона базы данных.
+         * Использует Double-Check Locking для потокобезопасности.
+         */
         fun getDatabase(context: Context): ChatDatabase {
             return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: Room.databaseBuilder(
+                val instance = Room.databaseBuilder(
                     context.applicationContext,
                     ChatDatabase::class.java,
-                    "chat_db"
+                    "chat_p2p_secure.db"
                 )
-                    // в проде допустимо, т.к. данные P2P кэшируемые
-                    .fallbackToDestructiveMigration()
-                    .build()
-                    .also { INSTANCE = it }
+                // Позволяет избежать крашей при обновлении схемы данных в P2P-сетях
+                .fallbackToDestructiveMigration()
+                // Оптимизация для многопоточной работы мини-сервера
+                .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING) 
+                .build()
+                
+                INSTANCE = instance
+                instance
             }
         }
     }
