@@ -3,18 +3,9 @@ package com.kakdela.p2p.security
 import android.content.Context
 import android.util.Base64
 import android.util.Log
-import com.google.crypto.tink.CleartextKeysetHandle
-import com.google.crypto.tink.JsonKeysetReader
-import com.google.crypto.tink.JsonKeysetWriter
-import com.google.crypto.tink.KeysetHandle
-import com.google.crypto.tink.hybrid.HybridConfig
-import com.google.crypto.tink.hybrid.HybridDecrypt
-import com.google.crypto.tink.hybrid.HybridEncrypt
-import com.google.crypto.tink.hybrid.HybridKeyTemplates
-import com.google.crypto.tink.signature.PublicKeySign
-import com.google.crypto.tink.signature.PublicKeyVerify
-import com.google.crypto.tink.signature.SignatureConfig
-import com.google.crypto.tink.signature.SignatureKeyTemplates
+import com.google.crypto.tink.*
+import com.google.crypto.tink.hybrid.*
+import com.google.crypto.tink.signature.*
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 
@@ -52,8 +43,8 @@ object CryptoManager {
         } catch (e: Exception) { Log.e(TAG, "Key generation failed", e) }
     }
 
+    // ИСПРАВЛЕНО: Явное указание класса примитива для устранения "infer type variable P"
     fun sign(data: ByteArray): ByteArray = try {
-        // Исправлено: явное указание типа <PublicKeySign>
         val signer = mySignKeyset?.getPrimitive(PublicKeySign::class.java)
         signer?.sign(data) ?: byteArrayOf()
     } catch (e: Exception) { byteArrayOf() }
@@ -81,13 +72,13 @@ object CryptoManager {
 
     fun getMyPublicKeyStr(): String = try {
         val stream = ByteArrayOutputStream()
-        myEncryptKeyset?.publicKeysetHandle?.let {
-            CleartextKeysetHandle.write(it, JsonKeysetWriter.withOutputStream(stream))
+        // ИСПРАВЛЕНО: корректное обращение к publicKeysetHandle
+        myEncryptKeyset?.publicKeysetHandle?.let { publicHandle ->
+            CleartextKeysetHandle.write(publicHandle, JsonKeysetWriter.withOutputStream(stream))
         }
         stream.toString("UTF-8")
     } catch (e: Exception) { "" }
 
-    // Добавлены методы, на которые ругался WebRtcClient и EmailAuthScreen
     fun savePeerPublicKey(hash: String, key: String) { peerPublicKeys[hash] = key }
     fun getPeerPublicKey(hash: String): String? = peerPublicKeys[hash]
 
