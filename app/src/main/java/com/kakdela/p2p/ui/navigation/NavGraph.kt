@@ -28,23 +28,14 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.kakdela.p2p.data.IdentityRepository
-import com.kakdela.p2p.data.Message // Импорт UI модели, если она есть
+import com.kakdela.p2p.data.Message // Убедитесь, что этот класс существует для UI
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen 
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
-import com.kakdela.p2p.ui.ChatViewModel // Важно: импорт из пакета ui (как в файле выше)
-
-// Определение UI-модели для маппинга внутри NavGraph, чтобы устранить Type Mismatch
-data class UiMessage(
-    val id: String,
-    val text: String,
-    val senderId: String,
-    val timestamp: Long,
-    val isMe: Boolean
-)
+import com.kakdela.p2p.ui.ChatViewModel // Импорт ViewModel
 
 @Composable
 fun NavGraph(
@@ -99,8 +90,12 @@ fun NavGraph(
                 ContactsScreen(
                     identityRepository = identityRepository,
                     onContactClick = { contact ->
-                        val targetId = contact.publicKey
-                        if (targetId.isNotEmpty()) navController.navigate("chat/$targetId")
+                        // ИСПРАВЛЕНИЕ: Безопасный вызов для nullable String
+                        contact.publicKey?.let { targetId ->
+                            if (targetId.isNotEmpty()) {
+                                navController.navigate("chat/$targetId")
+                            }
+                        }
                     }
                 )
             }
@@ -112,6 +107,7 @@ fun NavGraph(
                 val chatId = entry.arguments?.getString("chatId") ?: return@composable
                 val context = LocalContext.current.applicationContext as Application
                 
+                // Используем исправленную фабрику
                 val vm: ChatViewModel = viewModel(
                     factory = ChatViewModelFactory(identityRepository, context)
                 )
@@ -119,8 +115,7 @@ fun NavGraph(
                 LaunchedEffect(chatId) { vm.initChat(chatId) }
                 val messagesEntities by vm.messages.collectAsState()
 
-                // Маппинг из БД (MessageEntity) в UI (Message/UiMessage)
-                // Здесь мы преобразуем сущности Room в то, что ждет ChatScreen
+                // Маппинг из БД (MessageEntity) в UI (Message)
                 val uiMessages = messagesEntities.map { entity ->
                     com.kakdela.p2p.data.Message(
                         id = entity.messageId,
@@ -133,7 +128,7 @@ fun NavGraph(
 
                 ChatScreen(
                     chatPartnerId = chatId,
-                    messages = uiMessages, // Передаем список UI-моделей
+                    messages = uiMessages, 
                     identityRepository = identityRepository,
                     onSendMessage = { text -> vm.sendMessage(text) },
                     onSendFile = { uri, fileName -> vm.sendFile(uri.toString(), fileName.toString()) },
