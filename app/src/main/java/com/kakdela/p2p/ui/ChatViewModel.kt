@@ -26,7 +26,6 @@ class ChatViewModel(
     private var partnerHash: String = ""
     private var partnerPhone: String? = null
 
-    // Поток сообщений для UI
     private val _messages = MutableStateFlow<List<MessageEntity>>(emptyList())
     val messages: StateFlow<List<MessageEntity>> = _messages.asStateFlow()
 
@@ -46,7 +45,6 @@ class ChatViewModel(
             val node = nodeDao.getNodeByHash(identifier)
             partnerPhone = node?.phone ?: if (identifier.all { it.isDigit() }) identifier else null
             
-            // Подписываемся на изменения в базе данных
             messageDao.observeMessages(identifier).collect {
                 _messages.value = it
             }
@@ -80,24 +78,19 @@ class ChatViewModel(
         }
     }
 
-    // --- МЕТОДЫ ДЛЯ ИСПРАВЛЕНИЯ ОШИБОК В NAVGRAPH ---
-
+    // Методы для совместимости с NavGraph.kt
     fun sendFile(uri: String, fileName: String) {
-        // Логика отправки файла (сейчас как текстовое уведомление)
-        sendMessage("📎 Файл: $fileName\nПуть: $uri")
+        sendMessage("📎 Файл: $fileName")
     }
 
     fun sendAudio(uri: String, duration: Int) {
-        // Логика отправки аудио
         sendMessage("🎤 Голосовое сообщение ($duration сек.)")
     }
 
-    fun scheduleMessage(text: String, timeMillis: Long) {
-        // Логика отложенной отправки
-        sendMessage("⏰ [Запланировано]: $text")
+    // ФИКС ОШИБКИ Type Mismatch (String вместо Long)
+    fun scheduleMessage(text: String, time: String) {
+        sendMessage("⏰ [Запланировано на $time]: $text")
     }
-
-    // ------------------------------------------------
 
     private fun handleIncomingP2P(type: String, encryptedData: String, fromId: String) {
         viewModelScope.launch(Dispatchers.IO) {
