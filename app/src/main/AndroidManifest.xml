@@ -17,16 +17,15 @@
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.SEND_SMS" />
 
-    <!-- Новые разрешения для доступа к медиафайлам (Android 13+) -->
+    <!-- Разрешения для медиа (Android 13+) -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
-    <!-- Для обратной совместимости со старыми версиями Android (до API 33) -->
+    <!-- Для старых Android (до 13) -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
-    <!-- Для уведомлений (звонки, сообщения и т.д.) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -59,10 +58,15 @@
             android:launchMode="singleTask"
             android:screenOrientation="portrait" />
 
-        <!-- Добавлена недостающая активность, вызывающая ActivityNotFoundException -->
-        <!-- Это исправляет краш при попытке запуска com.kakdela.p2p.z5.a -->
+        <!-- Предыдущая проблемная активность -->
         <activity
             android:name=".z5.a"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
+        <!-- Новая проблемная активность — это должно исправить текущий краш -->
+        <activity
+            android:name=".l5.k"
             android:exported="false"
             android:screenOrientation="portrait" />
 
