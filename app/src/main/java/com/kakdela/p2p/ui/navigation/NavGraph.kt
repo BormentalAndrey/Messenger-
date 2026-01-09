@@ -1,11 +1,11 @@
 package com.kakdela.p2p.ui.navigation
 
 import android.app.Application
+import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -28,13 +28,23 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.kakdela.p2p.data.IdentityRepository
+import com.kakdela.p2p.data.Message // Импорт UI модели, если она есть
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
-import com.kakdela.p2p.ui.chat.ChatScreen // ПРОВЕРЬТЕ ЭТОТ ПУТЬ В СВОЕМ ПРОЕКТЕ
+import com.kakdela.p2p.ui.chat.ChatScreen 
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
-import com.kakdela.p2p.viewmodel.ChatViewModel
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
+import com.kakdela.p2p.ui.ChatViewModel // Важно: импорт из пакета ui (как в файле выше)
+
+// Определение UI-модели для маппинга внутри NavGraph, чтобы устранить Type Mismatch
+data class UiMessage(
+    val id: String,
+    val text: String,
+    val senderId: String,
+    val timestamp: Long,
+    val isMe: Boolean
+)
 
 @Composable
 fun NavGraph(
@@ -50,18 +60,12 @@ fun NavGraph(
     )
 
     Scaffold(
-        bottomBar = {
-            if (showBottomBar) {
-                AppBottomBar(currentRoute, navController)
-            }
-        }
+        bottomBar = { if (showBottomBar) AppBottomBar(currentRoute, navController) }
     ) { paddingValues ->
         NavHost(
             navController = navController,
             startDestination = Routes.SPLASH,
-            modifier = Modifier
-                .padding(paddingValues)
-                .background(Color.Black)
+            modifier = Modifier.padding(paddingValues).background(Color.Black)
         ) {
             composable(Routes.SPLASH) {
                 SplashScreen {
@@ -89,18 +93,14 @@ fun NavGraph(
                 }
             }
 
-            composable(Routes.CHATS) { 
-                ChatsListScreen(navController, identityRepository) 
-            }
+            composable(Routes.CHATS) { ChatsListScreen(navController, identityRepository) }
 
             composable(Routes.CONTACTS) {
                 ContactsScreen(
                     identityRepository = identityRepository,
                     onContactClick = { contact ->
-                        val targetId = contact.publicKey ?: ""
-                        if (targetId.isNotEmpty()) {
-                            navController.navigate("chat/$targetId")
-                        }
+                        val targetId = contact.publicKey
+                        if (targetId.isNotEmpty()) navController.navigate("chat/$targetId")
                     }
                 )
             }
@@ -117,23 +117,28 @@ fun NavGraph(
                 )
 
                 LaunchedEffect(chatId) { vm.initChat(chatId) }
-                val messages by vm.messages.collectAsState()
+                val messagesEntities by vm.messages.collectAsState()
+
+                // Маппинг из БД (MessageEntity) в UI (Message/UiMessage)
+                // Здесь мы преобразуем сущности Room в то, что ждет ChatScreen
+                val uiMessages = messagesEntities.map { entity ->
+                    com.kakdela.p2p.data.Message(
+                        id = entity.messageId,
+                        text = entity.text,
+                        senderId = entity.senderId,
+                        timestamp = entity.timestamp,
+                        isMe = entity.isMe
+                    )
+                }
 
                 ChatScreen(
                     chatPartnerId = chatId,
-                    messages = messages,
+                    messages = uiMessages, // Передаем список UI-моделей
                     identityRepository = identityRepository,
                     onSendMessage = { text -> vm.sendMessage(text) },
-                    // ИСПРАВЛЕНО: Приведение типов к String (.toString()) для устранения Type mismatch
-                    onSendFile = { uri, fileName -> 
-                        vm.sendFile(uri.toString(), fileName.toString()) 
-                    },
-                    onSendAudio = { uri, duration -> 
-                        vm.sendAudio(uri.toString(), duration.toInt()) 
-                    },
-                    onScheduleMessage = { text, time -> 
-                        vm.scheduleMessage(text, time.toString()) 
-                    },
+                    onSendFile = { uri, fileName -> vm.sendFile(uri.toString(), fileName.toString()) },
+                    onSendAudio = { uri, duration -> vm.sendAudio(uri.toString(), duration.toInt()) },
+                    onScheduleMessage = { text, time -> vm.scheduleMessage(text, time.toString()) },
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -162,14 +167,11 @@ fun NavGraph(
                 if (isOnline) WebViewScreen(url, title, navController) else NoInternetScreen()
             }
 
-            composable(Routes.AI_CHAT) {
-                if (isOnline) AiChatScreen() else NoInternetScreen()
-            }
+            composable(Routes.AI_CHAT) { if (isOnline) AiChatScreen() else NoInternetScreen() }
         }
     }
 }
 
-// Вспомогательные функции остаются без изменений...
 @Composable
 private fun AppBottomBar(currentRoute: String?, navController: NavHostController) {
     NavigationBar(containerColor = Color(0xFF0A0A0A)) {
@@ -214,9 +216,7 @@ fun rememberIsOnline(): State<Boolean> {
             override fun onAvailable(network: Network) { status.value = true }
             override fun onLost(network: Network) { status.value = false }
         }
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
+        val request = NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build()
         cm.registerNetworkCallback(request, callback)
         onDispose { cm.unregisterNetworkCallback(callback) }
     }
