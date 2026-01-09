@@ -20,7 +20,7 @@ data class ServerResponse(
     val success: Boolean = false,
     val ip: String? = null,
     val publicKey: String? = null,
-    val phone: String? = null,
+    val hash: String? = null,
     val userNode: UserPayload? = null
 )
 
@@ -39,6 +39,7 @@ interface MyServerApi {
         @Query("action") action: String = "get_all_nodes"
     ): List<UserPayload>
 
+    // Исправлено: поддержка поиска через Hash (используется в IdentityRepository)
     @POST("api.php")
     suspend fun findPeer(
         @Query("action") action: String = "get_peer",
