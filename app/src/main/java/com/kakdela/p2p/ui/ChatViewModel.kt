@@ -1,155 +1,159 @@
-package com.kakdela.p2p.viewmodel
+package com.kakdela.p2p.ui
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.kakdela.p2p.data.IdentityRepository
-import com.kakdela.p2p.data.Message
+import com.kakdela.p2p.data.local.ChatDatabase
+import com.kakdela.p2p.data.local.MessageEntity
 import com.kakdela.p2p.security.CryptoManager
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.UUID
 
 /**
- * ViewModel для управления состоянием чата.
- * Использует AndroidViewModel для доступа к контексту (необходим для WebRTC/Файлов).
+ * Продакшн ViewModel для управления чатом.
+ * Реализует логику: сохранение в БД -> умная отправка (Wi-Fi/P2P/Server/SMS).
  */
 class ChatViewModel(
-    private val repository: IdentityRepository,
-    application: Application
+    application: Application,
+    private val repository: IdentityRepository
 ) : AndroidViewModel(application) {
 
-    private val _messages = MutableStateFlow<List<Message>>(emptyList())
-    val messages = _messages.asStateFlow()
+    private val TAG = "ChatViewModel"
+    private val db = ChatDatabase.getDatabase(application)
+    private val messageDao = db.messageDao()
+    private val nodeDao = db.nodeDao()
 
-    private var partnerId: String = ""
+    // Текущий собеседник
+    private var partnerHash: String = ""
+    private var partnerPhone: String? = null
 
-    // Слушатель входящих P2P сигналов
-    private val listener: (String, String, String, String) -> Unit = { type, data, fromIp, fromId ->
-        if (fromId == partnerId) {
-            when (type) {
-                "MESSAGE" -> handleIncomingMessage(data, fromId)
-                "FILE" -> handleIncomingMessage("📎 Получен файл: $data", fromId)
-                "AUDIO" -> handleIncomingMessage("🎤 Аудиосообщение", fromId)
-            }
+    // Наблюдаемый поток сообщений напрямую из БД
+    lateinit var messages: StateFlow<List<MessageEntity>>
+
+    // Слушатель входящих UDP/P2P пакетов
+    private val p2pListener: (String, String, String, String) -> Unit = { type, data, fromIp, fromId ->
+        if (fromId == partnerHash) {
+            handleIncomingP2P(type, data, fromId)
         }
     }
 
     init {
-        repository.addListener(listener)
+        repository.addListener(p2pListener)
     }
 
     /**
-     * Инициализация чата с конкретным собеседником.
+     * Инициализация чата. Загружает данные партнера и подписывается на Flow сообщений.
      */
-    fun initChat(partnerId: String) {
-        this.partnerId = partnerId
-        // Здесь можно добавить загрузку истории из локальной БД (Room)
-    }
-
-    private fun handleIncomingMessage(encryptedData: String, fromId: String) {
-        // Расшифровываем входящее сообщение
-        val decryptedText = CryptoManager.decryptMessage(encryptedData)
+    fun initChat(partnerHash: String) {
+        this.partnerHash = partnerHash
         
-        val msg = Message(
-            id = UUID.randomUUID().toString(),
-            senderId = fromId,
-            text = decryptedText,
-            timestamp = System.currentTimeMillis(),
-            isMe = false
-        )
-        _messages.update { it + msg }
+        // Подгружаем данные партнера (телефон нужен для SMS-фоллбека)
+        viewModelScope.launch(Dispatchers.IO) {
+            val node = nodeDao.getNodeByHash(partnerHash)
+            partnerPhone = node?.phone
+        }
+
+        // Настраиваем реактивное обновление UI при изменении БД
+        messages = messageDao.observeMessages(partnerHash)
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptyList()
+            )
     }
 
     /**
-     * Базовая отправка текстового сообщения с E2EE шифрованием.
+     * Умная отправка сообщения с использованием иерархии каналов.
      */
     fun sendMessage(text: String) {
-        if (text.isBlank() || partnerId.isBlank()) return
+        if (text.isBlank() || partnerHash.isBlank()) return
 
-        val myId = repository.getMyId()
-        val localMsg = Message(
-            id = UUID.randomUUID().toString(),
-            senderId = myId,
-            text = text,
-            timestamp = System.currentTimeMillis(),
-            isMe = true
-        )
-
-        _messages.update { it + localMsg }
+        val messageId = UUID.randomUUID().toString()
+        val timestamp = System.currentTimeMillis()
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // 1. Получаем публичный ключ собеседника из кэша
-                val peerKey = CryptoManager.getPeerPublicKey(partnerId) ?: ""
-                
-                // 2. Шифруем сообщение
+                // 1. Шифрование E2EE
+                val peerKey = CryptoManager.getPeerPublicKey(partnerHash) ?: ""
                 val encryptedText = if (peerKey.isNotEmpty()) {
                     CryptoManager.encryptMessage(text, peerKey)
-                } else {
-                    text // Фоллбек, если ключ еще не получен (лучше обработать ошибку)
-                }
+                } else text
 
-                // 3. Отправляем через P2P сигналинг
-                repository.sendSignaling(
-                    targetIp = "", 
-                    type = "MESSAGE",
-                    data = encryptedText
+                // 2. Предварительное сохранение в БД со статусом PENDING
+                val localMsg = MessageEntity(
+                    messageId = messageId,
+                    chatId = partnerHash,
+                    senderId = repository.getMyId(),
+                    receiverId = partnerHash,
+                    text = text, // В локальной БД храним расшифрованным для UI
+                    timestamp = timestamp,
+                    isMe = true,
+                    status = "PENDING"
                 )
+                messageDao.insert(localMsg)
+
+                // 3. Запуск иерархической отправки через репозиторий
+                // Wi-Fi -> Swarm -> Server -> SMS
+                repository.sendMessageSmart(
+                    targetHash = partnerHash,
+                    targetPhone = partnerPhone,
+                    message = encryptedText
+                ).join() // Ждем завершения попыток
+
+                // 4. Обновляем статус в БД (в реальности статус подтверждается ACK-пакетом)
+                messageDao.updateStatus(messageId, "SENT")
+
             } catch (e: Exception) {
-                // Здесь можно пометить сообщение как "не доставлено" в UI
+                Log.e(TAG, "Ошибка отправки: ${e.message}")
+                messageDao.updateStatus(messageId, "ERROR")
             }
         }
     }
 
     /**
-     * Отправка файла через P2P.
+     * Обработка входящего P2P сообщения.
      */
-    fun sendFile(uri: String, fileName: String) {
-        val displayMsg = "📎 Файл: $fileName"
-        _messages.update { it + createLocalMeMessage(displayMsg) }
-        
+    private fun handleIncomingP2P(type: String, encryptedData: String, fromId: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            // В реальности здесь запускается WebRTC DataChannel или HTTP/P2P стрим
-            repository.sendSignaling("", "FILE", fileName)
+            try {
+                val decryptedText = if (type == "CHAT") {
+                    CryptoManager.decryptMessage(encryptedData)
+                } else "Media Content: $type"
+
+                val msg = MessageEntity(
+                    messageId = UUID.randomUUID().toString(),
+                    chatId = fromId,
+                    senderId = fromId,
+                    receiverId = repository.getMyId(),
+                    text = decryptedText,
+                    timestamp = System.currentTimeMillis(),
+                    isMe = false,
+                    status = "DELIVERED"
+                )
+                messageDao.insert(msg)
+            } catch (e: Exception) {
+                Log.e(TAG, "Ошибка обработки входящего: ${e.message}")
+            }
         }
     }
 
     /**
-     * Отправка аудиосообщения.
+     * Пометка всех сообщений в чате как прочитанных.
      */
-    fun sendAudio(uri: String, duration: Int) {
-        val displayMsg = "🎤 Голосовое сообщение (${duration} сек.)"
-        _messages.update { it + createLocalMeMessage(displayMsg) }
-
+    fun markAsRead() {
         viewModelScope.launch(Dispatchers.IO) {
-            repository.sendSignaling("", "AUDIO", uri)
+            // Реализовать метод в MessageDao: update messages set isRead = 1 where chatId = :partnerHash
         }
     }
-
-    /**
-     * Планирование отправки сообщения.
-     */
-    fun scheduleMessage(text: String, time: String) {
-        val infoMsg = "⏰ Запланировано на $time: $text"
-        _messages.update { it + createLocalMeMessage(infoMsg) }
-        
-        // Логика планировщика (WorkManager или внутренний сервис)
-    }
-
-    private fun createLocalMeMessage(text: String) = Message(
-        id = UUID.randomUUID().toString(),
-        senderId = repository.getMyId(),
-        text = text,
-        timestamp = System.currentTimeMillis(),
-        isMe = true
-    )
 
     override fun onCleared() {
-        repository.removeListener(listener)
+        repository.removeListener(p2pListener)
         super.onCleared()
     }
 }
