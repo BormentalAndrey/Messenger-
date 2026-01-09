@@ -4,11 +4,8 @@ import android.app.Application
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.kakdela.p2p.data.IdentityRepository
+import com.kakdela.p2p.ui.ChatViewModel // ИМПОРТ ИЗ UI ПАКЕТА ОБЯЗАТЕЛЕН
 
-/**
- * Фабрика для создания ChatViewModel с внедрением необходимых зависимостей.
- * Мы используем Application для обеспечения работы WebRTC и доступа к файловой системе.
- */
 class ChatViewModelFactory(
     private val repository: IdentityRepository,
     private val application: Application
@@ -16,12 +13,10 @@ class ChatViewModelFactory(
 
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return when {
-            modelClass.isAssignableFrom(ChatViewModel::class.java) -> {
-                // Создаем ChatViewModel, передавая репозиторий и контекст приложения
-                ChatViewModel(repository, application) as T
-            }
-            else -> throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
+        if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
+            // AndroidViewModel обычно принимает Application первым параметром
+            return ChatViewModel(application, repository) as T
         }
+        throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
     }
 }
