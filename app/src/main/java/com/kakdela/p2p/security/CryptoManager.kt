@@ -3,7 +3,10 @@ package com.kakdela.p2p.security
 import android.content.Context
 import android.util.Base64
 import android.util.Log
-import com.google.crypto.tink.*
+import com.google.crypto.tink.KeysetHandle
+import com.google.crypto.tink.CleartextKeysetHandle
+import com.google.crypto.tink.JsonKeysetReader
+import com.google.crypto.tink.JsonKeysetWriter
 import com.google.crypto.tink.hybrid.HybridConfig
 import com.google.crypto.tink.hybrid.HybridDecrypt
 import com.google.crypto.tink.hybrid.HybridEncrypt
@@ -20,7 +23,6 @@ object CryptoManager {
 
     private var myEncryptKeyset: KeysetHandle? = null
     private var mySignKeyset: KeysetHandle? = null
-
     private val peerPublicKeys = mutableMapOf<String, String>()
 
     init {
@@ -34,17 +36,11 @@ object CryptoManager {
 
     fun generateKeysIfNeeded(context: Context) {
         if (myEncryptKeyset == null || mySignKeyset == null) {
-            myEncryptKeyset =
-                KeysetHandle.generateNew(HybridKeyTemplates.ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM)
-
-            mySignKeyset =
-                KeysetHandle.generateNew(SignatureKeyTemplates.ECDSA_P256)
-
+            myEncryptKeyset = KeysetHandle.generateNew(HybridKeyTemplates.ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM)
+            mySignKeyset = KeysetHandle.generateNew(SignatureKeyTemplates.ECDSA_P256)
             saveKeys(context)
         }
     }
-
-    // ================= SIGN =================
 
     fun sign(data: ByteArray): ByteArray =
         try {
@@ -56,13 +52,12 @@ object CryptoManager {
     fun verify(signature: ByteArray, data: ByteArray, pubKeyStr: String): Boolean =
         try {
             val handle = CleartextKeysetHandle.read(JsonKeysetReader.withString(pubKeyStr))
-            handle.getPrimitive(PublicKeyVerify::class.java).verify(signature, data)
+            val verifier = handle.getPrimitive(PublicKeyVerify::class.java)
+            verifier.verify(signature, data)
             true
         } catch (e: Exception) {
             false
         }
-
-    // ================= ENCRYPT =================
 
     fun encryptMessage(message: String, peerPublicKey: String): String =
         try {
@@ -83,8 +78,6 @@ object CryptoManager {
             "[Ошибка дешифрования]"
         }
 
-    // ================= KEYS =================
-
     fun getMyPublicKeyStr(): String =
         try {
             val stream = ByteArrayOutputStream()
@@ -98,10 +91,7 @@ object CryptoManager {
         peerPublicKeys[peerHash] = key
     }
 
-    fun getPeerPublicKey(peerHash: String): String? =
-        peerPublicKeys[peerHash]
-
-    // ================= STORAGE =================
+    fun getPeerPublicKey(peerHash: String): String? = peerPublicKeys[peerHash]
 
     private fun saveKeys(context: Context) {
         val prefs = context.getSharedPreferences("crypto_keys", Context.MODE_PRIVATE)
@@ -112,9 +102,17 @@ object CryptoManager {
         }
     }
 
+    fun loadKeys(context: Context) {
+        val prefs = context.getSharedPreferences("crypto_keys", Context.MODE_PRIVATE)
+        prefs.getString("enc_key", null)?.let { myEncryptKeyset = readKey(it) }
+        prefs.getString("sign_key", null)?.let { mySignKeyset = readKey(it) }
+    }
+
     private fun writeKey(handle: KeysetHandle?): String {
         val stream = ByteArrayOutputStream()
         CleartextKeysetHandle.write(handle, JsonKeysetWriter.withOutputStream(stream))
         return stream.toString("UTF-8")
     }
+
+    private fun readKey(str: String): KeysetHandle = CleartextKeysetHandle.read(JsonKeysetReader.withString(str))
 }
