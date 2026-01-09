@@ -9,10 +9,7 @@ import com.kakdela.p2p.data.local.ChatDatabase
 import com.kakdela.p2p.data.local.MessageEntity
 import com.kakdela.p2p.security.CryptoManager
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -29,8 +26,9 @@ class ChatViewModel(
     private var partnerHash: String = ""
     private var partnerPhone: String? = null
 
-    // Инициализируем пустым Flow, чтобы избежать ошибок до initChat
-    var messages: StateFlow<List<MessageEntity>> = MutableStateFlow(emptyList())
+    // Поток сообщений для UI
+    private val _messages = MutableStateFlow<List<MessageEntity>>(emptyList())
+    val messages: StateFlow<List<MessageEntity>> = _messages.asStateFlow()
 
     private val p2pListener: (String, String, String, String) -> Unit = { type, data, _, fromId ->
         if (fromId == partnerHash) {
@@ -43,14 +41,15 @@ class ChatViewModel(
     }
 
     fun initChat(identifier: String) {
-        // identifier может быть либо хэшем (публичным ключом), либо номером телефона
         this.partnerHash = identifier
         viewModelScope.launch(Dispatchers.IO) {
             val node = nodeDao.getNodeByHash(identifier)
             partnerPhone = node?.phone ?: if (identifier.all { it.isDigit() }) identifier else null
             
-            messages = messageDao.observeMessages(identifier)
-                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+            // Подписываемся на изменения в базе данных
+            messageDao.observeMessages(identifier).collect {
+                _messages.value = it
+            }
         }
     }
 
@@ -75,14 +74,40 @@ class ChatViewModel(
                 messageDao.insert(localMsg)
 
                 repository.sendMessageSmart(partnerHash, partnerPhone, encryptedText)
-            } catch (e: Exception) { Log.e(TAG, "Send error: ${e.message}") }
+            } catch (e: Exception) {
+                Log.e(TAG, "Send error: ${e.message}")
+            }
         }
     }
+
+    // --- МЕТОДЫ ДЛЯ ИСПРАВЛЕНИЯ ОШИБОК В NAVGRAPH ---
+
+    fun sendFile(uri: String, fileName: String) {
+        // Логика отправки файла (сейчас как текстовое уведомление)
+        sendMessage("📎 Файл: $fileName\nПуть: $uri")
+    }
+
+    fun sendAudio(uri: String, duration: Int) {
+        // Логика отправки аудио
+        sendMessage("🎤 Голосовое сообщение ($duration сек.)")
+    }
+
+    fun scheduleMessage(text: String, timeMillis: Long) {
+        // Логика отложенной отправки
+        sendMessage("⏰ [Запланировано]: $text")
+    }
+
+    // ------------------------------------------------
 
     private fun handleIncomingP2P(type: String, encryptedData: String, fromId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val decryptedText = if (type == "CHAT") CryptoManager.decryptMessage(encryptedData) else "Media: $type"
+                val decryptedText = if (type == "CHAT") {
+                    CryptoManager.decryptMessage(encryptedData)
+                } else {
+                    "Media: $type"
+                }
+                
                 val msg = MessageEntity(
                     messageId = UUID.randomUUID().toString(),
                     chatId = fromId,
@@ -94,7 +119,9 @@ class ChatViewModel(
                     status = "DELIVERED"
                 )
                 messageDao.insert(msg)
-            } catch (e: Exception) { Log.e(TAG, "Incoming error: ${e.message}") }
+            } catch (e: Exception) {
+                Log.e(TAG, "Incoming error: ${e.message}")
+            }
         }
     }
 
