@@ -15,6 +15,7 @@ import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -28,15 +29,18 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.kakdela.p2p.data.IdentityRepository
-import com.kakdela.p2p.data.Message // Убедитесь, что этот класс существует для UI
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen 
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
-import com.kakdela.p2p.ui.ChatViewModel // Импорт ViewModel
+import com.kakdela.p2p.ui.ChatViewModel
 
+/**
+ * Центральный граф навигации приложения.
+ * Управляет переходами между P2P чатами, развлечениями и авторизацией.
+ */
 @Composable
 fun NavGraph(
     navController: NavHostController,
@@ -46,22 +50,31 @@ fun NavGraph(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
+    // Определяем, нужно ли показывать BottomBar (только на главных экранах)
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
     )
 
     Scaffold(
-        bottomBar = { if (showBottomBar) AppBottomBar(currentRoute, navController) }
+        bottomBar = { if (showBottomBar) AppBottomBar(currentRoute, navController) },
+        containerColor = Color.Black
     ) { paddingValues ->
         NavHost(
             navController = navController,
             startDestination = Routes.SPLASH,
-            modifier = Modifier.padding(paddingValues).background(Color.Black)
+            modifier = Modifier
+                .padding(paddingValues)
+                .background(Color.Black)
         ) {
+            // --- СЕКЦИЯ ЗАПУСКА И АВТОРИЗАЦИИ ---
+            
             composable(Routes.SPLASH) {
                 SplashScreen {
-                    val nextRoute = if (identityRepository.getMyId().isNotEmpty()) Routes.CHATS else Routes.CHOICE
-                    navController.navigate(nextRoute) { popUpTo(Routes.SPLASH) { inclusive = true } }
+                    // Проверка: если ID уже сгенерирован (уже входил), идем в чаты
+                    val nextRoute = if (identityRepository.getMyId().length > 10) Routes.CHATS else Routes.CHOICE
+                    navController.navigate(nextRoute) {
+                        popUpTo(Routes.SPLASH) { inclusive = true }
+                    }
                 }
             }
 
@@ -74,27 +87,33 @@ fun NavGraph(
 
             composable(Routes.AUTH_EMAIL) {
                 EmailAuthScreen(identityRepository) {
-                    navController.navigate(Routes.CHATS) { popUpTo(Routes.CHOICE) { inclusive = true } }
+                    navController.navigate(Routes.CHATS) {
+                        popUpTo(Routes.CHOICE) { inclusive = true }
+                    }
                 }
             }
 
             composable(Routes.AUTH_PHONE) {
                 PhoneAuthScreen(identityRepository) {
-                    navController.navigate(Routes.CHATS) { popUpTo(Routes.CHOICE) { inclusive = true } }
+                    navController.navigate(Routes.CHATS) {
+                        popUpTo(Routes.CHOICE) { inclusive = true }
+                    }
                 }
             }
 
-            composable(Routes.CHATS) { ChatsListScreen(navController, identityRepository) }
+            // --- СЕКЦИЯ ЧАТОВ ---
+
+            composable(Routes.CHATS) { 
+                ChatsListScreen(navController, identityRepository) 
+            }
 
             composable(Routes.CONTACTS) {
                 ContactsScreen(
                     identityRepository = identityRepository,
                     onContactClick = { contact ->
-                        // ИСПРАВЛЕНИЕ: Безопасный вызов для nullable String
-                        contact.publicKey?.let { targetId ->
-                            if (targetId.isNotEmpty()) {
-                                navController.navigate("chat/$targetId")
-                            }
+                        // Переход в чат по userHash (Security ID из api.php)
+                        if (contact.userHash.isNotEmpty()) {
+                            navController.navigate("chat/${contact.userHash}")
                         }
                     }
                 )
@@ -107,22 +126,23 @@ fun NavGraph(
                 val chatId = entry.arguments?.getString("chatId") ?: return@composable
                 val context = LocalContext.current.applicationContext as Application
                 
-                // Используем исправленную фабрику
                 val vm: ChatViewModel = viewModel(
                     factory = ChatViewModelFactory(identityRepository, context)
                 )
 
                 LaunchedEffect(chatId) { vm.initChat(chatId) }
+                
                 val messagesEntities by vm.messages.collectAsState()
 
-                // Маппинг из БД (MessageEntity) в UI (Message)
+                // Конвертируем сущности БД в модель для UI (Message)
                 val uiMessages = messagesEntities.map { entity ->
                     com.kakdela.p2p.data.Message(
                         id = entity.messageId,
                         text = entity.text,
                         senderId = entity.senderId,
                         timestamp = entity.timestamp,
-                        isMe = entity.isMe
+                        isMe = entity.isMe,
+                        status = entity.status
                     )
                 }
 
@@ -131,25 +151,26 @@ fun NavGraph(
                     messages = uiMessages, 
                     identityRepository = identityRepository,
                     onSendMessage = { text -> vm.sendMessage(text) },
-                    onSendFile = { uri, fileName -> vm.sendFile(uri.toString(), fileName.toString()) },
-                    onSendAudio = { uri, duration -> vm.sendAudio(uri.toString(), duration.toInt()) },
-                    onScheduleMessage = { text, time -> vm.scheduleMessage(text, time.toString()) },
+                    onSendFile = { uri, name -> vm.sendFile(uri.toString(), name.toString()) },
+                    onSendAudio = { uri, dur -> vm.sendAudio(uri.toString(), dur.toInt()) },
                     onBack = { navController.popBackStack() }
                 )
             }
+
+            // --- СЕКЦИЯ ДОСУГА И СЕРВИСОВ ---
 
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
             composable(Routes.MUSIC) { MusicPlayerScreen() }
-            composable(Routes.CALCULATOR) { CalculatorScreen() }
+            composable(Routes.TEXT_EDITOR) { TextEditorScreen(navController) }
+            
+            // Игры
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
-            composable(Routes.JEWELS) { JewelsBlastScreen() }
-            composable(Routes.SUDOKU) { SudokuScreen() }
-            composable(Routes.TEXT_EDITOR) { TextEditorScreen(navController) }
 
+            // Онлайн-сервисы (требуют проверки интернета)
             composable(
                 route = "webview/{url}/{title}",
                 arguments = listOf(
@@ -162,11 +183,16 @@ fun NavGraph(
                 if (isOnline) WebViewScreen(url, title, navController) else NoInternetScreen()
             }
 
-            composable(Routes.AI_CHAT) { if (isOnline) AiChatScreen() else NoInternetScreen() }
+            composable(Routes.AI_CHAT) { 
+                if (isOnline) AiChatScreen() else NoInternetScreen() 
+            }
         }
     }
 }
 
+/**
+ * Компонент нижней панели навигации.
+ */
 @Composable
 private fun AppBottomBar(currentRoute: String?, navController: NavHostController) {
     NavigationBar(containerColor = Color(0xFF0A0A0A)) {
@@ -201,17 +227,23 @@ private fun AppBottomBar(currentRoute: String?, navController: NavHostController
     }
 }
 
+/**
+ * Отслеживание состояния интернет-подключения в реальном времени.
+ */
 @Composable
 fun rememberIsOnline(): State<Boolean> {
     val context = LocalContext.current
-    val status = remember { mutableStateOf(true) }
+    val status = rememberSaveable { mutableStateOf(true) }
+    
     DisposableEffect(context) {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) { status.value = true }
             override fun onLost(network: Network) { status.value = false }
         }
-        val request = NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build()
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
         cm.registerNetworkCallback(request, callback)
         onDispose { cm.unregisterNetworkCallback(callback) }
     }
@@ -220,7 +252,10 @@ fun rememberIsOnline(): State<Boolean> {
 
 @Composable
 fun NoInternetScreen() {
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black), 
+        contentAlignment = Alignment.Center
+    ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Офлайн-режим", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(12.dp))
