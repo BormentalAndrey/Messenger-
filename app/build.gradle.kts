@@ -86,6 +86,7 @@ android {
     }
 
     composeOptions {
+        // Рекомендуется использовать 1.5.11 или 1.5.14 для Kotlin 1.9.2x
         kotlinCompilerExtensionVersion = "1.5.11"
     }
 
@@ -97,7 +98,8 @@ android {
                 "META-INF/INDEX.LIST",
                 "META-INF/NOTICE*",
                 "META-INF/LICENSE*",
-                "META-INF/kotlinx-coroutines-core.kotlin_module"
+                "META-INF/kotlinx-coroutines-core.kotlin_module",
+                "META-INF/tink/**" // Добавлено для исключения конфликтов Tink
             )
             jniLibs.pickFirsts.add("**/*.so")
         }
@@ -117,6 +119,7 @@ dependencies {
     // Core & Lifecycle
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2") // ДОБАВЛЕНО для работы с viewModel() в NavGraph
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.appcompat:appcompat:1.7.0")
 
@@ -152,8 +155,8 @@ dependencies {
     implementation("com.google.firebase:firebase-storage-ktx")
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
 
-    // Security Crypto (обновлено до стабильной версии)
-    implementation("com.google.crypto.tink:tink-android:1.9.0")
+    // Security Crypto - ОБНОВЛЕНО до 1.12.0 для исправления HybridDecrypt/Signature ошибок
+    implementation("com.google.crypto.tink:tink-android:1.12.0")
 
     // Media3
     val media3Version = "1.4.1"
