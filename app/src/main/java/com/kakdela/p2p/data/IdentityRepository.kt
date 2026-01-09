@@ -26,7 +26,7 @@ class IdentityRepository(private val context: Context) {
     private val listeners = CopyOnWriteArrayList<(String, String, String, String) -> Unit>()
     
     private val wifiPeers = mutableMapOf<String, String>() // Hash -> IP
-    private val swarmPeers = mutableMapOf<String, String>() // Hash -> IP (найденные через рой)
+    private val swarmPeers = mutableMapOf<String, String>() // Hash -> IP
     
     private val db = ChatDatabase.getDatabase(context)
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
@@ -53,34 +53,58 @@ class IdentityRepository(private val context: Context) {
 
     // --- ГЛАВНАЯ ЛОГИКА ОТПРАВКИ ---
 
-    /**
-     * Каскадная отправка сообщения: Wi-Fi -> P2P Swarm -> Server -> SMS
-     */
     fun sendMessageSmart(targetHash: String, targetPhone: String?, message: String) = scope.launch {
         // 1. Поиск в локальном Wi-Fi
         wifiPeers[targetHash]?.let { ip ->
             if (sendUdpInternal(ip, "CHAT", message)) return@launch
         }
 
-        // 2. Роевой поиск (опрос "мини-серверов" вокруг)
+        // 2. Роевой поиск
         val swarmIp = searchInSwarm(targetHash).await()
         if (swarmIp != null) {
             if (sendUdpInternal(swarmIp, "CHAT", message)) return@launch
         }
 
-        // 3. Обращение к центральному серверу
+        // 3. Сервер
         val serverPeer = findPeerOnServer(targetHash).await()
         if (serverPeer?.ip != null && serverPeer.ip != "0.0.0.0") {
             if (sendUdpInternal(serverPeer.ip, "CHAT", message)) return@launch
         }
 
-        // 4. Резервный канал SMS
+        // 4. SMS
         if (!targetPhone.isNullOrBlank()) {
             sendAsSms(targetPhone, message)
         }
     }
 
-    // --- WI-FI DISCOVERY (NSD) ---
+    // --- МЕТОДЫ СОВМЕСТИМОСТИ (BRIDGES) ---
+    
+    /** Используется WebRTC и FileTransfer для прямой отправки */
+    fun sendSignaling(targetIp: String, type: String, data: String) {
+        if (targetIp.isNotBlank() && targetIp != "0.0.0.0") {
+            scope.launch { sendUdpInternal(targetIp, type, data) }
+        } else {
+            // Если IP неизвестен, пробуем найти через рой (медленнее)
+             scope.launch {
+                 // Здесь упрощенная логика: в реальности нужно знать hash получателя для signaling
+                 Log.w(TAG, "sendSignaling: IP is empty, signaling might fail without TargetHash")
+             }
+        }
+    }
+
+    fun generateUserHash(phone: String, email: String, pass: String): String {
+        return sha256("$phone:$email:$pass")
+    }
+
+    fun savePeerPublicKey(hash: String, key: String) {
+        CryptoManager.savePeerPublicKey(hash, key)
+    }
+
+    suspend fun findPeerInDHT(hash: String): UserPayload? {
+        return findPeerOnServer(hash).await()
+    }
+
+    // --- WI-FI DISCOVERY ---
 
     private fun registerInWifi() {
         val serviceInfo = NsdServiceInfo().apply {
@@ -97,7 +121,10 @@ class IdentityRepository(private val context: Context) {
             override fun onServiceFound(service: NsdServiceInfo) {
                 nsdManager.resolveService(service, object : NsdManager.ResolveListener {
                     override fun onServiceResolved(info: NsdServiceInfo) {
-                        wifiPeers[info.serviceName] = info.host.hostAddress ?: ""
+                        val host = info.host.hostAddress
+                        if (host != null) {
+                            wifiPeers[info.serviceName] = host
+                        }
                     }
                     override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {}
                 })
@@ -109,18 +136,18 @@ class IdentityRepository(private val context: Context) {
         })
     }
 
-    // --- РОЕВОЙ ПОИСК (GOSSIP) ---
+    // --- РОЕВОЙ ПОИСК ---
 
     private fun searchInSwarm(targetHash: String): Deferred<String?> = scope.async {
         val cachedNodes = db.nodeDao().getAllNodes().take(100)
         cachedNodes.forEach { node ->
-            sendUdpInternal(node.ip ?: "", "QUERY_PEER", targetHash)
+            sendUdpInternal(node.ip, "QUERY_PEER", targetHash)
         }
-        delay(2000) // Ожидание ответов от пиров
+        delay(2000)
         return@async swarmPeers[targetHash]
     }
 
-    // --- UDP СЛУШАТЕЛЬ (МИНИ-СЕРВЕР) ---
+    // --- UDP ---
 
     private fun startListening() = scope.launch(Dispatchers.IO) {
         if (isListening) return@launch
@@ -135,7 +162,8 @@ class IdentityRepository(private val context: Context) {
                 val packet = DatagramPacket(buffer, buffer.size)
                 mainSocket?.receive(packet)
                 val rawData = String(packet.data, 0, packet.length)
-                handleIncomingPacket(rawData, packet.address.hostAddress ?: "")
+                val senderIp = packet.address.hostAddress ?: ""
+                handleIncomingPacket(rawData, senderIp)
             }
         } catch (e: Exception) { isListening = false }
     }
@@ -146,7 +174,7 @@ class IdentityRepository(private val context: Context) {
             val type = json.optString("type")
             
             when (type) {
-                "QUERY_PEER" -> { // Кто-то ищет пользователя через наш кэш
+                "QUERY_PEER" -> {
                     val target = json.getString("data")
                     scope.launch {
                         db.nodeDao().getNodeByHash(target)?.let {
@@ -160,31 +188,30 @@ class IdentityRepository(private val context: Context) {
                     val data = JSONObject(json.getString("data"))
                     swarmPeers[data.getString("hash")] = data.getString("ip")
                 }
-                "CHAT" -> {
+                "CHAT", "WEBRTC_SIGNAL" -> {
                     val senderHash = json.getString("from")
                     val pubKey = json.getString("pubkey")
                     val signature = Base64.decode(json.getString("signature"), Base64.NO_WRAP)
                     val dataToVerify = JSONObject(rawData).apply { remove("signature") }.toString().toByteArray()
 
                     if (CryptoManager.verify(signature, dataToVerify, pubKey)) {
+                        // Сохраняем ключ собеседника
+                        CryptoManager.savePeerPublicKey(senderHash, pubKey)
                         listeners.forEach { it(type, json.getString("data"), fromIp, senderHash) }
                     }
                 }
             }
-        } catch (e: Exception) { }
+        } catch (e: Exception) { Log.e(TAG, "Packet parse error", e) }
     }
-
-    // --- СЕРВЕР И SMS ---
 
     private fun findPeerOnServer(hash: String): Deferred<UserPayload?> = scope.async {
         try {
             val response = api.getAllNodes()
             response.users?.let { users ->
-                // Сохраняем полученные узлы в локальный кэш "мини-сервера"
                 val entities = users.map { 
                     NodeEntity(userHash = it.hash, ip = it.ip, port = it.port, publicKey = it.publicKey, lastSeen = System.currentTimeMillis()) 
                 }
-                db.nodeDao().insertNodes(entities)
+                db.nodeDao().updateCache(entities)
                 return@async users.find { it.hash == hash }
             }
         } catch (e: Exception) { Log.e(TAG, "Server error: ${e.message}") }
@@ -197,9 +224,8 @@ class IdentityRepository(private val context: Context) {
         } catch (e: Exception) { Log.e(TAG, "SMS failed") }
     }
 
-    // --- ВСПОМОГАТЕЛЬНЫЕ ---
-
     private suspend fun sendUdpInternal(ip: String, type: String, data: String): Boolean = withContext(Dispatchers.IO) {
+        if (ip.isBlank() || ip == "0.0.0.0") return@withContext false
         try {
             val json = JSONObject().apply {
                 put("type", type); put("data", data); put("from", getMyId())
@@ -211,7 +237,10 @@ class IdentityRepository(private val context: Context) {
             val bytes = json.toString().toByteArray()
             DatagramSocket().use { it.send(DatagramPacket(bytes, bytes.size, InetAddress.getByName(ip), 8888)) }
             true
-        } catch (e: Exception) { false }
+        } catch (e: Exception) { 
+            Log.e(TAG, "UDP send failed to $ip: ${e.message}")
+            false 
+        }
     }
 
     private fun startKeepAlive() {
