@@ -23,7 +23,7 @@ class AuthManager(private val context: Context) {
     private val TAG = "AuthManager"
     private val nodeDao = ChatDatabase.getDatabase(context).nodeDao()
     
-    // Используем тот же PEPPER, что и в IdentityRepository для консистентности хэшей
+    // Секретный "перец" для анонимизации номеров телефонов (согласно ТЗ)
     private val PEPPER = "7fb8a1d2c3e4f5a6"
 
     private val api: MyServerApi by lazy {
@@ -35,8 +35,8 @@ class AuthManager(private val context: Context) {
     }
 
     /**
-     * 🔐 Универсальный метод входа/регистрации (регистрация личности в P2P сети).
-     * В P2P авторизация — это подтверждение владения ключами и хэшем.
+     * Универсальный метод входа/регистрации.
+     * Реализует логику создания P2P-личности и её анонса на Discovery-сервер.
      */
     suspend fun registerOrLogin(email: String, password: String, phone: String): Boolean =
         withContext(Dispatchers.IO) {
@@ -44,18 +44,18 @@ class AuthManager(private val context: Context) {
                 val passHash = sha256(password)
                 val pubKey = CryptoManager.getMyPublicKeyStr()
                 
-                // 1. Генерируем Security Hash (ID пользователя)
+                // 1. Генерируем Security Hash (основной ID пользователя в системе)
                 val securityHash = sha256("$phone|$email|$passHash")
                 
-                // 2. Генерируем Phone Discovery Hash (для поиска контактами)
+                // 2. Генерируем Phone Discovery Hash (для сопоставления контактов)
                 val cleanPhone = phone.replace(Regex("[^0-9]"), "").takeLast(10)
                 val phoneHash = sha256(cleanPhone + PEPPER)
 
-                // 3. Подготовка данных для сервера (соответствует ТЗ и api.php)
+                // 3. Подготовка полезной нагрузки (UserPayload)
                 val payload = UserPayload(
                     hash = securityHash,
                     phone_hash = phoneHash,
-                    ip = "0.0.0.0", // Сервер сам определит IP отправителя
+                    ip = "0.0.0.0", // Сервер определит реальный IP при получении запроса
                     port = 8888,
                     publicKey = pubKey,
                     phone = phone,
@@ -63,36 +63,40 @@ class AuthManager(private val context: Context) {
                     lastSeen = System.currentTimeMillis()
                 )
 
+                // 4. Упаковка в Wrapper (Имена параметров исправлены согласно ошибкам компилятора)
                 val wrapper = UserRegistrationWrapper(
-                    securityHash = securityHash,
-                    userPayload = payload
+                    hash = securityHash, // Исправлено с securityHash на hash
+                    data = payload       // Исправлено с userPayload на data
                 )
 
-                // 4. Отправка на сервер через api.php (action=add_user)
+                // 5. Вызов API (action=add_user в api.php)
                 val response = api.announceSelf(payload = wrapper)
 
                 if (response.success) {
+                    // Кэшируем данные о себе в локальную БД для работы в оффлайне
                     saveUserToLocalDb(payload, email, passHash)
-                    // Сохраняем состояние авторизации в SharedPreferences
+                    
+                    // Сохраняем сессию локально
                     context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
                         .edit()
                         .putString("my_security_hash", securityHash)
                         .putBoolean("is_logged_in", true)
                         .apply()
                     
-                    Log.d(TAG, "Auth success for: $securityHash")
+                    Log.d(TAG, "Successfully authenticated: $securityHash")
                     return@withContext true
+                } else {
+                    Log.e(TAG, "Server returned failure for registration")
+                    false
                 }
-
-                false
             } catch (e: Exception) {
-                Log.e(TAG, "Auth failed: ${e.message}")
+                Log.e(TAG, "Auth exception: ${e.message}")
                 false
             }
         }
 
     /**
-     * 💾 Кэширование профиля в локальную БД Room.
+     * Сохранение профиля текущего пользователя в Room.
      */
     private suspend fun saveUserToLocalDb(
         node: UserPayload,
@@ -102,7 +106,7 @@ class AuthManager(private val context: Context) {
         nodeDao.insert(
             NodeEntity(
                 userHash = node.hash,
-                phone_hash = node.phone_hash ?: "",
+                phone_hash = node.phone_hash ?: "", // Имя параметра соответствует NodeEntity
                 email = email,
                 passwordHash = passHash,
                 phone = node.phone ?: "",
