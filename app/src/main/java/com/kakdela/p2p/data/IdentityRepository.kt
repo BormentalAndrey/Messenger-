@@ -1,14 +1,11 @@
 package com.kakdela.p2p.data
 
 import android.content.Context
-import android.net.wifi.WifiManager
-import android.text.format.Formatter
 import android.util.Base64
 import android.util.Log
 import com.kakdela.p2p.api.MyServerApi
 import com.kakdela.p2p.api.UserPayload
 import com.kakdela.p2p.data.local.ChatDatabase
-import com.kakdela.p2p.data.local.NodeEntity
 import com.kakdela.p2p.security.CryptoManager
 import kotlinx.coroutines.*
 import org.json.JSONObject
@@ -20,7 +17,6 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
-import kotlin.math.abs
 
 class IdentityRepository(private val context: Context) {
 
@@ -42,13 +38,9 @@ class IdentityRepository(private val context: Context) {
     private var mainSocket: DatagramSocket? = null
 
     init {
-        CryptoManager.generateKeysIfNeeded(context)
+        // Инициализация ключей при старте
+        CryptoManager.init(context)
         startMainSocket()
-    }
-
-    fun stopP2PNode() {
-        scope.cancel()
-        mainSocket?.close()
     }
 
     fun getMyId(): String = sha256(CryptoManager.getMyPublicKeyStr())
@@ -58,41 +50,58 @@ class IdentityRepository(private val context: Context) {
     fun addListener(listener: (String, String, String, String) -> Unit) = listeners.add(listener)
     fun removeListener(listener: (String, String, String, String) -> Unit) = listeners.remove(listener)
 
-    fun sendSignaling(targetIp: String, type: String, data: String) = scope.launch {
-        val json = JSONObject().apply {
-            put("type", type)
-            put("data", data)
-            put("from", getMyId())
-            put("pubkey", getMyPublicKeyStr())
-            put("timestamp", System.currentTimeMillis())
-            put("signature", sign(JSONObject().apply { put("type", type); put("data", data) }))
+    /**
+     * Поиск пользователя в DHT/Сети. Исправлен Type Mismatch.
+     */
+    fun findPeerInDHT(hash: String): Deferred<UserPayload?> = scope.async {
+        try {
+            val response = api.findPeer(payload = mapOf("hash" to hash))
+            response.userNode
+        } catch (e: Exception) {
+            Log.e(TAG, "DHT Lookup error: ${e.message}")
+            null
         }
-        sendUdp(targetIp, json.toString())
     }
 
-    suspend fun findPeerInDHT(hash: String): UserPayload? {
-        return try {
-            api.findPeer(mapOf("hash" to hash)).userNode
-        } catch (_: Exception) { null }
+    /**
+     * Генерация хеша пользователя. 
+     * Теперь принимает 3 аргумента для полной совместимости с EmailAuthScreen.
+     */
+    fun generateUserHash(phone: String, email: String, pass: String): String {
+        return sha256("$phone:$email:$pass")
     }
 
-    fun generateUserHash(email: String, phone: String): String =
-        sha256("$email:$phone")
+    /**
+     * Отправка сигнальных сообщений (WebRTC/Status).
+     */
+    fun sendSignaling(targetIp: String, type: String, data: String) = scope.launch {
+        try {
+            val json = JSONObject().apply {
+                put("type", type)
+                put("data", data)
+                put("from", getMyId())
+                put("pubkey", getMyPublicKeyStr())
+                put("timestamp", System.currentTimeMillis())
+            }
+            // Добавляем подпись
+            json.put("signature", sign(json))
+            sendUdp(targetIp, json.toString())
+        } catch (e: Exception) {
+            Log.e(TAG, "Signaling failed", e)
+        }
+    }
 
-    private fun sha256(input: String): String =
-        MessageDigest.getInstance("SHA-256").digest(input.toByteArray()).joinToString("") { "%02x".format(it) }
-
-    private suspend fun sendUdp(ip: String, message: String, broadcast: Boolean = false): Boolean =
+    private suspend fun sendUdp(ip: String, message: String): Boolean =
         withContext(Dispatchers.IO) {
             try {
+                if (ip == "0.0.0.0" || ip.isBlank()) return@withContext false
                 DatagramSocket().use { socket ->
-                    socket.broadcast = broadcast
                     val data = message.toByteArray()
                     val packet = DatagramPacket(data, data.size, InetAddress.getByName(ip), 8888)
                     socket.send(packet)
                 }
                 true
-            } catch (_: Exception) { false }
+            } catch (e: Exception) { false }
         }
 
     private fun startMainSocket() = scope.launch {
@@ -101,14 +110,23 @@ class IdentityRepository(private val context: Context) {
                 reuseAddress = true
                 bind(InetSocketAddress(8888))
             }
+            // Здесь должен быть цикл receive(), если планируется слушать входящие UDP
         } catch (e: Exception) {
             Log.e(TAG, "UDP bind failed", e)
         }
     }
 
     private fun sign(json: JSONObject): String {
-        val clean = JSONObject(json.toString()).apply { remove("signature") }
-        val sig = CryptoManager.sign(clean.toString().toByteArray())
+        val sig = CryptoManager.sign(json.toString().toByteArray())
         return Base64.encodeToString(sig, Base64.NO_WRAP)
+    }
+
+    private fun sha256(input: String): String =
+        MessageDigest.getInstance("SHA-256").digest(input.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+
+    fun onDestroy() {
+        scope.cancel()
+        mainSocket?.close()
     }
 }
