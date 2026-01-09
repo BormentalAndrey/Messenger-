@@ -19,15 +19,17 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 class IdentityRepository(private val context: Context) {
     private val TAG = "IdentityRepository"
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val listeners = CopyOnWriteArrayList<(String, String, String, String) -> Unit>()
     
-    // Периодическая задача для обновления статуса на сервере
+    // Используем SupervisorJob, чтобы ошибка в одной задаче не убила весь репозиторий
+    private val repositoryJob = SupervisorJob()
+    private val scope = CoroutineScope(repositoryJob + Dispatchers.IO)
+    
+    private val listeners = CopyOnWriteArrayList<(String, String, String, String) -> Unit>()
     private var keepAliveJob: Job? = null
 
     private val api: MyServerApi by lazy {
         Retrofit.Builder()
-            .baseUrl("http://kakdela.infinityfree.me/") // Убедитесь, что адрес совпадает с вашим хостингом
+            .baseUrl("http://kakdela.infinityfree.me/")
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(MyServerApi::class.java)
@@ -39,65 +41,73 @@ class IdentityRepository(private val context: Context) {
     init {
         CryptoManager.init(context)
         startListening()
-        startKeepAlive() // Автоматическая регистрация при старте
+        startKeepAlive()
     }
 
-    // --- ИДЕНТИФИКАЦИЯ ---
+    // --- ГЕНЕРАЦИЯ ИДЕНТИФИКАТОРОВ ---
 
     fun getMyId(): String = sha256(CryptoManager.getMyPublicKeyStr())
     
     fun getMyPublicKeyStr(): String = CryptoManager.getMyPublicKeyStr()
 
+    /**
+     * Генерирует хеш для регистрации (номер + почта + пароль)
+     */
     fun generateUserHash(phone: String, email: String, pass: String): String = 
-        sha256("$phone:$email:$pass") //
+        sha256("$phone:$email:$pass")
 
-    // --- СЕРВЕРНОЕ ВЗАИМОДЕЙСТВИЕ ---
+    // --- РАБОТА С СЕРВЕРОМ (PHP API) ---
 
     /**
-     * Поддержание "онлайн" статуса. Отправляет данные на сервер каждые 2 минуты.
-     * Это обновляет ваш IP в базе данных сервера для других пиров.
+     * Регистрация и обновление IP. 
+     * Соответствует PHP: case 'add_user'
      */
     private fun startKeepAlive() {
         keepAliveJob?.cancel()
         keepAliveJob = scope.launch {
             while (isActive) {
                 try {
-                    val payload = UserPayload(
+                    val myPayload = UserPayload(
                         hash = getMyId(),
                         publicKey = getMyPublicKeyStr(),
-                        port = 8888 // Стандартный порт для UDP
+                        port = 8888,
+                        ip = "0.0.0.0" // Сервер сам подставит реальный IP
                     )
-                    api.announceSelf(payload = payload) // Вызов action=add_user
-                    Log.d(TAG, "Keep-alive: Успешно обновлен статус в сети")
+                    
+                    // Отправляем запрос на index.php?action=add_user
+                    val response = api.announceSelf(payload = myPayload)
+                    if (response.success) {
+                        Log.d(TAG, "Keep-alive: Узел успешно зарегистрирован в БД")
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "Keep-alive error: ${e.message}")
                 }
-                delay(120_000) // 2 минуты
+                delay(180_000) // Раз в 3 минуты
             }
         }
     }
 
     /**
-     * Поиск пира через сервер. Получает список всех узлов и ищет нужный хеш.
-     * Соответствует логике PHP 'list_users'.
+     * Поиск пира. Получает список последних 2500 узлов и фильтрует их.
+     * Соответствует PHP: case 'list_users'
      */
     fun findPeerInDHT(hash: String): Deferred<UserPayload?> = scope.async {
         try {
-            val response = api.getAllNodes() // Получаем список всех
-            val peer = response.users?.find { it.hash == hash } // Ищем в списке
+            val response = api.getAllNodes() // Вызывает action=list_users
+            val foundPeer = response.users?.find { it.hash == hash }
             
-            if (peer != null && peer.ip != null) {
-                // NAT Hole Punching: отправляем пустой пакет для открытия порта
-                sendPing(peer.ip)
+            if (foundPeer?.ip != null) {
+                // Пробивка NAT (UDP Hole Punching)
+                sendRawPing(foundPeer.ip)
             }
-            peer
+            return@async foundPeer
         } catch (e: Exception) {
             Log.e(TAG, "DHT Lookup error: ${e.message}")
             null
         }
     }
 
-    // --- P2P СИГНАЛИНГ (UDP) ---
+    // --- P2P ПЕРЕДАЧА ДАННЫХ (UDP) ---
 
     fun sendSignaling(targetIp: String, type: String, data: String) = scope.launch {
         if (targetIp.isBlank() || targetIp == "0.0.0.0") return@launch
@@ -110,30 +120,32 @@ class IdentityRepository(private val context: Context) {
                 put("timestamp", System.currentTimeMillis())
             }
             
-            // Подпись сообщения для безопасности
-            val sig = CryptoManager.sign(json.toString().toByteArray())
-            json.put("signature", Base64.encodeToString(sig, Base64.NO_WRAP))
+            // Подпись данных приватным ключом устройства
+            val signatureBytes = CryptoManager.sign(json.toString().toByteArray())
+            json.put("signature", Base64.encodeToString(signatureBytes, Base64.NO_WRAP))
 
             val buffer = json.toString().toByteArray()
             withContext(Dispatchers.IO) {
-                val socket = DatagramSocket()
-                val packet = DatagramPacket(buffer, buffer.size, InetAddress.getByName(targetIp), 8888)
-                socket.send(packet)
-                socket.close()
+                DatagramSocket().use { socket ->
+                    val packet = DatagramPacket(
+                        buffer, buffer.size, 
+                        InetAddress.getByName(targetIp), 8888
+                    )
+                    socket.send(packet)
+                }
             }
         } catch (e: Exception) { 
-            Log.e(TAG, "UDP Send error to $targetIp", e) 
+            Log.e(TAG, "UDP Send error", e) 
         }
     }
 
-    private fun sendPing(targetIp: String) {
-        scope.launch {
+    private fun sendRawPing(targetIp: String) {
+        scope.launch(Dispatchers.IO) {
             try {
-                val buffer = "PING".toByteArray()
-                val socket = DatagramSocket()
-                val packet = DatagramPacket(buffer, buffer.size, InetAddress.getByName(targetIp), 8888)
-                socket.send(packet)
-                socket.close()
+                val buf = "PING".toByteArray()
+                DatagramSocket().use { s ->
+                    s.send(DatagramPacket(buf, buf.size, InetAddress.getByName(targetIp), 8888))
+                }
             } catch (e: Exception) { }
         }
     }
@@ -146,51 +158,58 @@ class IdentityRepository(private val context: Context) {
                 bind(InetSocketAddress(8888))
             }
             isListening = true
-            val buffer = ByteArray(8192)
-            while (isListening) {
+            val buffer = ByteArray(16384)
+            
+            while (isListening && isActive) {
                 val packet = DatagramPacket(buffer, buffer.size)
                 mainSocket?.receive(packet)
+                
                 val rawData = String(packet.data, 0, packet.length)
-                handleIncomingPacket(rawData, packet.address.hostAddress ?: "")
+                if (rawData != "PING") {
+                    handleIncomingPacket(rawData, packet.address.hostAddress ?: "")
+                }
             }
         } catch (e: Exception) { 
-            Log.e(TAG, "UDP Listen error", e)
             isListening = false 
+        } finally {
+            mainSocket?.close()
         }
     }
 
     private fun handleIncomingPacket(rawData: String, fromIp: String) {
-        if (rawData == "PING") return // Игнорируем пакеты пробивки порта
-        
         try {
             val json = JSONObject(rawData)
             val pubKey = json.getString("pubkey")
-            val sig = Base64.decode(json.getString("signature"), Base64.NO_WRAP)
+            val signature = Base64.decode(json.getString("signature"), Base64.NO_WRAP)
             
-            // Верификация подписи: гарантирует, что сообщение пришло именно от этого пользователя
-            val dataToVerify = JSONObject(rawData).apply { remove("signature") }.toString().toByteArray()
+            // Подготовка данных для верификации (удаляем поле подписи)
+            val originalData = JSONObject(rawData).apply { remove("signature") }
+                .toString().toByteArray()
 
-            if (CryptoManager.verify(sig, dataToVerify, pubKey)) {
+            if (CryptoManager.verify(signature, originalData, pubKey)) {
+                // Если подпись верна, уведомляем UI через слушателей
                 listeners.forEach { 
                     it(json.getString("type"), json.getString("data"), fromIp, json.getString("from")) 
                 }
             }
         } catch (e: Exception) { 
-            Log.d(TAG, "Received non-JSON or invalid packet from $fromIp")
+            Log.e(TAG, "Packet handling error")
         }
     }
 
-    // --- УПРАВЛЕНИЕ ---
+    // --- УПРАВЛЕНИЕ РЕПОЗИТОРИЕМ ---
 
     fun savePeerPublicKey(hash: String, key: String) {
         CryptoManager.savePeerPublicKey(hash, key)
     }
 
     fun addListener(listener: (String, String, String, String) -> Unit) = listeners.add(listener)
+    
     fun removeListener(listener: (String, String, String, String) -> Unit) = listeners.remove(listener)
 
-    fun stopP2PNode() {
+    fun onDestroy() {
         keepAliveJob?.cancel()
+        repositoryJob.cancel()
         isListening = false
         mainSocket?.close()
     }
