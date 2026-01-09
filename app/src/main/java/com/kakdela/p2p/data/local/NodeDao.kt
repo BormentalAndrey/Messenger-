@@ -5,29 +5,56 @@ import androidx.room.*
 @Dao
 interface NodeDao {
 
+    @Query("SELECT * FROM dht_nodes WHERE userHash = :hash LIMIT 1")
+    suspend fun getNodeByHash(hash: String): NodeEntity?
+
+    @Query("SELECT * FROM dht_nodes WHERE email = :email LIMIT 1")
+    suspend fun getUserByEmail(email: String): NodeEntity?
+
+    /**
+     * Получение списка из 2500 последних активных узлов для роевого поиска.
+     */
+    @Query("SELECT * FROM dht_nodes ORDER BY lastSeen DESC LIMIT 2500")
+    suspend fun getAllNodes(): List<NodeEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(node: NodeEntity)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertNodes(nodes: List<NodeEntity>)
 
     /**
-     * Получение узла по хешу для роевого ответа (Мини-сервер)
+     * Атомарное обновление кэша: вставка новых данных и удаление старых свыше лимита 2500.
      */
-    @Query("SELECT * FROM nodes WHERE userHash = :hash LIMIT 1")
-    suspend fun getNodeByHash(hash: String): NodeEntity?
+    @Transaction
+    suspend fun updateCache(nodes: List<NodeEntity>) {
+        insertNodes(nodes)
+        trimCache()
+    }
 
     /**
-     * Получение списка всех узлов для роевого опроса (DHT)
-     * Сортировка по lastSeen гарантирует, что мы опрашиваем активных участников
-     */
-    @Query("SELECT * FROM nodes ORDER BY lastSeen DESC LIMIT 2500")
-    suspend fun getAllNodes(): List<NodeEntity>
-
-    /**
-     * Удаление лишних узлов, превышающих лимит 2500 (Очистка БД)
+     * Очистка базы данных до 2500 самых свежих записей.
      */
     @Query("""
-        DELETE FROM nodes WHERE userHash NOT IN (
-            SELECT userHash FROM nodes ORDER BY lastSeen DESC LIMIT 2500
+        DELETE FROM dht_nodes 
+        WHERE userHash NOT IN (
+            SELECT userHash FROM dht_nodes 
+            ORDER BY lastSeen DESC 
+            LIMIT 2500
         )
     """)
     suspend fun trimCache()
+
+    /**
+     * Обновление сетевой информации при прямом контакте или через рой.
+     */
+    @Query("""
+        UPDATE dht_nodes 
+        SET ip = :newIp, lastSeen = :timestamp, publicKey = :pubKey 
+        WHERE userHash = :hash
+    """)
+    suspend fun updateNetworkInfo(hash: String, newIp: String, pubKey: String, timestamp: Long)
+
+    @Query("DELETE FROM dht_nodes")
+    suspend fun clearAll()
 }
