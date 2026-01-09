@@ -26,6 +26,7 @@ object CryptoManager {
 
     private var myEncryptKeyset: KeysetHandle? = null
     private var mySignKeyset: KeysetHandle? = null
+    private val peerPublicKeys = mutableMapOf<String, String>()
 
     init {
         try {
@@ -38,12 +39,9 @@ object CryptoManager {
 
     fun init(context: Context) {
         loadKeys(context)
-        if (myEncryptKeyset == null || mySignKeyset == null) {
-            generateKeys(context)
-        }
+        if (myEncryptKeyset == null || mySignKeyset == null) generateKeys(context)
     }
 
-    // Добавлено специально для MyApplication.kt
     fun generateKeysIfNeeded(context: Context) = init(context)
 
     private fun generateKeys(context: Context) {
@@ -51,12 +49,11 @@ object CryptoManager {
             myEncryptKeyset = KeysetHandle.generateNew(HybridKeyTemplates.ECIES_P256_HKDF_HMAC_SHA256_AES128_GCM)
             mySignKeyset = KeysetHandle.generateNew(SignatureKeyTemplates.ECDSA_P256)
             saveKeys(context)
-        } catch (e: Exception) {
-            Log.e(TAG, "Key generation failed", e)
-        }
+        } catch (e: Exception) { Log.e(TAG, "Key generation failed", e) }
     }
 
     fun sign(data: ByteArray): ByteArray = try {
+        // Исправлено: явное указание типа <PublicKeySign>
         val signer = mySignKeyset?.getPrimitive(PublicKeySign::class.java)
         signer?.sign(data) ?: byteArrayOf()
     } catch (e: Exception) { byteArrayOf() }
@@ -80,7 +77,7 @@ object CryptoManager {
         val decoded = Base64.decode(base64, Base64.NO_WRAP)
         val decrypted = decryptor?.decrypt(decoded, null)
         decrypted?.let { String(it, StandardCharsets.UTF_8) } ?: ""
-    } catch (e: Exception) { "[Ошибка расшифровки]" }
+    } catch (e: Exception) { "[Decrypt Error]" }
 
     fun getMyPublicKeyStr(): String = try {
         val stream = ByteArrayOutputStream()
@@ -89,6 +86,10 @@ object CryptoManager {
         }
         stream.toString("UTF-8")
     } catch (e: Exception) { "" }
+
+    // Добавлены методы, на которые ругался WebRtcClient и EmailAuthScreen
+    fun savePeerPublicKey(hash: String, key: String) { peerPublicKeys[hash] = key }
+    fun getPeerPublicKey(hash: String): String? = peerPublicKeys[hash]
 
     private fun saveKeys(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -114,6 +115,4 @@ object CryptoManager {
     private fun deserializeHandle(json: String): KeysetHandle? = try {
         CleartextKeysetHandle.read(JsonKeysetReader.withString(json))
     } catch (e: Exception) { null }
-
-    fun savePeerPublicKey(hash: String, key: String) { /* Реализация кэша если нужна */ }
 }
