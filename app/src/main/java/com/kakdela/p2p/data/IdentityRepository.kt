@@ -25,8 +25,8 @@ class IdentityRepository(private val context: Context) {
     private val scope = CoroutineScope(repositoryJob + Dispatchers.IO)
     private val listeners = CopyOnWriteArrayList<(String, String, String, String) -> Unit>()
     
-    private val wifiPeers = mutableMapOf<String, String>()
-    private val swarmPeers = mutableMapOf<String, String>()
+    private val wifiPeers = mutableMapOf<String, String>() // Hash -> IP
+    private val swarmPeers = mutableMapOf<String, String>() // Hash -> IP
     
     private val db = ChatDatabase.getDatabase(context)
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
@@ -51,21 +51,38 @@ class IdentityRepository(private val context: Context) {
         startKeepAlive()
     }
 
-    // --- ОТПРАВКА СООБЩЕНИЙ ---
+    // --- ПУБЛИЧНЫЕ МЕТОДЫ (API ДЛЯ UI И ДРУГИХ СЕРВИСОВ) ---
+
+    fun generateUserHash(phone: String, email: String, pass: String): String {
+        return sha256("$phone:$email:$pass")
+    }
+
+    fun savePeerPublicKey(hash: String, key: String) {
+        CryptoManager.savePeerPublicKey(hash, key)
+    }
+
+    fun findPeerInDHT(hash: String): Deferred<UserPayload?> = scope.async {
+        // 1. Проверка локального кэша
+        swarmPeers[hash]?.let { ip ->
+            return@async UserPayload(hash = hash, ip = ip, publicKey = "", port = 8888)
+        }
+        // 2. Поиск через сервер
+        return@async findPeerOnServer(hash).await()
+    }
 
     fun sendMessageSmart(targetHash: String, targetPhone: String?, message: String) = scope.launch {
-        // 1. Wi-Fi
+        // 1. Прямой UDP через Wi-Fi
         wifiPeers[targetHash]?.let { ip ->
             if (sendUdpInternal(ip, "CHAT", message)) return@launch
         }
 
-        // 2. Swarm (P2P)
+        // 2. Роевой поиск через соседей
         val swarmIp = searchInSwarm(targetHash).await()
         if (!swarmIp.isNullOrBlank()) {
             if (sendUdpInternal(swarmIp, "CHAT", message)) return@launch
         }
 
-        // 3. Server
+        // 3. Поиск через глобальный сервер
         val serverPeer = findPeerOnServer(targetHash).await()
         serverPeer?.ip?.let { ip ->
             if (ip.isNotBlank() && ip != "0.0.0.0") {
@@ -73,7 +90,7 @@ class IdentityRepository(private val context: Context) {
             }
         }
 
-        // 4. SMS
+        // 4. SMS как последний шанс
         if (!targetPhone.isNullOrBlank()) {
             sendAsSms(targetPhone, message)
         }
@@ -85,7 +102,7 @@ class IdentityRepository(private val context: Context) {
         }
     }
 
-    // --- СЕТЕВОЕ ОБНАРУЖЕНИЕ (NSD) ---
+    // --- СЕТЕВОЕ ОБНАРУЖЕНИЕ (NSD / WI-FI) ---
 
     private fun registerInWifi() {
         try {
@@ -95,7 +112,7 @@ class IdentityRepository(private val context: Context) {
                 port = 8888
             }
             nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, null)
-        } catch (e: Exception) { Log.e(TAG, "NSD Reg Error") }
+        } catch (e: Exception) { Log.e(TAG, "NSD Registration failed") }
     }
 
     private fun discoverInWifi() {
@@ -116,13 +133,14 @@ class IdentityRepository(private val context: Context) {
                 override fun onStartDiscoveryFailed(p0: String?, p1: Int) {}
                 override fun onStopDiscoveryFailed(p0: String?, p1: Int) {}
             })
-        } catch (e: Exception) { Log.e(TAG, "NSD Disc Error") }
+        } catch (e: Exception) { Log.e(TAG, "NSD Discovery failed") }
     }
 
     private fun searchInSwarm(targetHash: String): Deferred<String?> = scope.async {
         val cachedNodes = db.nodeDao().getAllNodes().take(100)
         cachedNodes.forEach { node ->
-            node.ip.let { safeIp -> // В NodeEntity ip не null
+            // В NodeEntity ip не null (String), поэтому let используется только для логики
+            node.ip.let { safeIp ->
                 if (safeIp.isNotBlank() && safeIp != "0.0.0.0") {
                     sendUdpInternal(safeIp, "QUERY_PEER", targetHash)
                 }
@@ -132,7 +150,7 @@ class IdentityRepository(private val context: Context) {
         return@async swarmPeers[targetHash]
     }
 
-    // --- UDP РАБОТА ---
+    // --- UDP ПРОСЛУШИВАНИЕ И ОБРАБОТКА ПАКЕТОВ ---
 
     private fun startListening() = scope.launch(Dispatchers.IO) {
         if (isListening) return@launch
@@ -151,7 +169,10 @@ class IdentityRepository(private val context: Context) {
                     handleIncomingPacket(rawData, safeIp)
                 }
             }
-        } catch (e: Exception) { isListening = false }
+        } catch (e: Exception) { 
+            Log.e(TAG, "Socket error: ${e.message}")
+            isListening = false 
+        }
     }
 
     private fun handleIncomingPacket(rawData: String, fromIp: String) {
@@ -178,21 +199,22 @@ class IdentityRepository(private val context: Context) {
                     "CHAT", "WEBRTC_SIGNAL" -> {
                         val senderHash = json.getString("from")
                         val pubKey = json.getString("pubkey")
-                        val sig = json.optString("signature", "")
-                        if (sig.isNotEmpty()) {
+                        val sigBase64 = json.optString("signature", "")
+                        if (sigBase64.isNotEmpty()) {
+                            val sig = Base64.decode(sigBase64, Base64.NO_WRAP)
                             val dataToVerify = JSONObject(rawData).apply { remove("signature") }.toString().toByteArray()
-                            if (CryptoManager.verify(Base64.decode(sig, Base64.NO_WRAP), dataToVerify, pubKey)) {
+                            if (CryptoManager.verify(sig, dataToVerify, pubKey)) {
                                 CryptoManager.savePeerPublicKey(senderHash, pubKey)
                                 listeners.forEach { it(type, json.getString("data"), fromIp, senderHash) }
                             }
                         }
                     }
                 }
-            } catch (e: Exception) { }
+            } catch (e: Exception) { Log.e(TAG, "Packet parsing error") }
         }
     }
 
-    // --- СЕРВЕРНОЕ ОБНОВЛЕНИЕ ---
+    // --- СЕРВЕРНАЯ СИНХРОНИЗАЦИЯ ---
 
     private fun findPeerOnServer(hash: String): Deferred<UserPayload?> = scope.async {
         try {
@@ -201,7 +223,7 @@ class IdentityRepository(private val context: Context) {
                 val entities = users.map { 
                     NodeEntity(
                         userHash = it.hash,
-                        ip = it.ip ?: "0.0.0.0", // Исправляем nullable IP из UserPayload в non-null для NodeEntity
+                        ip = it.ip ?: "0.0.0.0", // Конвертация nullable String? -> String
                         port = it.port,
                         publicKey = it.publicKey,
                         phone = it.phone,
@@ -211,7 +233,7 @@ class IdentityRepository(private val context: Context) {
                 db.nodeDao().updateCache(entities)
                 return@async users.find { it.hash == hash }
             }
-        } catch (e: Exception) { Log.e(TAG, "Server Error: ${e.message}") }
+        } catch (e: Exception) { Log.e(TAG, "Server sync failed: ${e.message}") }
         null
     }
 
@@ -226,12 +248,12 @@ class IdentityRepository(private val context: Context) {
                     )
                     api.announceSelf(payload = myPayload)
                 } catch (e: Exception) { }
-                delay(180_000)
+                delay(180_000) // 3 минуты
             }
         }
     }
 
-    // --- ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ---
+    // --- УТИЛИТЫ ---
 
     private suspend fun sendUdpInternal(ip: String, type: String, data: String): Boolean = withContext(Dispatchers.IO) {
         if (ip.isBlank() || ip == "0.0.0.0") return@withContext false
@@ -242,6 +264,7 @@ class IdentityRepository(private val context: Context) {
             }
             val sig = CryptoManager.sign(json.toString().toByteArray())
             json.put("signature", Base64.encodeToString(sig, Base64.NO_WRAP))
+            
             val bytes = json.toString().toByteArray()
             DatagramSocket().use { it.send(DatagramPacket(bytes, bytes.size, InetAddress.getByName(ip), 8888)) }
             true
@@ -256,6 +279,14 @@ class IdentityRepository(private val context: Context) {
     fun getMyPublicKeyStr() = CryptoManager.getMyPublicKeyStr()
     fun addListener(l: (String, String, String, String) -> Unit) = listeners.add(l)
     fun removeListener(l: (String, String, String, String) -> Unit) = listeners.remove(l)
-    fun onDestroy() { repositoryJob.cancel(); isListening = false; mainSocket?.close() }
-    private fun sha256(s: String) = MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
+    
+    fun onDestroy() { 
+        repositoryJob.cancel()
+        isListening = false
+        mainSocket?.close() 
+    }
+    
+    private fun sha256(s: String) = MessageDigest.getInstance("SHA-256")
+        .digest(s.toByteArray())
+        .joinToString("") { "%02x".format(it) }
 }
