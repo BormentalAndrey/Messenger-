@@ -8,6 +8,7 @@ import com.kakdela.p2p.data.local.NodeEntity
 import com.kakdela.p2p.security.CryptoManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.security.MessageDigest
@@ -18,54 +19,67 @@ class AuthManager(private val context: Context) {
 
     private val api: MyServerApi by lazy {
         Retrofit.Builder()
-            .baseUrl("http://kakdela.infinityfree.me/") // Используем единый домен
+            .baseUrl("http://kakdela.infinityfree.me/")
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(MyServerApi::class.java)
     }
 
-    private fun hashPassword(password: String): String {
+    private fun sha256(input: String): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        val hashBytes = digest.digest(password.toByteArray(Charsets.UTF_8))
-        return hashBytes.joinToString("") { "%02x".format(it) }
+        return digest.digest(input.toByteArray())
+            .joinToString("") { "%02x".format(it) }
     }
 
-    suspend fun login(email: String, password: String): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val inputPassHash = hashPassword(password)
+    /**
+     * 🔐 Вход пользователя
+     */
+    suspend fun login(email: String, password: String): Boolean =
+        withContext(Dispatchers.IO) {
+            try {
+                val passHash = sha256(password)
 
-            // 1. Оффлайн вход (из локальной Torrent-базы)
-            val localUser = nodeDao.getUserByEmail(email)
-            if (localUser != null && localUser.passwordHash == inputPassHash) {
-                return@withContext true
-            }
+                // 1️⃣ Локальный оффлайн-вход
+                val localUser = nodeDao.getUserByEmail(email)
+                if (localUser != null && localUser.passwordHash == passHash) {
+                    return@withContext true
+                }
 
-            // 2. Онлайн вход через сервер
-            val credentials = mapOf(
-                "email" to email,
-                "passwordHash" to inputPassHash
-            )
-            val response = api.serverLogin(credentials)
-            
-            if (response.success && response.userNode != null) {
-                saveUserToLocalDb(response.userNode, email, inputPassHash)
-                return@withContext true
+                // 2️⃣ Онлайн-вход (JSON → String)
+                val json = JSONObject().apply {
+                    put("email", email)
+                    put("passwordHash", passHash)
+                }
+
+                val response = api.serverLogin(json.toString())
+
+                if (response.success && response.userNode != null) {
+                    saveUserToLocalDb(response.userNode, email, passHash)
+                    return@withContext true
+                }
+
+                false
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false
             }
-            false
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
         }
-    }
 
-    suspend fun register(email: String, password: String, phone: String): Boolean = withContext(Dispatchers.IO) {
+    /**
+     * 🆕 Регистрация пользователя
+     */
+    suspend fun register(
+        email: String,
+        password: String,
+        phone: String
+    ): Boolean = withContext(Dispatchers.IO) {
         try {
-            val passHash = hashPassword(password)
-            val myId = hashPassword(CryptoManager.getMyPublicKeyStr())
-            
+            val passHash = sha256(password)
+            val myId = sha256(CryptoManager.getMyPublicKeyStr())
+
             val payload = UserPayload(
                 hash = myId,
-                ip = "0.0.0.0", // IP обновится при первом анонсе
+                ip = "0.0.0.0",
                 port = 8888,
                 publicKey = CryptoManager.getMyPublicKeyStr(),
                 phone = phone,
@@ -73,11 +87,22 @@ class AuthManager(private val context: Context) {
                 passwordHash = passHash
             )
 
-            val response = api.serverRegister(payload)
+            // ⚠️ Сервер принимает String
+            val response = api.serverRegister(JSONObject().apply {
+                put("hash", payload.hash)
+                put("ip", payload.ip)
+                put("port", payload.port)
+                put("publicKey", payload.publicKey)
+                put("phone", payload.phone)
+                put("email", payload.email)
+                put("passwordHash", payload.passwordHash)
+            }.toString())
+
             if (response.success && response.userNode != null) {
                 saveUserToLocalDb(response.userNode, email, passHash)
                 return@withContext true
             }
+
             false
         } catch (e: Exception) {
             e.printStackTrace()
@@ -85,16 +110,23 @@ class AuthManager(private val context: Context) {
         }
     }
 
-    private suspend fun saveUserToLocalDb(node: UserPayload, email: String, passHash: String) {
+    /**
+     * 💾 Сохранение пользователя локально
+     */
+    private suspend fun saveUserToLocalDb(
+        node: UserPayload,
+        email: String,
+        passHash: String
+    ) {
         nodeDao.insert(
             NodeEntity(
-                userHash = node.hash ?: "",
+                userHash = node.hash.orEmpty(),
                 email = email,
                 passwordHash = passHash,
-                phone = node.phone ?: "",
+                phone = node.phone.orEmpty(),
                 ip = node.ip ?: "0.0.0.0",
                 port = node.port,
-                publicKey = node.publicKey ?: "",
+                publicKey = node.publicKey.orEmpty(),
                 lastSeen = System.currentTimeMillis()
             )
         )
