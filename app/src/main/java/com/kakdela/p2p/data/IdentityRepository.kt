@@ -147,9 +147,8 @@ class IdentityRepository(private val context: Context) {
                 val packet = DatagramPacket(buffer, buffer.size)
                 mainSocket?.receive(packet)
                 val rawData = String(packet.data, 0, packet.length)
-                val senderIp = packet.address.hostAddress // Это String?
+                val senderIp = packet.address.hostAddress
                 
-                // Исправление ошибки 246: Гарантируем, что senderIp не null перед обработкой
                 senderIp?.let { safeIp ->
                     handleIncomingPacket(rawData, safeIp)
                 }
@@ -161,7 +160,8 @@ class IdentityRepository(private val context: Context) {
         scope.launch {
             try {
                 val json = JSONObject(rawData)
-                when (json.optString("type")) {
+                val packetType = json.optString("type")
+                when (packetType) {
                     "QUERY_PEER" -> {
                         val target = json.getString("data")
                         val node = db.nodeDao().getNodeByHash(target)
@@ -173,7 +173,6 @@ class IdentityRepository(private val context: Context) {
                                     put("hash", targetHash)
                                     put("ip", targetIp)
                                 }
-                                // Теперь fromIp гарантированно String (не null)
                                 sendUdpInternal(fromIp, "PEER_FOUND", resp.toString())
                             }
                         }
@@ -191,7 +190,7 @@ class IdentityRepository(private val context: Context) {
                             val dataToVerify = JSONObject(rawData).apply { remove("signature") }.toString().toByteArray()
                             if (CryptoManager.verify(signature, dataToVerify, pubKey)) {
                                 CryptoManager.savePeerPublicKey(senderHash, pubKey)
-                                listeners.forEach { it(json.getString("type"), json.getString("data"), fromIp, senderHash) }
+                                listeners.forEach { it(packetType, json.getString("data"), fromIp, senderHash) }
                             }
                         }
                     }
@@ -205,12 +204,19 @@ class IdentityRepository(private val context: Context) {
             val response = api.getAllNodes()
             response.users?.let { users ->
                 val entities = users.map { 
-                    NodeEntity(it.hash, it.ip, it.port, it.publicKey, System.currentTimeMillis()) 
+                    // ИСПОЛЬЗУЕМ ИМЕНОВАННЫЕ АРГУМЕНТЫ ДЛЯ NodeEntity
+                    NodeEntity(
+                        userHash = it.hash, 
+                        ip = it.ip, 
+                        port = it.port, 
+                        publicKey = it.publicKey, 
+                        lastSeen = System.currentTimeMillis()
+                    ) 
                 }
                 db.nodeDao().updateCache(entities)
                 return@async users.find { it.hash == hash }
             }
-        } catch (e: Exception) { }
+        } catch (e: Exception) { Log.e(TAG, "Server Error: ${e.message}") }
         null
     }
 
@@ -238,7 +244,16 @@ class IdentityRepository(private val context: Context) {
     private fun startKeepAlive() {
         scope.launch {
             while (isActive) {
-                try { api.announceSelf(UserPayload(getMyId(), getMyPublicKeyStr(), 8888)) } catch (e: Exception) {}
+                try { 
+                    // ИСПОЛЬЗУЕМ ИМЕНОВАННЫЕ АРГУМЕНТЫ ДЛЯ UserPayload
+                    val payload = UserPayload(
+                        hash = getMyId(), 
+                        publicKey = getMyPublicKeyStr(), 
+                        port = 8888,
+                        ip = "0.0.0.0" // Добавьте, если в модели UserPayload есть это поле
+                    )
+                    api.announceSelf(payload = payload) 
+                } catch (e: Exception) {}
                 delay(180_000)
             }
         }
