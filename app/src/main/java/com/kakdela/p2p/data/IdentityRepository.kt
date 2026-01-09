@@ -84,10 +84,8 @@ class IdentityRepository(private val context: Context) {
         if (targetIp.isNotBlank() && targetIp != "0.0.0.0") {
             scope.launch { sendUdpInternal(targetIp, type, data) }
         } else {
-            // Если IP неизвестен, пробуем найти через рой (медленнее)
              scope.launch {
-                 // Здесь упрощенная логика: в реальности нужно знать hash получателя для signaling
-                 Log.w(TAG, "sendSignaling: IP is empty, signaling might fail without TargetHash")
+                 Log.w(TAG, "sendSignaling: IP is empty")
              }
         }
     }
@@ -136,12 +134,16 @@ class IdentityRepository(private val context: Context) {
         })
     }
 
-    // --- РОЕВОЙ ПОИСК ---
+    // --- РОЕВОЙ ПОИСК (ИСПРАВЛЕН NPE) ---
 
     private fun searchInSwarm(targetHash: String): Deferred<String?> = scope.async {
         val cachedNodes = db.nodeDao().getAllNodes().take(100)
         cachedNodes.forEach { node ->
-            sendUdpInternal(node.ip, "QUERY_PEER", targetHash)
+            // Исправлена ошибка Type Mismatch: проверяем на null/empty перед вызовом
+            val nodeIp = node.ip
+            if (!nodeIp.isNullOrBlank()) {
+                sendUdpInternal(nodeIp, "QUERY_PEER", targetHash)
+            }
         }
         delay(2000)
         return@async swarmPeers[targetHash]
@@ -195,7 +197,6 @@ class IdentityRepository(private val context: Context) {
                     val dataToVerify = JSONObject(rawData).apply { remove("signature") }.toString().toByteArray()
 
                     if (CryptoManager.verify(signature, dataToVerify, pubKey)) {
-                        // Сохраняем ключ собеседника
                         CryptoManager.savePeerPublicKey(senderHash, pubKey)
                         listeners.forEach { it(type, json.getString("data"), fromIp, senderHash) }
                     }
