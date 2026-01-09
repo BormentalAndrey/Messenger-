@@ -1,4 +1,4 @@
-package com.kakdela.p2p.ui
+package com.kakdela.p2p.ui.chat
 
 import android.content.Intent
 import android.media.MediaPlayer
@@ -49,9 +49,9 @@ fun ChatScreen(
     messages: List<Message>,
     identityRepository: IdentityRepository,
     onSendMessage: (String) -> Unit,
-    onSendFile: (Uri, MessageType) -> Unit,
+    onSendFile: (Uri, String) -> Unit, // Изменено на String для имени файла/типа
     onSendAudio: (Uri, Int) -> Unit,
-    onScheduleMessage: (String, Long) -> Unit,
+    onScheduleMessage: (String, String) -> Unit, // Изменено на String для времени
     onBack: () -> Unit
 ) {
     var textState by remember { mutableStateOf("") }
@@ -63,7 +63,6 @@ fun ChatScreen(
     val context = LocalContext.current
     val listState = rememberLazyListState()
 
-    // Прокрутка вниз при получении новых сообщений
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
@@ -77,7 +76,8 @@ fun ChatScreen(
             set(Calendar.HOUR_OF_DAY, timePickerState.hour)
             set(Calendar.MINUTE, timePickerState.minute)
         }
-        onScheduleMessage(textState, cal.timeInMillis)
+        val formattedTime = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(cal.time)
+        onScheduleMessage(textState, formattedTime)
         textState = ""
     }
 
@@ -108,12 +108,11 @@ fun ChatScreen(
                         textState = ""
                     }
                 },
-                onAttachFile = { uri -> onSendFile(uri, MessageType.FILE) },
+                onAttachFile = { uri -> onSendFile(uri, "DOCUMENT") },
                 onScheduleClick = { if (textState.isNotBlank()) showDatePicker = true },
                 onSendAudio = onSendAudio,
                 onStartCall = {
                     val intent = Intent(context, CallActivity::class.java).apply {
-                        putExtra("targetIp", "auto")
                         putExtra("chatId", chatPartnerId)
                     }
                     context.startActivity(intent)
@@ -122,6 +121,7 @@ fun ChatScreen(
         },
         containerColor = DarkBackground
     ) { padding ->
+        // Логика Date/Time пикеров
         if (showDatePicker) {
             DatePickerDialog(
                 onDismissRequest = { showDatePicker = false },
@@ -147,20 +147,10 @@ fun ChatScreen(
 
         LazyColumn(
             state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 12.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp),
             contentPadding = PaddingValues(vertical = 16.dp)
         ) {
-            val currentTime = System.currentTimeMillis()
-            val visibleMessages = messages.filter { 
-                it.isMe || it.scheduledTime == null || it.scheduledTime!! <= currentTime 
-            }
-            
-            items(visibleMessages) { message -> 
-                ChatBubble(message) 
-            }
+            items(messages) { message -> ChatBubble(message) }
         }
     }
 }
@@ -181,25 +171,16 @@ fun ChatBubble(message: Message) {
                 .border(0.5.dp, neonEdge.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
         ) {
             Column(modifier = Modifier.padding(12.dp)) {
-                if (message.scheduledTime != null && message.isMe && message.scheduledTime!! > System.currentTimeMillis()) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Schedule, null, modifier = Modifier.size(12.dp), tint = NeonMagenta)
-                        Text(" Запланировано", fontSize = 10.sp, color = NeonMagenta)
-                    }
-                }
-
                 when (message.type) {
                     MessageType.TEXT -> Text(message.text, color = Color.White)
                     MessageType.IMAGE -> AsyncImage(
                         model = message.fileUrl,
                         contentDescription = null,
-                        modifier = Modifier
-                            .size(200.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                        modifier = Modifier.size(200.dp).clip(RoundedCornerShape(8.dp))
                     )
                     MessageType.AUDIO -> AudioPlayerView(message.fileUrl ?: "", message.durationSeconds)
                     MessageType.FILE -> FileP2PView(message.fileName ?: "Файл")
-                    else -> Text("Системное сообщение: ${message.type}", color = Color.Gray, fontSize = 12.sp)
+                    else -> Text(message.text, color = Color.White)
                 }
                 
                 Text(
@@ -210,15 +191,6 @@ fun ChatBubble(message: Message) {
                 )
             }
         }
-    }
-}
-
-@Composable
-fun FileP2PView(fileName: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Default.FileDownload, null, tint = NeonCyan, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(fileName, color = Color.White, fontSize = 14.sp)
     }
 }
 
@@ -241,87 +213,50 @@ fun ChatInputField(
         uri?.let { onAttachFile(it) }
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            recorder?.release()
-            recorder = null
-        }
-    }
-
-    Surface(color = Color.Black, modifier = Modifier.imePadding()) {
-        Row(
-            modifier = Modifier
-                .padding(8.dp)
-                .fillMaxWidth(), 
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(onClick = { filePicker.launch("*/*") }) { 
-                Icon(Icons.Default.AttachFile, null, tint = NeonCyan) 
-            }
-            TextField(
-                value = text,
-                onValueChange = onTextChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Сообщение...", color = Color.Gray) },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = SurfaceGray,
-                    unfocusedContainerColor = SurfaceGray,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    cursorColor = NeonCyan,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent
-                ),
-                shape = RoundedCornerShape(24.dp)
-            )
-            IconButton(onClick = {
-                if (!recording) {
-                    try {
-                        val file = File(context.cacheDir, "p2p_voice_${System.currentTimeMillis()}.m4a")
-                        audioFile = file
-                        
-                        val newRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                            MediaRecorder(context)
-                        } else {
-                            @Suppress("DEPRECATION")
-                            MediaRecorder()
-                        }.apply {
-                            setAudioSource(MediaRecorder.AudioSource.MIC)
-                            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                            setOutputFile(file.absolutePath)
-                            prepare()
-                            start()
-                        }
-                        recorder = newRecorder
-                        recording = true
-                    } catch (e: Exception) {
-                        Toast.makeText(context, "Ошибка записи: ${e.message}", Toast.LENGTH_SHORT).show()
-                    }
-                } else {
-                    try {
-                        recorder?.apply {
-                            stop()
-                            release()
-                        }
-                        recorder = null
-                        recording = false
-                        audioFile?.let { onSendAudio(Uri.fromFile(it), 0) }
-                    } catch (e: Exception) {
-                        recording = false
-                    }
+    Row(modifier = Modifier.padding(8.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { filePicker.launch("*/*") }) { Icon(Icons.Default.AttachFile, null, tint = NeonCyan) }
+        TextField(
+            value = text,
+            onValueChange = onTextChange,
+            modifier = Modifier.weight(1f),
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = SurfaceGray,
+                unfocusedContainerColor = SurfaceGray,
+                focusedTextColor = Color.White,
+                cursorColor = NeonCyan
+            ),
+            shape = RoundedCornerShape(24.dp)
+        )
+        IconButton(onClick = {
+            if (!recording) {
+                val file = File(context.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
+                audioFile = file
+                recorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else MediaRecorder()).apply {
+                    setAudioSource(MediaRecorder.AudioSource.MIC)
+                    setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                    setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                    setOutputFile(file.absolutePath)
+                    prepare()
+                    start()
                 }
-            }) {
-                Icon(
-                    imageVector = if (recording) Icons.Default.Stop else Icons.Default.Mic, 
-                    contentDescription = null, 
-                    tint = if (recording) Color.Red else NeonCyan
-                )
+                recording = true
+            } else {
+                recorder?.stop()
+                recorder?.release()
+                recording = false
+                audioFile?.let { onSendAudio(Uri.fromFile(it), 0) }
             }
-            IconButton(onClick = onStartCall) { Icon(Icons.Default.VideoCall, null, tint = NeonCyan) }
-            IconButton(onClick = onScheduleClick) { Icon(Icons.Outlined.Schedule, null, tint = NeonMagenta) }
-            IconButton(onClick = onSend) { Icon(Icons.Default.Send, null, tint = NeonCyan) }
-        }
+        }) { Icon(if (recording) Icons.Default.Stop else Icons.Default.Mic, null, tint = if (recording) Color.Red else NeonCyan) }
+        IconButton(onClick = onSend) { Icon(Icons.Default.Send, null, tint = NeonCyan) }
+    }
+}
+
+@Composable
+fun FileP2PView(fileName: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Default.FileDownload, null, tint = NeonCyan, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(fileName, color = Color.White, fontSize = 14.sp)
     }
 }
 
@@ -331,45 +266,19 @@ fun AudioPlayerView(url: String, duration: Int) {
     var isPlaying by remember { mutableStateOf(false) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            mediaPlayer?.release()
-            mediaPlayer = null
-        }
-    }
-
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = { 
-            if (isPlaying) {
-                mediaPlayer?.pause()
-                isPlaying = false
-            } else {
-                try {
-                    if (mediaPlayer == null) {
-                        mediaPlayer = MediaPlayer().apply {
-                            setDataSource(context, Uri.parse(url))
-                            prepare()
-                            setOnCompletionListener { isPlaying = false }
-                        }
-                    }
-                    mediaPlayer?.start()
-                    isPlaying = true
-                } catch (e: Exception) {
-                    Toast.makeText(context, "Ошибка воспроизведения", Toast.LENGTH_SHORT).show()
+            if (isPlaying) { mediaPlayer?.pause(); isPlaying = false }
+            else {
+                mediaPlayer = MediaPlayer().apply {
+                    setDataSource(context, Uri.parse(url))
+                    prepare()
+                    start()
+                    setOnCompletionListener { isPlaying = false }
                 }
+                isPlaying = true
             }
-        }) {
-            Icon(
-                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, 
-                contentDescription = null, 
-                tint = NeonCyan
-            )
-        }
-        Text(
-            text = if (duration > 0) "$duration сек" else "Голосовое", 
-            color = Color.White, 
-            fontSize = 12.sp
-        )
+        }) { Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = NeonCyan) }
+        Text("Голосовое сообщение", color = Color.White, fontSize = 12.sp)
     }
 }
-
