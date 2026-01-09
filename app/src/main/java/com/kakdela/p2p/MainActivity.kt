@@ -19,7 +19,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         identityRepository = IdentityRepository(applicationContext)
+        identityRepository.generateKeysIfNeeded(applicationContext)
 
+        // Запуск Foreground сервиса
         val serviceIntent = Intent(this, P2PService::class.java)
         startForegroundService(serviceIntent)
 
@@ -28,13 +30,11 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
                 val repo = remember { identityRepository }
 
-                NavGraph(navController = navController, identityRepository = repo)
+                NavGraph(
+                    navController = navController,
+                    identityRepository = repo
+                )
             }
         }
-    }
-
-    override fun onDestroy() {
-        identityRepository.stopP2PNode()
-        super.onDestroy()
     }
 }
