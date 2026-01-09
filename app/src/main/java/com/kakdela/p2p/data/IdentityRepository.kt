@@ -123,11 +123,15 @@ class IdentityRepository(private val context: Context) {
         } catch (e: Exception) { Log.e(TAG, "NSD Discover Error") }
     }
 
+    // --- РОЕВОЙ ПОИСК ---
     private fun searchInSwarm(targetHash: String): Deferred<String?> = scope.async {
         val cachedNodes = db.nodeDao().getAllNodes().take(100)
         cachedNodes.forEach { node ->
+            // ФИКС ОШИБКИ 210: Явное приведение String? к String через ?.let
             node.ip?.let { safeIp ->
-                if (safeIp.isNotBlank()) sendUdpInternal(safeIp, "QUERY_PEER", targetHash)
+                if (safeIp.isNotBlank() && safeIp != "0.0.0.0") {
+                    sendUdpInternal(safeIp, "QUERY_PEER", targetHash)
+                }
             }
         }
         delay(2000)
@@ -204,12 +208,11 @@ class IdentityRepository(private val context: Context) {
             val response = api.getAllNodes()
             response.users?.let { users ->
                 val entities = users.map { 
-                    // ИСПОЛЬЗУЕМ ИМЕНОВАННЫЕ АРГУМЕНТЫ ДЛЯ NodeEntity
                     NodeEntity(
-                        userHash = it.hash, 
-                        ip = it.ip, 
-                        port = it.port, 
-                        publicKey = it.publicKey, 
+                        userHash = it.hash ?: "", 
+                        ip = it.ip ?: "0.0.0.0", 
+                        port = it.port ?: 8888, 
+                        publicKey = it.publicKey ?: "", 
                         lastSeen = System.currentTimeMillis()
                     ) 
                 }
@@ -245,12 +248,11 @@ class IdentityRepository(private val context: Context) {
         scope.launch {
             while (isActive) {
                 try { 
-                    // ИСПОЛЬЗУЕМ ИМЕНОВАННЫЕ АРГУМЕНТЫ ДЛЯ UserPayload
                     val payload = UserPayload(
                         hash = getMyId(), 
                         publicKey = getMyPublicKeyStr(), 
                         port = 8888,
-                        ip = "0.0.0.0" // Добавьте, если в модели UserPayload есть это поле
+                        ip = "0.0.0.0"
                     )
                     api.announceSelf(payload = payload) 
                 } catch (e: Exception) {}
