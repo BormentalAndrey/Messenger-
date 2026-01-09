@@ -9,80 +9,65 @@ import retrofit2.http.Query
 
 /**
  * Основная модель данных пользователя.
- * Соответствует структуре, которую PHP упаковывает в 'encrypted_data'.
+ * Полностью синхронизирована с колонками в MySQL и логикой API.php.
  */
 data class UserPayload(
-    val hash: String,          // user_hash в базе данных
-    val ip: String? = null,    // Определяется сервером автоматически через REMOTE_ADDR
-    val port: Int = 8888,      // Порт для UDP прослушивания
-    val publicKey: String,     // Публичный ключ для верификации подписей
-    val phone: String? = null,
-    val email: String? = null,
-    val lastSeen: Long? = null
+    val hash: String,              // Security ID (хэш ключа)
+    val phone_hash: String? = null,// Discovery ID (хэш номера для поиска)
+    val ip: String? = null,        // IP-адрес для P2P соединения
+    val port: Int = 8888,          // UDP-порт
+    val publicKey: String,         // Ключ для шифрования сообщений
+    val phone: String? = null,     // Номер для отображения (внутри encrypted_data)
+    val email: String? = null,     // Email пользователя
+    val lastSeen: Long? = null     // Timestamp последнего онлайна
 )
 
 /**
  * Универсальный ответ сервера.
- * Поля 'users' и 'success' соответствуют вашим PHP case 'list_users' и 'add_user'.
  */
 data class ServerResponse(
     val success: Boolean = false,
-    val users: List<UserPayload>? = null, // Для действия 'list_users'
-    val status: String? = null,           // Для default action
-    val error: String? = null,            // Сообщения об ошибках
-    val db_size_mb: Double? = null        // Статистика базы данных
+    val users: List<UserPayload>? = null, // Список пиров для Discovery
+    val status: String? = null,           // "Online"
+    val error: String? = null,            // Ошибка, если есть
+    val db_size_mb: Double? = null        // Размер БД на хостинге
 )
 
 // ================= API =================
 
-
-
 interface MyServerApi {
 
     /**
-     * Регистрация или обновление статуса "в сети".
-     * Соответствует PHP: case 'add_user'
+     * Регистрация или обновление данных узла.
+     * Отправляет UserPayload, включая phone_hash для колонки Discovery.
      */
-    @POST("index.php")
+    @POST("API.php")
     suspend fun announceSelf(
         @Query("action") action: String = "add_user",
-        @Body payload: UserPayload
+        @Body payload: UserRegistrationWrapper
     ): ServerResponse
 
     /**
-     * Получение списка всех активных узлов (до 2500 записей).
-     * Соответствует PHP: case 'list_users'
+     * Получение всех активных пользователей для синхронизации контактов.
+     * Сервер вернет список, где у каждого юзера есть phone_hash.
      */
-    @GET("index.php")
+    @GET("API.php")
     suspend fun getAllNodes(
         @Query("action") action: String = "list_users"
     ): ServerResponse
 
     /**
-     * Поиск конкретного пира. 
-     * Так как в вашем PHP нет отдельного 'get_peer', мы используем 'list_users' 
-     * и фильтруем результат на стороне клиента в IdentityRepository.
+     * Пинг сервера для проверки связи и получения размера БД.
      */
-    @GET("index.php")
-    suspend fun findPeer(
-        @Query("action") action: String = "list_users"
-    ): ServerResponse
-
-    /**
-     * Авторизация (если используется расширенная таблица пользователей).
-     */
-    @POST("index.php")
-    suspend fun serverLogin(
-        @Query("action") action: String = "login",
-        @Body credentials: Map<String, String>
-    ): ServerResponse
-
-    /**
-     * Регистрация нового аккаунта.
-     */
-    @POST("index.php")
-    suspend fun serverRegister(
-        @Query("action") action: String = "add_user",
-        @Body payload: UserPayload
-    ): ServerResponse
+    @GET("api.php")
+    suspend fun checkServerStatus(): ServerResponse
 }
+
+/**
+ * Обертка для запроса 'add_user', соответствующая PHP структуре:
+ * $input['hash'] и $input['data']
+ */
+data class UserRegistrationWrapper(
+    val hash: String,      // Пойдет в колонку user_hash
+    val data: UserPayload  // Пойдет в колонку encrypted_data и phone_hash
+)
