@@ -1,6 +1,5 @@
 package com.kakdela.p2p.ui.player
 
-import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -12,71 +11,65 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.*
 import coil.compose.AsyncImage
 import kotlin.math.abs
 
 @Composable
-fun MiniPlayer(vm: PlayerViewModel) {
-    val track by vm.currentTrack.collectAsState()
-    val playing by vm.isPlaying.collectAsState()
+fun MiniPlayer() {
+    val context = LocalContext.current
+    val track = MusicManager.currentTrack
+    val isPlaying = MusicManager.isPlaying
 
-    track ?: return
+    // Если ничего не играет, не показываем плеер
+    if (track == null) return
 
     Surface(
-        tonalElevation = 6.dp,
+        tonalElevation = 8.dp,
+        color = Color(0xFF121212),
         modifier = Modifier
             .fillMaxWidth()
+            .height(70.dp)
             .pointerInput(Unit) {
-                detectHorizontalDragGestures { _, drag ->
-                    if (abs(drag) > 100) {
-                        if (drag > 0) vm.previous() else vm.next()
+                detectHorizontalDragGestures { _, dragAmount ->
+                    if (abs(dragAmount) > 50) {
+                        if (dragAmount > 0) MusicManager.playPrevious(context) 
+                        else MusicManager.playNext(context)
                     }
                 }
             }
-            .clickable { }
     ) {
         Row(
-            Modifier.padding(12.dp),
+            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             AsyncImage(
-                model = track!!.albumArt,
+                model = track.albumArt,
                 contentDescription = null,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(48.dp).background(Color.DarkGray)
             )
 
             Spacer(Modifier.width(12.dp))
 
             Column(Modifier.weight(1f)) {
-                MarqueeText(track!!.title, 15.sp, Color.White)
-                Text(track!!.artist, fontSize = 12.sp)
+                Text(track.title, fontSize = 14.sp, color = Color.White, maxLines = 1)
+                Text(track.artist, fontSize = 11.sp, color = Color.Cyan, maxLines = 1)
             }
 
-            IconButton(onClick = { vm.previous() }) {
-                Icon(Icons.Default.SkipPrevious, null)
+            IconButton(onClick = { MusicManager.playPrevious(context) }) {
+                Icon(Icons.Default.SkipPrevious, null, tint = Color.White)
             }
-            IconButton(onClick = { vm.togglePlayPause() }) {
+            IconButton(onClick = { MusicManager.togglePlayPause() }) {
                 Icon(
-                    if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    null
+                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    null,
+                    tint = Color.Cyan
                 )
             }
-            IconButton(onClick = { vm.next() }) {
-                Icon(Icons.Default.SkipNext, null)
+            IconButton(onClick = { MusicManager.playNext(context) }) {
+                Icon(Icons.Default.SkipNext, null, tint = Color.White)
             }
         }
     }
-}
-
-@Composable
-fun MarqueeText(text: String, fontSize: TextUnit, color: Color) {
-    Text(
-        text,
-        fontSize = fontSize,
-        color = color,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis
-    )
 }
