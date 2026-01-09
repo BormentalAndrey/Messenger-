@@ -22,15 +22,20 @@ import kotlin.math.abs
 
 class IdentityRepository(private val context: Context) {
 
-    private val TAG = "IdentityRepository"
+    companion object {
+        private const val TAG = "IdentityRepository"
+        private const val P2P_PORT = 8888
+        private const val DISCOVERY_PORT = 8889
+        private const val MAX_TIME_DRIFT = 60_000L
+    }
+
+    // -------------------- CORE --------------------
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    private val P2P_PORT = 8888
-    private val DISCOVERY_PORT = 8889
-    private val MAX_TIME_DRIFT = 60_000L
-
     private val nodeDao = ChatDatabase.getDatabase(context).nodeDao()
+
+    private var mainSocket: DatagramSocket? = null
+    private var running = false
 
     private val listeners =
         CopyOnWriteArrayList<(type: String, data: String, fromIp: String, fromId: String) -> Unit>()
@@ -43,27 +48,42 @@ class IdentityRepository(private val context: Context) {
             .create(MyServerApi::class.java)
     }
 
-    private var mainSocket: DatagramSocket? = null
+    // -------------------- IDENTITY --------------------
 
-    init {
-        CryptoManager.init(context)
+    fun ensureIdentity() {
+        CryptoManager.generateKeysIfNeeded(context)
+    }
+
+    fun getMyId(): String =
+        sha256(CryptoManager.getMyPublicKeyStr())
+
+    fun getMyPublicKeyStr(): String =
+        CryptoManager.getMyPublicKeyStr()
+
+    fun savePeerPublicKey(hash: String, key: String) {
+        CryptoManager.savePeerPublicKey(hash, key)
+    }
+
+    // -------------------- LIFECYCLE --------------------
+
+    fun startP2PNode() {
+        if (running) return
+        running = true
+
         startMainSocket()
         startDiscoveryListener()
         startPresenceBroadcast()
         startServerSync()
     }
 
-    /* ======================= IDENTITY ======================= */
-
-    fun getMyId(): String = sha256(CryptoManager.getMyPublicKeyStr())
-
-    fun getMyPublicKeyStr(): String = CryptoManager.getMyPublicKeyStr()
-
-    fun savePeerPublicKey(hash: String, key: String) {
-        CryptoManager.savePeerPublicKey(hash, key)
+    fun stopP2PNode() {
+        running = false
+        scope.coroutineContext.cancelChildren()
+        mainSocket?.close()
+        mainSocket = null
     }
 
-    /* ======================= LISTENERS ======================= */
+    // -------------------- LISTENERS --------------------
 
     fun addListener(listener: (String, String, String, String) -> Unit) {
         listeners.add(listener)
@@ -73,18 +93,7 @@ class IdentityRepository(private val context: Context) {
         listeners.remove(listener)
     }
 
-    /* ======================= SIGNALING ======================= */
-
-    fun sendSignaling(targetIp: String, type: String, data: String) = scope.launch {
-        val json = JSONObject().apply {
-            put("type", type)
-            put("data", data)
-        }
-        enrich(json)
-        sendUdp(targetIp, json.toString())
-    }
-
-    /* ======================= UDP ======================= */
+    // -------------------- UDP --------------------
 
     private fun startMainSocket() = scope.launch {
         try {
@@ -94,7 +103,7 @@ class IdentityRepository(private val context: Context) {
             }
             listenMainSocket()
         } catch (e: Exception) {
-            Log.e(TAG, "UDP bind failed", e)
+            Log.e(TAG, "UDP socket error", e)
         }
     }
 
@@ -107,25 +116,25 @@ class IdentityRepository(private val context: Context) {
             DatagramSocket().use { socket ->
                 socket.broadcast = broadcast
                 val data = message.toByteArray()
-                val packet = DatagramPacket(
-                    data,
-                    data.size,
-                    InetAddress.getByName(ip),
-                    P2P_PORT
+                socket.send(
+                    DatagramPacket(
+                        data,
+                        data.size,
+                        InetAddress.getByName(ip),
+                        P2P_PORT
+                    )
                 )
-                socket.send(packet)
             }
             true
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }
 
-    /* ======================= MESSAGES ======================= */
+    // -------------------- MESSAGES --------------------
 
     fun sendMessage(targetHash: String, text: String) = scope.launch {
         val node = nodeDao.getNode(targetHash)
-
         val (payload, encrypted) = encryptIfPossible(node?.publicKey, text)
 
         val json = JSONObject().apply {
@@ -135,30 +144,26 @@ class IdentityRepository(private val context: Context) {
         }
         enrich(json)
 
-        val packet = json.toString()
-
-        if (node != null && node.ip.isNotBlank() && node.ip != "0.0.0.0") {
-            if (sendUdp(node.ip, packet)) return@launch
-        }
+        if (node?.ip?.isNotBlank() == true && sendUdp(node.ip, json.toString())) return@launch
 
         try {
             val r = api.findPeer(mapOf("hash" to targetHash))
             r.ip?.let {
-                if (sendUdp(it, packet)) {
+                if (sendUdp(it, json.toString())) {
                     updateNodeFromServer(targetHash, r)
                     return@launch
                 }
             }
         } catch (_: Exception) {}
 
-        sendUdp("255.255.255.255", packet, true)
+        sendUdp("255.255.255.255", json.toString(), true)
 
         node?.phone?.takeIf { it.isNotBlank() }?.let {
             sendSmsFallback(it, "Новое сообщение")
         }
     }
 
-    /* ======================= RECEIVE ======================= */
+    // -------------------- RECEIVE --------------------
 
     private fun listenMainSocket() = scope.launch {
         val buffer = ByteArray(65535)
@@ -173,12 +178,12 @@ class IdentityRepository(private val context: Context) {
 
                 val type = json.getString("type")
                 val from = json.getString("from")
-                val rawData = json.optString("data")
+                val raw = json.optString("data")
 
                 val data =
                     if (json.optBoolean("encrypted"))
-                        CryptoManager.decryptMessage(rawData)
-                    else rawData
+                        CryptoManager.decryptMessage(raw)
+                    else raw
 
                 withContext(Dispatchers.Main) {
                     listeners.forEach {
@@ -189,7 +194,7 @@ class IdentityRepository(private val context: Context) {
         }
     }
 
-    /* ======================= SECURITY ======================= */
+    // -------------------- SECURITY --------------------
 
     private fun enrich(json: JSONObject) {
         json.put("from", getMyId())
@@ -200,8 +205,10 @@ class IdentityRepository(private val context: Context) {
 
     private fun sign(json: JSONObject): String {
         val clean = JSONObject(json.toString()).apply { remove("signature") }
-        val sig = CryptoManager.sign(clean.toString().toByteArray())
-        return Base64.encodeToString(sig, Base64.NO_WRAP)
+        return Base64.encodeToString(
+            CryptoManager.sign(clean.toString().toByteArray()),
+            Base64.NO_WRAP
+        )
     }
 
     private fun verify(json: JSONObject): Boolean = try {
@@ -219,11 +226,11 @@ class IdentityRepository(private val context: Context) {
 
     private fun encryptIfPossible(pubKey: String?, text: String): Pair<String, Boolean> {
         if (pubKey.isNullOrBlank()) return text to false
-        val encrypted = CryptoManager.encryptMessage(text, pubKey)
-        return if (encrypted.startsWith("[Ошибка]")) text to false else encrypted to true
+        val enc = CryptoManager.encryptMessage(text, pubKey)
+        return if (enc.startsWith("[")) text to false else enc to true
     }
 
-    /* ======================= BACKGROUND ======================= */
+    // -------------------- BACKGROUND --------------------
 
     private fun startServerSync() = scope.launch {
         while (isActive) {
@@ -239,20 +246,6 @@ class IdentityRepository(private val context: Context) {
                         passwordHash = null
                     )
                 )
-
-                val nodes = api.getAllNodes()
-                nodeDao.insertAll(nodes.map {
-                    NodeEntity(
-                        userHash = it.hash ?: "",
-                        email = it.email ?: "",
-                        passwordHash = "",
-                        phone = it.phone ?: "",
-                        ip = it.ip ?: "",
-                        port = it.port,
-                        publicKey = it.publicKey ?: "",
-                        lastSeen = System.currentTimeMillis()
-                    )
-                })
             } catch (_: Exception) {}
 
             delay(600_000)
@@ -272,26 +265,25 @@ class IdentityRepository(private val context: Context) {
             try {
                 socket.receive(packet)
                 val json = JSONObject(String(packet.data, 0, packet.length))
+                if (json.optString("type") != "IAM") continue
 
-                if (json.optString("type") == "IAM") {
-                    val id = json.getString("from")
-                    val key = json.getString("pubkey")
+                val id = json.getString("from")
+                val key = json.getString("pubkey")
 
-                    savePeerPublicKey(id, key)
+                savePeerPublicKey(id, key)
 
-                    nodeDao.insert(
-                        NodeEntity(
-                            userHash = id,
-                            email = "",
-                            passwordHash = "",
-                            phone = "",
-                            ip = packet.address.hostAddress,
-                            port = P2P_PORT,
-                            publicKey = key,
-                            lastSeen = System.currentTimeMillis()
-                        )
+                nodeDao.insert(
+                    NodeEntity(
+                        userHash = id,
+                        email = "",
+                        passwordHash = "",
+                        phone = "",
+                        ip = packet.address.hostAddress,
+                        port = P2P_PORT,
+                        publicKey = key,
+                        lastSeen = System.currentTimeMillis()
                     )
-                }
+                )
             } catch (_: Exception) {}
         }
     }
@@ -308,7 +300,7 @@ class IdentityRepository(private val context: Context) {
         }
     }
 
-    /* ======================= UTILS ======================= */
+    // -------------------- UTILS --------------------
 
     private fun sha256(input: String): String =
         MessageDigest.getInstance("SHA-256")
@@ -316,8 +308,7 @@ class IdentityRepository(private val context: Context) {
             .joinToString("") { "%02x".format(it) }
 
     private fun getLocalIp(): String {
-        val wm = context.applicationContext
-            .getSystemService(Context.WIFI_SERVICE) as WifiManager
+        val wm = context.getSystemService(Context.WIFI_SERVICE) as WifiManager
         return Formatter.formatIpAddress(wm.connectionInfo.ipAddress)
     }
 
@@ -343,10 +334,5 @@ class IdentityRepository(private val context: Context) {
                 )
             )
         }
-    }
-
-    fun onDestroy() {
-        scope.cancel()
-        mainSocket?.close()
     }
 }
