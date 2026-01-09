@@ -152,8 +152,8 @@ dependencies {
     implementation("com.google.firebase:firebase-storage-ktx")
     implementation("com.google.firebase:firebase-appcheck-playintegrity")
 
-    // Security Crypto
-    implementation("com.google.crypto.tink:tink-android:1.8.0")
+    // Security Crypto (обновлено до стабильной версии)
+    implementation("com.google.crypto.tink:tink-android:1.9.0")
 
     // Media3
     val media3Version = "1.4.1"
@@ -172,7 +172,7 @@ dependencies {
     implementation("io.getstream:stream-webrtc-android:1.2.0")
     implementation("io.getstream:stream-webrtc-android-compose:1.1.2")
 
-    // libGDX Core (возвращаем как было)
+    // libGDX Core
     val gdxVersion = "1.12.1"
     implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
