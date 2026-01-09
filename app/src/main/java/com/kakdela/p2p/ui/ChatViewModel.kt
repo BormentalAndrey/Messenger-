@@ -9,6 +9,7 @@ import com.kakdela.p2p.data.local.ChatDatabase
 import com.kakdela.p2p.data.local.MessageEntity
 import com.kakdela.p2p.security.CryptoManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -28,7 +29,8 @@ class ChatViewModel(
     private var partnerHash: String = ""
     private var partnerPhone: String? = null
 
-    lateinit var messages: StateFlow<List<MessageEntity>>
+    // Инициализируем пустым Flow, чтобы избежать ошибок до initChat
+    var messages: StateFlow<List<MessageEntity>> = MutableStateFlow(emptyList())
 
     private val p2pListener: (String, String, String, String) -> Unit = { type, data, _, fromId ->
         if (fromId == partnerHash) {
@@ -40,67 +42,42 @@ class ChatViewModel(
         repository.addListener(p2pListener)
     }
 
-    fun initChat(partnerHash: String) {
-        this.partnerHash = partnerHash
+    fun initChat(identifier: String) {
+        // identifier может быть либо хэшем (публичным ключом), либо номером телефона
+        this.partnerHash = identifier
         viewModelScope.launch(Dispatchers.IO) {
-            val node = nodeDao.getNodeByHash(partnerHash)
-            partnerPhone = node?.phone
+            val node = nodeDao.getNodeByHash(identifier)
+            partnerPhone = node?.phone ?: if (identifier.all { it.isDigit() }) identifier else null
+            
+            messages = messageDao.observeMessages(identifier)
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
         }
-        messages = messageDao.observeMessages(partnerHash)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     }
 
     fun sendMessage(text: String) {
         if (text.isBlank() || partnerHash.isBlank()) return
 
-        val messageId = UUID.randomUUID().toString()
-        val timestamp = System.currentTimeMillis()
-
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Шифрование
                 val peerKey = CryptoManager.getPeerPublicKey(partnerHash) ?: ""
                 val encryptedText = if (peerKey.isNotEmpty()) CryptoManager.encryptMessage(text, peerKey) else text
 
                 val localMsg = MessageEntity(
-                    messageId = messageId,
+                    messageId = UUID.randomUUID().toString(),
                     chatId = partnerHash,
                     senderId = repository.getMyId(),
                     receiverId = partnerHash,
                     text = text,
-                    timestamp = timestamp,
+                    timestamp = System.currentTimeMillis(),
                     isMe = true,
-                    status = "PENDING",
-                    messageType = "TEXT"
+                    status = "SENT"
                 )
                 messageDao.insert(localMsg)
 
-                repository.sendMessageSmart(partnerHash, partnerPhone, encryptedText).join()
-                messageDao.updateStatus(messageId, "SENT")
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Error sending: ${e.message}")
-                messageDao.updateStatus(messageId, "ERROR")
-            }
+                repository.sendMessageSmart(partnerHash, partnerPhone, encryptedText)
+            } catch (e: Exception) { Log.e(TAG, "Send error: ${e.message}") }
         }
     }
-
-    // --- Методы для NavGraph (исправлено) ---
-
-    fun sendFile(uri: String, fileName: String) {
-        // В реальном проекте здесь запуск FileTransferWorker
-        sendMessage("📎 Файл: $fileName")
-    }
-
-    fun sendAudio(uri: String, duration: Int) {
-        sendMessage("🎤 Аудио: $duration сек.")
-    }
-
-    fun scheduleMessage(text: String, time: String) {
-        sendMessage("⏰ Отложено на $time: $text")
-    }
-
-    // ----------------------------------------
 
     private fun handleIncomingP2P(type: String, encryptedData: String, fromId: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -117,7 +94,7 @@ class ChatViewModel(
                     status = "DELIVERED"
                 )
                 messageDao.insert(msg)
-            } catch (e: Exception) { Log.e(TAG, "Handle incoming error: ${e.message}") }
+            } catch (e: Exception) { Log.e(TAG, "Incoming error: ${e.message}") }
         }
     }
 
