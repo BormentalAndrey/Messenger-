@@ -4,27 +4,24 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 /**
- * Сообщение в чате (P2P / E2EE).
- * Хранится уже в расшифрованном виде.
+ * Сущность сообщения.
+ * Поля приведены в соответствие с требованиями WebRtcClient и MessageRepository.
  */
 @Entity(tableName = "messages")
 data class MessageEntity(
-
     @PrimaryKey
-    val id: String,          // UUID сообщения
-
-    val chatId: String,      // hash собеседника (один чат = один peer)
-
-    val senderId: String,    // hash отправителя
-    val receiverId: String,  // hash получателя
-
-    val text: String,        // текст сообщения (или описание файла)
-
-    val timestamp: Long,     // unix time millis
-
-    val encrypted: Boolean,  // было ли зашифровано при передаче
-
-    val fileName: String? = null,   // имя файла (если есть)
-    val fileMime: String? = null,   // MIME тип
-    val fileBytes: ByteArray? = null // бинарные данные (если файл)
+    val id: String,          // UUID или Timestamp
+    val chatId: String,      // Hash собеседника
+    val senderId: String,    // Hash отправителя
+    val receiverId: String,  // Hash получателя
+    val text: String,        // Содержимое
+    val timestamp: Long,     // Время
+    val isMe: Boolean,       // Отправлено мной?
+    val isRead: Boolean,     // Прочитано?
+    val encrypted: Boolean,  // Было ли зашифровано
+    
+    // Поля для передачи файлов
+    val fileName: String? = null,
+    val fileMime: String? = null,
+    val fileBytes: ByteArray? = null
 )
