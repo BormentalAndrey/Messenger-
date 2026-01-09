@@ -1,8 +1,10 @@
 package com.kakdela.p2p.ui.navigation
 
 import android.content.Context
-import android.net.*
-import androidx.compose.foundation.Image
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -15,9 +17,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -25,7 +26,6 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
-import com.kakdela.p2p.R
 import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
@@ -35,16 +35,12 @@ import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.viewmodel.ChatViewModel
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
-/**
- * Основной навигационный граф приложения.
- * Исправлены ссылки на методы ChatViewModel для соответствия production-логике.
- */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NavGraph(
     navController: NavHostController,
     identityRepository: IdentityRepository
 ) {
+    // 1. Мониторинг сети
     val isOnline by rememberIsOnline()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -130,9 +126,11 @@ fun NavGraph(
                 ContactsScreen(
                     identityRepository = identityRepository,
                     onContactClick = { contact ->
-                        // Передаем хеш пользователя (идентификатор для P2P)
-                        val targetId = contact.userHash.ifEmpty { contact.publicKey ?: contact.phoneNumber }
-                        navController.navigate("chat/$targetId")
+                        // Исправлено: безопасное получение хеша
+                        val targetId = contact.userHash ?: contact.publicKey ?: ""
+                        if (targetId.isNotEmpty()) {
+                            navController.navigate("chat/$targetId")
+                        }
                     }
                 )
             }
@@ -142,17 +140,9 @@ fun NavGraph(
                 arguments = listOf(navArgument("chatId") { type = NavType.StringType })
             ) { entry ->
                 val chatId = entry.arguments?.getString("chatId") ?: return@composable
-                
-                // Используем Factory для внедрения IdentityRepository в ViewModel
-                val vm: ChatViewModel = viewModel(
-                    factory = ChatViewModelFactory(identityRepository)
-                )
+                val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(identityRepository))
 
-                // Инициализируем чат при входе
-                LaunchedEffect(chatId) {
-                    vm.initChat(chatId)
-                }
-
+                LaunchedEffect(chatId) { vm.initChat(chatId) }
                 val messages by vm.messages.collectAsState()
 
                 ChatScreen(
@@ -160,23 +150,14 @@ fun NavGraph(
                     messages = messages,
                     identityRepository = identityRepository,
                     onSendMessage = { text -> vm.sendMessage(text) },
-                    // Добавлены проверки на существование методов, чтобы не валить компиляцию
-                    onSendFile = { uri -> 
-                        // Если метод в VM называется по-другому, здесь легко поправить
-                        vm.sendMessage("📎 Файл: $uri") 
-                    },
-                    onSendAudio = { uri -> 
-                        vm.sendMessage("🎤 Аудио: $uri")
-                    },
-                    onScheduleMessage = { text, time ->
-                        // Заглушка, если функционал отложен, либо вызов vm.scheduleMessage(...)
-                        vm.sendMessage("[Запланировано на $time]: $text")
-                    },
+                    // ИСПРАВЛЕНО: лямбды теперь принимают 2 параметра согласно требованиям UI
+                    onSendFile = { uri, _ -> vm.sendMessage("📎 Файл: $uri") },
+                    onSendAudio = { uri, duration -> vm.sendMessage("🎤 Аудио (${duration}s): $uri") },
+                    onScheduleMessage = { text, time -> vm.sendMessage("[Запланировано на $time]: $text") },
                     onBack = { navController.popBackStack() }
                 )
             }
 
-            // Досуг и утилиты
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController) }
@@ -204,6 +185,46 @@ fun NavGraph(
             composable(Routes.AI_CHAT) {
                 if (isOnline) AiChatScreen() else NoInternetScreen()
             }
+        }
+    }
+}
+
+/**
+ * Мониторинг сетевого статуса в реальном времени.
+ */
+@Composable
+fun rememberIsOnline(): State<Boolean> {
+    val context = LocalContext.current
+    val status = remember { mutableStateOf(true) }
+    
+    DisposableEffect(context) {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) { status.value = true }
+            override fun onLost(network: Network) { status.value = false }
+        }
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        cm.registerNetworkCallback(request, callback)
+        onDispose { cm.unregisterNetworkCallback(callback) }
+    }
+    return status
+}
+
+/**
+ * Экран-заглушка при отсутствии интернета.
+ */
+@Composable
+fun NoInternetScreen() {
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Офлайн-режим", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Для этой функции нужно соединение", color = Color.Gray, fontSize = 14.sp)
         }
     }
 }
