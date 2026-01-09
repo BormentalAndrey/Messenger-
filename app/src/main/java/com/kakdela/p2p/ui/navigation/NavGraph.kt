@@ -36,11 +36,9 @@ import com.kakdela.p2p.ui.chat.ChatScreen
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 import com.kakdela.p2p.ui.ChatViewModel
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
-/**
- * Центральный граф навигации приложения.
- * Управляет переходами между P2P чатами, развлечениями и авторизацией.
- */
 @Composable
 fun NavGraph(
     navController: NavHostController,
@@ -50,7 +48,6 @@ fun NavGraph(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    // Определяем, нужно ли показывать BottomBar (только на главных экранах)
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
     )
@@ -66,12 +63,12 @@ fun NavGraph(
                 .padding(paddingValues)
                 .background(Color.Black)
         ) {
-            // --- СЕКЦИЯ ЗАПУСКА И АВТОРИЗАЦИИ ---
-            
+            // --- СЕКЦИЯ АВТОРИЗАЦИИ ---
+
             composable(Routes.SPLASH) {
                 SplashScreen {
-                    // Проверка: если ID уже сгенерирован (уже входил), идем в чаты
-                    val nextRoute = if (identityRepository.getMyId().length > 10) Routes.CHATS else Routes.CHOICE
+                    val myId = identityRepository.getMyId()
+                    val nextRoute = if (myId.length > 10) Routes.CHATS else Routes.CHOICE
                     navController.navigate(nextRoute) {
                         popUpTo(Routes.SPLASH) { inclusive = true }
                     }
@@ -101,7 +98,7 @@ fun NavGraph(
                 }
             }
 
-            // --- СЕКЦИЯ ЧАТОВ ---
+            // --- СЕКЦИЯ КОММУНИКАЦИИ ---
 
             composable(Routes.CHATS) { 
                 ChatsListScreen(navController, identityRepository) 
@@ -111,7 +108,6 @@ fun NavGraph(
                 ContactsScreen(
                     identityRepository = identityRepository,
                     onContactClick = { contact ->
-                        // Переход в чат по userHash (Security ID из api.php)
                         if (contact.userHash.isNotEmpty()) {
                             navController.navigate("chat/${contact.userHash}")
                         }
@@ -134,7 +130,7 @@ fun NavGraph(
                 
                 val messagesEntities by vm.messages.collectAsState()
 
-                // Конвертируем сущности БД в модель для UI (Message)
+                // Конвертируем MessageEntity (DB) в Message (UI)
                 val uiMessages = messagesEntities.map { entity ->
                     com.kakdela.p2p.data.Message(
                         id = entity.messageId,
@@ -142,7 +138,7 @@ fun NavGraph(
                         senderId = entity.senderId,
                         timestamp = entity.timestamp,
                         isMe = entity.isMe,
-                        status = entity.status
+                        status = entity.status // Исправлено: статус передается в UI
                     )
                 }
 
@@ -153,11 +149,12 @@ fun NavGraph(
                     onSendMessage = { text -> vm.sendMessage(text) },
                     onSendFile = { uri, name -> vm.sendFile(uri.toString(), name.toString()) },
                     onSendAudio = { uri, dur -> vm.sendAudio(uri.toString(), dur.toInt()) },
+                    onScheduleMessage = { text, time -> vm.scheduleMessage(text, time.toString()) }, // Исправлено
                     onBack = { navController.popBackStack() }
                 )
             }
 
-            // --- СЕКЦИЯ ДОСУГА И СЕРВИСОВ ---
+            // --- СЕКЦИЯ СЕРВИСОВ И ИГР ---
 
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
@@ -165,12 +162,10 @@ fun NavGraph(
             composable(Routes.MUSIC) { MusicPlayerScreen() }
             composable(Routes.TEXT_EDITOR) { TextEditorScreen(navController) }
             
-            // Игры
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
 
-            // Онлайн-сервисы (требуют проверки интернета)
             composable(
                 route = "webview/{url}/{title}",
                 arguments = listOf(
@@ -190,12 +185,9 @@ fun NavGraph(
     }
 }
 
-/**
- * Компонент нижней панели навигации.
- */
 @Composable
 private fun AppBottomBar(currentRoute: String?, navController: NavHostController) {
-    NavigationBar(containerColor = Color(0xFF0A0A0A)) {
+    NavigationBar(containerColor = Color(0xFF010101)) {
         val items = listOf(
             Triple(Routes.CHATS, Icons.Outlined.ChatBubbleOutline, "Чаты"),
             Triple(Routes.DEALS, Icons.Filled.Checklist, "Дела"),
@@ -227,9 +219,6 @@ private fun AppBottomBar(currentRoute: String?, navController: NavHostController
     }
 }
 
-/**
- * Отслеживание состояния интернет-подключения в реальном времени.
- */
 @Composable
 fun rememberIsOnline(): State<Boolean> {
     val context = LocalContext.current
@@ -259,7 +248,7 @@ fun NoInternetScreen() {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Офлайн-режим", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(12.dp))
-            Text("Эта функция недоступна без интернета", color = Color.Gray, fontSize = 14.sp)
+            Text("Эта функция доступна только при наличии интернета", color = Color.Gray, fontSize = 14.sp)
         }
     }
 }
