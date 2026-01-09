@@ -2,10 +2,14 @@ package com.kakdela.p2p.data.local
 
 import androidx.room.*
 
+/**
+ * Data Access Object для работы с узлами сети (DHT).
+ * Запросы используют имена колонок из @ColumnInfo в NodeEntity.
+ */
 @Dao
 interface NodeDao {
 
-    @Query("SELECT * FROM dht_nodes WHERE userHash = :hash LIMIT 1")
+    @Query("SELECT * FROM dht_nodes WHERE user_hash = :hash LIMIT 1")
     suspend fun getNodeByHash(hash: String): NodeEntity?
 
     @Query("SELECT * FROM dht_nodes WHERE email = :email LIMIT 1")
@@ -14,7 +18,7 @@ interface NodeDao {
     /**
      * Получение списка из 2500 последних активных узлов для роевого поиска.
      */
-    @Query("SELECT * FROM dht_nodes ORDER BY lastSeen DESC LIMIT 2500")
+    @Query("SELECT * FROM dht_nodes ORDER BY last_seen DESC LIMIT 2500")
     suspend fun getAllNodes(): List<NodeEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -37,9 +41,9 @@ interface NodeDao {
      */
     @Query("""
         DELETE FROM dht_nodes 
-        WHERE userHash NOT IN (
-            SELECT userHash FROM dht_nodes 
-            ORDER BY lastSeen DESC 
+        WHERE user_hash NOT IN (
+            SELECT user_hash FROM dht_nodes 
+            ORDER BY last_seen DESC 
             LIMIT 2500
         )
     """)
@@ -50,8 +54,8 @@ interface NodeDao {
      */
     @Query("""
         UPDATE dht_nodes 
-        SET ip = :newIp, lastSeen = :timestamp, publicKey = :pubKey 
-        WHERE userHash = :hash
+        SET ip_address = :newIp, last_seen = :timestamp, public_key = :pubKey 
+        WHERE user_hash = :hash
     """)
     suspend fun updateNetworkInfo(hash: String, newIp: String, pubKey: String, timestamp: Long)
 
