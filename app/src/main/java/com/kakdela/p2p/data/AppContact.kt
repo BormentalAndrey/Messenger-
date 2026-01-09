@@ -2,15 +2,20 @@ package com.kakdela.p2p.data
 
 /**
  * Единая модель контакта для P2P мессенджера.
+ * Оптимизирована для работы с Discovery Server (api.php).
  */
 data class AppContact(
     val name: String,
     val phoneNumber: String,
-    val publicKey: String? = null,
     val isRegistered: Boolean = false,
-    val lastKnownIp: String? = null
+    val userHash: String = "",        // SHA-256 ID для открытия чата
+    val publicKey: String? = null,     // Публичный ключ для шифрования
+    val lastKnownIp: String? = null,   // IP для прямой UDP отправки
+    val isOnline: Boolean = false      // Статус присутствия в сети
 ) {
-    // Хелпер для получения безопасного ID для навигации
-    fun getIdentifier(): String = publicKey ?: phoneNumber
+    /**
+     * Возвращает идентификатор для навигации.
+     * Приоритет отдается userHash (Security ID).
+     */
+    fun getIdentifier(): String = if (userHash.isNotEmpty()) userHash else phoneNumber
 }
-
