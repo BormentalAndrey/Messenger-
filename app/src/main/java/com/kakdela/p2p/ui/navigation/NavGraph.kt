@@ -36,24 +36,41 @@ import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen 
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
-import com.kakdela.p2p.ui.ChatViewModel
+import com.kakdela.p2p.viewmodel.ChatViewModel
 
 /**
- * Основной граф навигации приложения.
- * startDestination теперь динамически определяется в MainActivity.
+ * Объект с константами маршрутов для исключения опечаток
  */
+object Routes {
+    const val SPLASH = "splash"
+    const val CHOICE = "choice"
+    const val AUTH_EMAIL = "auth_email"
+    const val AUTH_PHONE = "auth_phone"
+    const val CHATS = "chats"
+    const val CONTACTS = "contacts"
+    const val DEALS = "deals"
+    const val ENTERTAINMENT = "entertainment"
+    const val SETTINGS = "settings"
+    const val MUSIC = "music"
+    const val TIC_TAC_TOE = "tic_tac_toe"
+    const val CHESS = "chess"
+    const val PACMAN = "pacman"
+    const val AI_CHAT = "ai_chat"
+    const val CHAT_DIRECT = "chat/{chatId}"
+}
+
 @Composable
 fun NavGraph(
     navController: NavHostController,
     identityRepository: IdentityRepository,
-    startDestination: String // Сюда теперь передается Routes.SPLASH или Routes.CHATS
+    startDestination: String
 ) {
     val context = LocalContext.current
     val isOnline by rememberIsOnline()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    // Определяем, нужно ли показывать BottomBar на текущем экране
+    // Определяем видимость BottomBar (скрываем на экранах авторизации и в самом чате)
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
     )
@@ -74,12 +91,11 @@ fun NavGraph(
                 .background(Color.Black)
         ) {
             
-            // --- ЭКРАН ЗАГРУЗКИ / ПРОВЕРКИ ---
+            // --- SPLASH ---
             composable(Routes.SPLASH) {
                 SplashScreen {
                     val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
                     val isLoggedIn = prefs.getBoolean("is_logged_in", false)
-                    
                     val nextRoute = if (isLoggedIn) Routes.CHATS else Routes.CHOICE
                     
                     navController.navigate(nextRoute) {
@@ -88,7 +104,7 @@ fun NavGraph(
                 }
             }
 
-            // --- БЛОК АВТОРИЗАЦИИ ---
+            // --- AUTH ---
             composable(Routes.CHOICE) {
                 RegistrationChoiceScreen(
                     onPhone = { navController.navigate(Routes.AUTH_PHONE) },
@@ -112,35 +128,43 @@ fun NavGraph(
                 }
             }
 
-            // --- СПИСОК ЧАТОВ ---
+            // --- MAIN TABS ---
             composable(Routes.CHATS) { 
                 ChatsListScreen(navController, identityRepository) 
             }
 
-            // --- КОНТАКТЫ ---
             composable(Routes.CONTACTS) {
                 ContactsScreen(
                     identityRepository = identityRepository,
                     onContactClick = { contact ->
-                        if (contact.userHash.isNotBlank()) {
+                        if (!contact.userHash.isNullOrBlank()) {
                             navController.navigate("chat/${contact.userHash}")
                         }
                     }
                 )
             }
 
-            // --- ЭКРАН ПРЯМОГО ЧАТА ---
+            // --- P2P CHAT ENGINE ---
             composable(
-                route = "chat/{chatId}",
+                route = Routes.CHAT_DIRECT,
                 arguments = listOf(navArgument("chatId") { type = NavType.StringType })
             ) { entry ->
-                val chatId = entry.arguments?.getString("chatId") ?: return@composable
+                val chatId = entry.arguments?.getString("chatId") ?: ""
                 val app = context.applicationContext as Application
-                val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(identityRepository, app))
+                
+                // Используем фабрику для инъекции репозитория в ViewModel
+                val vm: ChatViewModel = viewModel(
+                    factory = ChatViewModelFactory(identityRepository, app)
+                )
 
-                LaunchedEffect(chatId) { vm.initChat(chatId) }
+                // Инициализация данных чата при входе
+                LaunchedEffect(chatId) {
+                    vm.initChat(chatId)
+                }
+
                 val messagesEntities by vm.messages.collectAsState()
-
+                
+                // Маппинг данных из БД в UI-модели
                 val uiMessages = remember(messagesEntities) {
                     messagesEntities.map { entity ->
                         com.kakdela.p2p.data.Message(
@@ -166,18 +190,18 @@ fun NavGraph(
                 )
             }
 
-            // --- СЕРВИСНЫЕ ЭКРАНЫ ---
+            // --- SECTIONS ---
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController, identityRepository) }
             
-            // --- РАЗВЛЕЧЕНИЯ ---
+            // --- GAMES & TOOLS ---
             composable(Routes.MUSIC) { MusicPlayerScreen() }
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
 
-            // --- ИИ ЧАТ (ОНЛАЙН) ---
+            // --- AI (Requires Internet) ---
             composable(Routes.AI_CHAT) { 
                 if (isOnline) AiChatScreen() else NoInternetScreen { navController.popBackStack() } 
             }
@@ -212,7 +236,11 @@ private fun AppBottomBar(currentRoute: String?, navController: NavHostController
                 },
                 icon = { Icon(icon, null, tint = if (isSelected) Color.Cyan else Color.Gray) },
                 label = { Text(label, fontSize = 10.sp, color = if (isSelected) Color.Cyan else Color.Gray) },
-                colors = NavigationBarItemDefaults.colors(indicatorColor = Color(0xFF1A1A1A))
+                colors = NavigationBarItemDefaults.colors(
+                    indicatorColor = Color(0xFF1A1A1A),
+                    selectedIconColor = Color.Cyan,
+                    unselectedIconColor = Color.Gray
+                )
             )
         }
     }
@@ -222,21 +250,27 @@ private fun AppBottomBar(currentRoute: String?, navController: NavHostController
 fun rememberIsOnline(): State<Boolean> {
     val context = LocalContext.current
     val status = remember { mutableStateOf(true) }
+    
     DisposableEffect(context) {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) { status.value = true }
             override fun onLost(network: Network) { status.value = false }
         }
+        
         val request = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .build()
+            
         try {
             cm.registerNetworkCallback(request, callback)
         } catch (e: Exception) {
             status.value = true 
         }
-        onDispose { cm.unregisterNetworkCallback(callback) }
+        
+        onDispose { 
+            try { cm.unregisterNetworkCallback(callback) } catch (e: Exception) {}
+        }
     }
     return status
 }
@@ -255,10 +289,15 @@ fun NoInternetScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(16.dp))
             Text("Офлайн-режим", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
-            Text("Эта функция требует интернет-соединения.", color = Color.Gray, textAlign = TextAlign.Center)
+            Text("Искусственный интеллект требует интернет-соединения для обработки запросов.", 
+                color = Color.Gray, textAlign = TextAlign.Center)
             Spacer(Modifier.height(24.dp))
-            Button(onClick = onBack, colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)) {
-                Text("Назад")
+            Button(
+                onClick = onBack, 
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A1A1A)),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp)
+            ) {
+                Text("Вернуться", color = Color.Cyan)
             }
         }
     }
