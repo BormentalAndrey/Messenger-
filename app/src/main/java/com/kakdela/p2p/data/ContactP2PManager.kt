@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 /**
  * Менеджер контактов P2P.
  * Сопоставляет локальную книгу с данными из api.php (ТЗ п. 2.2).
+ * Исправлена логика нормализации для точного совпадения хэшей.
  */
 class ContactP2PManager(
     private val context: Context,
@@ -23,59 +24,66 @@ class ContactP2PManager(
     }
 
     /**
-     * Синхронизирует контакты. Использует метод O(N) через HashMap.
+     * Основной метод синхронизации.
+     * Сверяет локальные номера с базой активных узлов на сервере.
      */
     suspend fun syncContacts(): List<AppContact> = withContext(Dispatchers.IO) {
-        // 1. Проверка разрешений
+        // 1. Проверка разрешений перед доступом к ContentResolver
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
-            Log.e(TAG, "Missing READ_CONTACTS permission")
+            Log.e(TAG, "Ошибка: Разрешение READ_CONTACTS не предоставлено")
             return@withContext emptyList()
         }
 
-        // 2. Получение списка всех "живых" хэшей с сервера
+        // 2. Получение списка активных пользователей с сервера Discovery
         val onlineNodes: List<UserPayload> = try {
             identityRepo.fetchAllNodesFromServer()
         } catch (e: Exception) {
-            Log.e(TAG, "Discovery sync failed: ${e.message}")
+            Log.e(TAG, "Ошибка синхронизации с сервером: ${e.message}")
             emptyList()
         }
 
-        // 3. Карта для мгновенного поиска по phone_hash (Discovery ID)
+        // 3. Создаем карту для быстрого поиска O(1). Ключ — phone_hash.
         val onlineHashMap = onlineNodes.associateBy { it.phone_hash ?: "" }
 
-        // 4. Сбор локальных контактов
+        // 4. Читаем контакты из телефонной книги
         val localContacts = fetchLocalPhoneContacts()
         
-        // 5. Сопоставление
+        // 5. Процесс сопоставления (Matching)
         val merged = localContacts.map { contact ->
-            // Генерируем хэш номера с PEPPER (как в api.php)
+            // Генерируем хэш от НОРМАЛИЗОВАННОГО номера (7900...)
             val phoneDiscoveryHash = identityRepo.generatePhoneDiscoveryHash(contact.phoneNumber)
             
             val peer = onlineHashMap[phoneDiscoveryHash]
 
             if (peer != null) {
+                // Пользователь найден в сети
                 contact.copy(
                     isRegistered = true,
-                    userHash = peer.hash,         // Сохраняем Security ID для NavGraph
+                    userHash = peer.hash,         // ID для маршрутизации сообщений
                     publicKey = peer.publicKey,
                     lastKnownIp = peer.ip,
-                    isOnline = true
+                    isOnline = true               // Узел активен
                 )
             } else {
-                contact.copy(isRegistered = false)
+                // Пользователь не зарегистрирован или не в сети
+                contact.copy(isRegistered = false, isOnline = false)
             }
         }
 
-        // 6. Сортировка: Сначала зарегистрированные, затем по алфавиту
+        // 6. Финальная сортировка: Сначала онлайн-контакты, затем остальные по алфавиту
         merged.sortedWith(
             compareByDescending<AppContact> { it.isRegistered }
                 .thenBy { it.name.lowercase() }
         )
     }
 
+    /**
+     * Извлекает контакты из Android Contacts Provider.
+     */
     private fun fetchLocalPhoneContacts(): List<AppContact> {
         val contacts = mutableListOf<AppContact>()
         val seenPhones = HashSet<String>()
+        
         val projection = arrayOf(
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, 
             ContactsContract.CommonDataKinds.Phone.NUMBER
@@ -92,28 +100,42 @@ class ContactP2PManager(
                 while (cursor.moveToNext()) {
                     val name = cursor.getString(nameIdx) ?: "Unknown"
                     val rawPhone = cursor.getString(phoneIdx) ?: continue
-                    val phone = normalizePhone(rawPhone) ?: continue
+                    
+                    // Важный этап: приведение любого ввода к стандарту 79XXXXXXXXX
+                    val normalized = normalizePhone(rawPhone) ?: continue
 
-                    if (seenPhones.add(phone)) {
-                        contacts.add(AppContact(name = name, phoneNumber = phone))
+                    // Исключаем дубликаты, если один контакт записан несколько раз
+                    if (seenPhones.add(normalized)) {
+                        contacts.add(AppContact(name = name, phoneNumber = normalized))
                     }
                 }
             }
         } catch (e: Exception) { 
-            Log.e(TAG, "Contacts query error: ${e.message}") 
+            Log.e(TAG, "Ошибка чтения контактов: ${e.message}") 
         }
         return contacts
     }
 
+    /**
+     * Продакшн-логика нормализации номера:
+     * 1. Убирает лишние символы.
+     * 2. Превращает 8... в 7...
+     * 3. Добавляет 7 к 10-значным номерам.
+     * Это гарантирует, что хэш в приложении совпадет с хэшем в MySQL.
+     */
     private fun normalizePhone(raw: String): String? {
-        var phone = raw.replace(Regex("[^0-9]"), "")
-        if (phone.isEmpty()) return null
+        // Очистка от скобок, тире и пробелов
+        var digits = raw.replace(Regex("[^0-9]"), "")
+        if (digits.isEmpty()) return null
         
-        if (phone.length == 11 && phone.startsWith("8")) {
-            phone = "7" + phone.substring(1)
+        // Корректировка префикса РФ/СНГ
+        digits = when {
+            digits.length == 11 && digits.startsWith("8") -> "7" + digits.substring(1)
+            digits.length == 10 && digits.startsWith("9") -> "7" + digits
+            else -> digits
         }
         
-        // Для хэширования берем последние 10 цифр (единый формат в ТЗ)
-        return if (phone.length >= 10) phone.takeLast(10) else null
+        // Проверяем минимально допустимую длину (для РФ это 11 цифр)
+        return if (digits.length >= 11) digits else null
     }
 }
