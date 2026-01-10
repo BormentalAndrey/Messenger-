@@ -38,10 +38,6 @@ import com.kakdela.p2p.ui.ChatViewModel
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 
-/**
- * Центральный граф навигации. 
- * Отвечает за маршрутизацию между P2P чатами, авторизацией и развлекательными сервисами.
- */
 @Composable
 fun NavGraph(
     navController: NavHostController,
@@ -51,17 +47,12 @@ fun NavGraph(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    // Определяем, когда показывать BottomBar (только на главных экранах)
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
     )
 
     Scaffold(
-        bottomBar = { 
-            if (showBottomBar) {
-                AppBottomBar(currentRoute, navController) 
-            }
-        },
+        bottomBar = { if (showBottomBar) AppBottomBar(currentRoute, navController) },
         containerColor = Color.Black
     ) { paddingValues ->
         NavHost(
@@ -71,19 +62,19 @@ fun NavGraph(
                 .padding(paddingValues)
                 .background(Color.Black)
         ) {
-            
-            // --- СТАРТОВАЯ ЛОГИКА ---
             composable(Routes.SPLASH) {
                 SplashScreen {
+                    // Тщательная проверка: если ID нет или он некорректен - на регистрацию
                     val myId = identityRepository.getMyId()
-                    val nextRoute = if (myId.length > 10) Routes.CHATS else Routes.CHOICE
+                    val hasAccount = myId.isNotEmpty() && myId.length > 20
+                    
+                    val nextRoute = if (hasAccount) Routes.CHATS else Routes.CHOICE
                     navController.navigate(nextRoute) {
                         popUpTo(Routes.SPLASH) { inclusive = true }
                     }
                 }
             }
 
-            // --- АВТОРИЗАЦИЯ ---
             composable(Routes.CHOICE) {
                 RegistrationChoiceScreen(
                     onPhone = { navController.navigate(Routes.AUTH_PHONE) },
@@ -107,7 +98,7 @@ fun NavGraph(
                 }
             }
 
-            // --- КОММУНИКАЦИИ (P2P) ---
+            // --- P2P MESSAGING ---
             composable(Routes.CHATS) { 
                 ChatsListScreen(navController, identityRepository) 
             }
@@ -129,19 +120,11 @@ fun NavGraph(
             ) { entry ->
                 val chatId = entry.arguments?.getString("chatId") ?: return@composable
                 val context = LocalContext.current.applicationContext as Application
-                
-                // Создаем ViewModel, привязанную к жизненному циклу текущего composable
-                val vm: ChatViewModel = viewModel(
-                    factory = ChatViewModelFactory(identityRepository, context)
-                )
+                val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(identityRepository, context))
 
-                LaunchedEffect(chatId) {
-                    vm.initChat(chatId)
-                }
-                
+                LaunchedEffect(chatId) { vm.initChat(chatId) }
                 val messagesEntities by vm.messages.collectAsState()
 
-                // Маппинг данных из DB-слоя в UI-слой (Продакшн-подход к разделению моделей)
                 val uiMessages = remember(messagesEntities) {
                     messagesEntities.map { entity ->
                         com.kakdela.p2p.data.Message(
@@ -167,38 +150,14 @@ fun NavGraph(
                 )
             }
 
-            // --- СЕРВИСЫ И ИНСТРУМЕНТЫ ---
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController, identityRepository) }
-            composable(Routes.MUSIC) { MusicPlayerScreen() }
-            composable(Routes.TEXT_EDITOR) { TextEditorScreen(navController) }
             
-            // ИГРЫ
+            // GAMES
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
-
-            // WEB ВЬЮ (с защитой от передачи некорректных URL)
-            composable(
-                route = "webview/{url}/{title}",
-                arguments = listOf(
-                    navArgument("url") { type = NavType.StringType },
-                    navArgument("title") { type = NavType.StringType }
-                )
-            ) { e ->
-                val encodedUrl = e.arguments?.getString("url").orEmpty()
-                val decodedUrl = remember(encodedUrl) {
-                    URLDecoder.decode(encodedUrl, StandardCharsets.UTF_8.name())
-                }
-                val title = e.arguments?.getString("title").orEmpty()
-                
-                if (isOnline) {
-                    WebViewScreen(decodedUrl, title, navController)
-                } else {
-                    NoInternetScreen { navController.popBackStack() }
-                }
-            }
 
             composable(Routes.AI_CHAT) { 
                 if (isOnline) AiChatScreen() else NoInternetScreen { navController.popBackStack() } 
@@ -209,10 +168,7 @@ fun NavGraph(
 
 @Composable
 private fun AppBottomBar(currentRoute: String?, navController: NavHostController) {
-    NavigationBar(
-        containerColor = Color(0xFF010101),
-        tonalElevation = 0.dp
-    ) {
+    NavigationBar(containerColor = Color(0xFF010101)) {
         val items = listOf(
             Triple(Routes.CHATS, Icons.Outlined.ChatBubbleOutline, "Чаты"),
             Triple(Routes.DEALS, Icons.Filled.Checklist, "Дела"),
@@ -226,95 +182,33 @@ private fun AppBottomBar(currentRoute: String?, navController: NavHostController
                 onClick = {
                     if (!isSelected) {
                         navController.navigate(route) {
-                            // Сохраняем состояние вкладок при переключении
                             popUpTo(navController.graph.startDestinationId) { saveState = true }
                             launchSingleTop = true
                             restoreState = true
                         }
                     }
                 },
-                icon = { 
-                    Icon(
-                        imageVector = icon, 
-                        contentDescription = label,
-                        tint = if (isSelected) Color.Cyan else Color.Gray
-                    ) 
-                },
-                label = { 
-                    Text(
-                        text = label, 
-                        fontSize = 10.sp,
-                        color = if (isSelected) Color.Cyan else Color.Gray
-                    ) 
-                },
-                colors = NavigationBarItemDefaults.colors(
-                    indicatorColor = Color(0xFF1A1A1A)
-                )
+                icon = { Icon(icon, null, tint = if (isSelected) Color.Cyan else Color.Gray) },
+                label = { Text(label, fontSize = 10.sp, color = if (isSelected) Color.Cyan else Color.Gray) },
+                colors = NavigationBarItemDefaults.colors(indicatorColor = Color(0xFF1A1A1A))
             )
         }
     }
 }
 
-/**
- * Реактивное наблюдение за статусом интернета.
- */
 @Composable
 fun rememberIsOnline(): State<Boolean> {
     val context = LocalContext.current
     val status = remember { mutableStateOf(true) }
-    
     DisposableEffect(context) {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) { status.value = true }
             override fun onLost(network: Network) { status.value = false }
         }
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
-        
-        try {
-            cm.registerNetworkCallback(request, callback)
-        } catch (e: Exception) {
-            status.value = true // Фоллбэк на случай ошибок регистрации
-        }
-
+        val request = NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build()
+        cm.registerNetworkCallback(request, callback)
         onDispose { cm.unregisterNetworkCallback(callback) }
     }
     return status
-}
-
-@Composable
-fun NoInternetScreen(onBack: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black), 
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(24.dp)
-        ) {
-            Text(
-                "Офлайн-режим", 
-                color = Color.White, 
-                fontSize = 20.sp, 
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                "Эта функция требует интернет-соединения", 
-                color = Color.Gray, 
-                fontSize = 14.sp
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-            Button(
-                onClick = onBack,
-                colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
-            ) {
-                Text("Вернуться", color = Color.White)
-            }
-        }
-    }
 }
