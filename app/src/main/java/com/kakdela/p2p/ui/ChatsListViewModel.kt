@@ -1,89 +1,98 @@
 package com.kakdela.p2p.ui
 
-import androidx.lifecycle.ViewModel
-import com.google.firebase.firestore.ktx.firestore
-import com.google.firebase.firestore.ktx.toObject
-import com.google.firebase.ktx.Firebase
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.kakdela.p2p.data.local.ChatDatabase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * UI-модель для отображения в списке чатов
+ * Модель отображения чата в списке.
+ * Содержит всё необходимое для отрисовки элемента списка.
  */
 data class ChatDisplay(
     val id: String,
     val title: String,
     val lastMessage: String,
-    val time: String
+    val time: String,
+    val timestamp: Long
 )
 
-class ChatsListViewModel : ViewModel() {
+class ChatsListViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val db = Firebase.firestore
+    private val db = ChatDatabase.getDatabase(application)
+    private val messageDao = db.messageDao()
+    private val nodeDao = db.nodeDao()
 
     private val _chats = MutableStateFlow<List<ChatDisplay>>(emptyList())
-    val chats = _chats.asStateFlow()
+    val chats: StateFlow<List<ChatDisplay>> = _chats.asStateFlow()
 
-    fun loadChats(currentUserId: String) {
-        // Слушаем все чаты, где участвует текущий пользователь
-        db.collection("chats")
-            .whereArrayContains("participantIds", currentUserId)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    // Можно добавить логирование ошибки
-                    return@addSnapshotListener
-                }
+    private val timeFormatter = SimpleDateFormat("HH:mm", Locale.getDefault())
+    private val dateFormatter = SimpleDateFormat("dd.MM", Locale.getDefault())
 
-                val list = mutableListOf<ChatDisplay>()
+    init {
+        observeChats()
+    }
 
-                snapshot?.documents?.forEach { doc ->
-                    val lastMessage = doc.getString("lastMessage") ?: ""
-                    val timestamp = doc.getTimestamp("timestamp")?.toDate()
+    /**
+     * Подписывается на поток последних сообщений из БД.
+     * Автоматически срабатывает при insert/update в таблице messages.
+     */
+    private fun observeChats() {
+        viewModelScope.launch(Dispatchers.IO) {
+            messageDao.observeLastMessages()
+                .distinctUntilChanged()
+                .collect { messages ->
+                    val displayList = messages
+                        .filter { it.chatId != "global" } // Исключаем глобальный чат
+                        .map { msg ->
+                            // Получаем данные о пире для заголовка
+                            val contact = try {
+                                nodeDao.getNodeByHash(msg.chatId)
+                            } catch (e: Exception) {
+                                null
+                            }
 
-                    val time = timestamp?.let {
-                        SimpleDateFormat("HH:mm", Locale.getDefault()).format(it)
-                    } ?: ""
+                            val title = when {
+                                contact != null && !contact.phone.isNullOrBlank() -> contact.phone
+                                // Если в NodeEntity есть поле name (согласно ТЗ):
+                                // contact != null && !contact.name.isNullOrBlank() -> contact.name
+                                else -> "ID: ${msg.chatId.take(8)}..."
+                            }
 
-                    val title = if (doc.id == "global") {
-                        "ЧёКаВо?"  // Глобальный чат
-                    } else {
-                        // Для личных чатов можно загрузить имя собеседника из users
-                        "Личный чат"  // Пока заглушка, легко заменить на реальное имя
-                    }
-
-                    list.add(
-                        ChatDisplay(
-                            id = doc.id,
-                            title = title,
-                            lastMessage = lastMessage,
-                            time = time
-                        )
-                    )
-                }
-
-                // Добавляем глобальный чат, если его нет в базе (на всякий случай)
-                if (list.none { it.id == "global" }) {
-                    list.add(
-                        ChatDisplay(
-                            id = "global",
-                            title = "ЧёКаВо?",
-                            lastMessage = "Присоединяйтесь к обсуждению!",
-                            time = "online"
-                        )
-                    )
-                }
-
-                // Сортировка по времени последнего сообщения (новые сверху)
-                _chats.value = list.sortedByDescending { chat ->
-                    if (chat.time == "online") Long.MAX_VALUE else
-                        try {
-                            SimpleDateFormat("HH:mm", Locale.getDefault()).parse(chat.time)?.time ?: 0
-                        } catch (e: Exception) {
-                            0
+                            ChatDisplay(
+                                id = msg.chatId,
+                                title = title ?: "Unknown",
+                                lastMessage = if (msg.isMe) "Вы: ${msg.text}" else msg.text,
+                                time = formatTimestamp(msg.timestamp),
+                                timestamp = msg.timestamp
+                            )
                         }
+
+                    // Обновляем состояние (сортировка уже заложена в SQL-запросе, но дублируем здесь для надежности)
+                    _chats.value = displayList.sortedByDescending { it.timestamp }
                 }
-            }
+        }
+    }
+
+    /**
+     * Форматирует время: если сообщение сегодня — HH:mm, если раньше — dd.MM
+     */
+    private fun formatTimestamp(timestamp: Long?): String {
+        if (timestamp == null || timestamp <= 0) return ""
+
+        val now = Calendar.getInstance()
+        val msgTime = Calendar.getInstance().apply { timeInMillis = timestamp }
+
+        return if (now.get(Calendar.YEAR) == msgTime.get(Calendar.YEAR) &&
+            now.get(Calendar.DAY_OF_YEAR) == msgTime.get(Calendar.DAY_OF_YEAR)) {
+            timeFormatter.format(Date(timestamp))
+        } else {
+            dateFormatter.format(Date(timestamp))
+        }
     }
 }
