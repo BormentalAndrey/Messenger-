@@ -18,7 +18,6 @@ class ChatViewModel(
     private val repository: IdentityRepository
 ) : AndroidViewModel(application) {
 
-    private val TAG = "ChatViewModel"
     private val db = ChatDatabase.getDatabase(application)
     private val messageDao = db.messageDao()
     private val nodeDao = db.nodeDao()
@@ -31,7 +30,7 @@ class ChatViewModel(
 
     private val p2pListener: (String, String, String, String) -> Unit = { type, data, _, fromId ->
         if (fromId == partnerHash) {
-            handleIncomingP2P(type, data, fromId)
+            handleIncoming(type, data, fromId)
         }
     }
 
@@ -40,81 +39,61 @@ class ChatViewModel(
     }
 
     fun initChat(identifier: String) {
-        this.partnerHash = identifier
+        partnerHash = identifier
         viewModelScope.launch(Dispatchers.IO) {
             val node = nodeDao.getNodeByHash(identifier)
-            partnerPhone = node?.phone ?: if (identifier.all { it.isDigit() }) identifier else null
-            
-            messageDao.observeMessages(identifier).collect {
-                _messages.value = it
-            }
+            partnerPhone = node?.phone
+            messageDao.observeMessages(identifier).collect { _messages.value = it }
         }
     }
 
     fun sendMessage(text: String) {
         if (text.isBlank() || partnerHash.isBlank()) return
-
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val peerKey = CryptoManager.getPeerPublicKey(partnerHash) ?: ""
-                val encryptedText = if (peerKey.isNotEmpty()) CryptoManager.encryptMessage(text, peerKey) else text
-
-                val localMsg = MessageEntity(
+                val encrypted = if (peerKey.isNotEmpty()) CryptoManager.encryptMessage(text, peerKey) else text
+                
+                // FIX: getMyId() теперь доступен
+                val myId = repository.getMyId()
+                
+                val msg = MessageEntity(
                     messageId = UUID.randomUUID().toString(),
                     chatId = partnerHash,
-                    senderId = repository.getMyId(),
+                    senderId = myId,
                     receiverId = partnerHash,
                     text = text,
                     timestamp = System.currentTimeMillis(),
                     isMe = true,
                     status = "SENT"
                 )
-                messageDao.insert(localMsg)
-
-                repository.sendMessageSmart(partnerHash, partnerPhone, encryptedText)
-            } catch (e: Exception) {
-                Log.e(TAG, "Send error: ${e.message}")
-            }
+                messageDao.insert(msg)
+                repository.sendMessageSmart(partnerHash, partnerPhone, encrypted)
+            } catch (e: Exception) { e.printStackTrace() }
         }
     }
 
-    // Методы для совместимости с NavGraph.kt
-    fun sendFile(uri: String, fileName: String) {
-        sendMessage("📎 Файл: $fileName")
-    }
+    fun sendFile(uri: String, fileName: String) = sendMessage("FILE: $fileName")
+    fun sendAudio(uri: String, duration: Int) = sendMessage("AUDIO: $duration s")
+    fun scheduleMessage(text: String, time: String) = sendMessage("SCHEDULED ($time): $text")
 
-    fun sendAudio(uri: String, duration: Int) {
-        sendMessage("🎤 Голосовое сообщение ($duration сек.)")
-    }
-
-    // ФИКС ОШИБКИ Type Mismatch (String вместо Long)
-    fun scheduleMessage(text: String, time: String) {
-        sendMessage("⏰ [Запланировано на $time]: $text")
-    }
-
-    private fun handleIncomingP2P(type: String, encryptedData: String, fromId: String) {
+    private fun handleIncoming(type: String, data: String, fromId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val decryptedText = if (type == "CHAT") {
-                    CryptoManager.decryptMessage(encryptedData)
-                } else {
-                    "Media: $type"
-                }
-                
+                val text = if (type == "CHAT") CryptoManager.decryptMessage(data) else "$type received"
+                val myId = repository.getMyId()
                 val msg = MessageEntity(
                     messageId = UUID.randomUUID().toString(),
                     chatId = fromId,
                     senderId = fromId,
-                    receiverId = repository.getMyId(),
-                    text = decryptedText,
+                    receiverId = myId,
+                    text = text,
                     timestamp = System.currentTimeMillis(),
                     isMe = false,
-                    status = "DELIVERED"
+                    status = "READ"
                 )
                 messageDao.insert(msg)
-            } catch (e: Exception) {
-                Log.e(TAG, "Incoming error: ${e.message}")
-            }
+            } catch (e: Exception) {}
         }
     }
 
