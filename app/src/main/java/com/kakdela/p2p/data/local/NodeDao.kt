@@ -18,36 +18,55 @@ interface NodeDao {
     suspend fun insertNodes(nodes: List<NodeEntity>)
 
     /**
-     * Обновление кэша: вставляем новые, удаляем старые (если больше 2500)
+     * Комплексное обновление: вставляем новые данные и сразу удаляем излишки, 
+     * оставляя только 2500 самых свежих участников роя.
      */
     @Transaction
     suspend fun updateCache(nodes: List<NodeEntity>) {
         if (nodes.isEmpty()) return
+        
+        // 1. Вставляем/обновляем полученные записи
         insertNodes(nodes)
+        
+        // 2. Удаляем всех, кто не попал в ТОП-2500 по времени последнего визита
         trimCache()
     }
 
+    /**
+     * Удаляет "хвост" базы данных.
+     * Оставляет только 2500 записей с самым большим lastSeen.
+     */
     @Query("""
-        DELETE FROM dht_nodes
+        DELETE FROM dht_nodes 
         WHERE userHash NOT IN (
-            SELECT userHash FROM dht_nodes ORDER BY lastSeen DESC LIMIT 2500
+            SELECT userHash FROM dht_nodes 
+            ORDER BY lastSeen DESC 
+            LIMIT 2500
         )
     """)
     suspend fun trimCache()
 
     /**
-     * Обновление сетевых данных при обнаружении пира
+     * Обновление сетевых данных при прямом контакте (UDP/NSD).
+     * Если пира нет в базе, он будет добавлен при следующей синхронизации с сервером.
      */
     @Query("""
-        UPDATE dht_nodes
-        SET ip = :newIp, port = :newPort, publicKey = :pubKey, lastSeen = :timestamp
+        UPDATE dht_nodes 
+        SET ip = :newIp, port = :newPort, publicKey = :pubKey, lastSeen = :timestamp 
         WHERE userHash = :hash
     """)
     suspend fun updateNetworkInfo(
-        hash: String,
-        newIp: String,
-        newPort: Int = 8888,
-        pubKey: String,
+        hash: String, 
+        newIp: String, 
+        newPort: Int, 
+        pubKey: String, 
         timestamp: Long
     )
+
+    /**
+     * Дополнительный метод: удаляет совсем старые записи (например, старше 30 дней),
+     * даже если их меньше 2500. Полезно для гигиены базы.
+     */
+    @Query("DELETE FROM dht_nodes WHERE lastSeen < :timestampThreshold")
+    suspend fun deleteStaleNodes(timestampThreshold: Long)
 }
