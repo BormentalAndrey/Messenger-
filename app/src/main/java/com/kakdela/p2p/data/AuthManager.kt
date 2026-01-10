@@ -16,23 +16,26 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
+/**
+ * Менеджер авторизации.
+ * Отвечает за регистрацию узла в MySQL Discovery и локальное сохранение сессии.
+ */
 class AuthManager(private val context: Context) {
 
     private val TAG = "AuthManager"
     private val nodeDao = ChatDatabase.getDatabase(context).nodeDao()
     private val PEPPER = "7fb8a1d2c3e4f5a6"
 
-    // 1. Обязательно добавляем Interceptor для User-Agent (обход защиты хостинга)
     private val okHttpClient = OkHttpClient.Builder()
         .addInterceptor { chain ->
             val request = chain.request().newBuilder()
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header("Accept", "application/json")
                 .build()
             chain.proceed(request)
         }
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
-        .followRedirects(true)
         .build()
 
     private val api: MyServerApi by lazy {
@@ -44,19 +47,15 @@ class AuthManager(private val context: Context) {
             .create(MyServerApi::class.java)
     }
 
+    /**
+     * Регистрирует пользователя. 
+     * Даже если сервер недоступен, создает локальный профиль для оффлайн-работы.
+     */
     suspend fun registerOrLogin(email: String, password: String, phone: String): Boolean =
         withContext(Dispatchers.IO) {
-            // 2. Улучшенная нормализация номера телефона
-            var digits = phone.replace(Regex("[^0-9]"), "")
-            val finalPhone = when {
-                digits.length == 10 && digits.startsWith("9") -> "7$digits"
-                digits.length == 11 && digits.startsWith("8") -> "7" + digits.substring(1)
-                digits.length == 11 && digits.startsWith("7") -> digits
-                else -> digits // Если номер короче или длиннее, оставляем как есть
-            }
-
+            // 1. Приведение номера к стандарту 7XXXXXXXXXX
+            val finalPhone = normalizePhone(phone)
             val passHash = sha256(password)
-            // Используем уже нормализованный finalPhone для генерации хеша безопасности
             val securityHash = sha256("$finalPhone|$email|$passHash")
             
             try {
@@ -69,7 +68,7 @@ class AuthManager(private val context: Context) {
                     ip = "0.0.0.0", 
                     port = 8888,
                     publicKey = pubKey,
-                    phone = finalPhone, // Теперь здесь будет 7900...
+                    phone = finalPhone,
                     email = email,
                     lastSeen = System.currentTimeMillis()
                 )
@@ -79,22 +78,25 @@ class AuthManager(private val context: Context) {
                     data = payload
                 )
 
-                Log.d(TAG, "Отправка на сервер: ${finalPhone}, hash: $securityHash")
+                Log.d(TAG, "Попытка регистрации: $finalPhone")
                 
+                // Выполняем сетевой запрос
                 val response = api.announceSelf(payload = wrapper)
 
                 if (response.success) {
-                    Log.d(TAG, "Server registration successful")
+                    Log.d(TAG, "Сервер подтвердил регистрацию")
                 } else {
-                    Log.w(TAG, "Server rejected: ${response.toString()}")
+                    Log.w(TAG, "Сервер вернул ошибку: ${response.message}")
                 }
 
+                // В любом случае сохраняем локально, чтобы пустить пользователя в приложение
                 completeLocalAuth(payload, email, passHash, securityHash)
                 return@withContext true
 
             } catch (e: Exception) {
-                Log.e(TAG, "Network error: ${e.message}")
+                Log.e(TAG, "Сетевая ошибка (Offline mode): ${e.message}")
                 
+                // Создаем локальный профиль даже без интернета
                 val fallbackPayload = UserPayload(
                     hash = securityHash,
                     phone_hash = sha256(finalPhone + PEPPER),
@@ -109,13 +111,19 @@ class AuthManager(private val context: Context) {
 
     private suspend fun completeLocalAuth(payload: UserPayload, email: String, passHash: String, hash: String) {
         try {
+            // Сохраняем себя как основной узел в локальную БД
             saveUserToLocalDb(payload, email, passHash)
-            context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE).edit()
-                .putString("my_security_hash", hash)
-                .putBoolean("is_logged_in", true)
-                .apply()
+            
+            // Сохраняем флаг входа, чтобы NavGraph переключился на "chats"
+            context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE).edit().apply {
+                putString("my_security_hash", hash)
+                putString("my_phone", payload.phone)
+                putBoolean("is_logged_in", true)
+                apply()
+            }
+            Log.d(TAG, "Локальная авторизация завершена успешно")
         } catch (e: Exception) {
-            Log.e(TAG, "Local save error: ${e.message}")
+            Log.e(TAG, "Ошибка сохранения локальной сессии: ${e.message}")
         }
     }
 
@@ -133,6 +141,15 @@ class AuthManager(private val context: Context) {
                 lastSeen = System.currentTimeMillis()
             )
         )
+    }
+
+    private fun normalizePhone(raw: String): String {
+        var digits = raw.replace(Regex("[^0-9]"), "")
+        return when {
+            digits.length == 10 && digits.startsWith("9") -> "7$digits"
+            digits.length == 11 && digits.startsWith("8") -> "7" + digits.substring(1)
+            else -> digits
+        }
     }
 
     private fun sha256(input: String): String {
