@@ -63,19 +63,17 @@ class ContactP2PManager(
 
             if (peer != null) {
                 contact.copy(
-                    isRegistered = true,
-                    isOnline = true,
                     userHash = peer.hash,
                     publicKey = peer.publicKey,
-                    lastKnownIp = peer.ip
+                    lastKnownIp = peer.ip,
+                    isOnline = true
                 )
             } else {
                 contact.copy(
-                    isRegistered = false,
-                    isOnline = false,
                     userHash = null,
                     publicKey = null,
-                    lastKnownIp = null
+                    lastKnownIp = null,
+                    isOnline = false
                 )
             }
         }
@@ -143,8 +141,7 @@ class ContactP2PManager(
 
     /**
      * Строгая продакшн-нормализация номера.
-     *
-     * Приводит к формату: 7XXXXXXXXXX
+     * Формат: 7XXXXXXXXXX
      */
     private fun normalizePhone(raw: String): String? {
         var digits = raw.replace(Regex("[^0-9+]"), "")
