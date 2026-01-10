@@ -4,7 +4,7 @@ import androidx.room.*
 
 /**
  * Data Access Object для работы с узлами сети (DHT).
- * Запросы используют имена колонок из @ColumnInfo в NodeEntity.
+ * Обеспечивает персистентность данных об активных пирах.
  */
 @Dao
 interface NodeDao {
@@ -16,7 +16,8 @@ interface NodeDao {
     suspend fun getUserByEmail(email: String): NodeEntity?
 
     /**
-     * Получение списка из 2500 последних активных узлов для роевого поиска.
+     * Получение списка активных узлов для роевого поиска.
+     * Ограничение в 2500 записей предотвращает переполнение памяти устройства.
      */
     @Query("SELECT * FROM dht_nodes ORDER BY last_seen DESC LIMIT 2500")
     suspend fun getAllNodes(): List<NodeEntity>
@@ -28,29 +29,35 @@ interface NodeDao {
     suspend fun insertNodes(nodes: List<NodeEntity>)
 
     /**
-     * Атомарное обновление кэша: вставка новых данных и удаление старых свыше лимита 2500.
+     * Атомарное обновление кэша.
+     * Если список пуст, транзакция не запускается для экономии ресурсов.
      */
     @Transaction
     suspend fun updateCache(nodes: List<NodeEntity>) {
+        if (nodes.isEmpty()) return
         insertNodes(nodes)
         trimCache()
     }
 
     /**
      * Очистка базы данных до 2500 самых свежих записей.
+     * Используется корректный синтаксис удаления через сравнение с ID.
      */
     @Query("""
         DELETE FROM dht_nodes 
         WHERE user_hash NOT IN (
-            SELECT user_hash FROM dht_nodes 
-            ORDER BY last_seen DESC 
-            LIMIT 2500
+            SELECT user_hash FROM (
+                SELECT user_hash FROM dht_nodes 
+                ORDER BY last_seen DESC 
+                LIMIT 2500
+            )
         )
     """)
     suspend fun trimCache()
 
     /**
-     * Обновление сетевой информации при прямом контакте или через рой.
+     * Обновление сетевой информации при прямом контакте (UDP) или через рой.
+     * Используется именование колонок, строго соответствующее NodeEntity.
      */
     @Query("""
         UPDATE dht_nodes 
