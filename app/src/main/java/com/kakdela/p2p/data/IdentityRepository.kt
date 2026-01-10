@@ -99,43 +99,51 @@ class IdentityRepository(private val context: Context) {
         } catch (_: Exception) {
             nodeDao.getAllNodes().map {
                 UserPayload(
-                    it.userHash,
-                    it.phone_hash,
-                    it.ip,
-                    it.port,
-                    it.publicKey,
-                    it.phone,
-                    null,
-                    it.lastSeen
+                    hash = it.userHash,
+                    phone = it.phone,
+                    phone_hash = it.phone_hash,
+                    ip = it.ip,
+                    port = it.port,
+                    publicKey = it.publicKey,
+                    email = null,
+                    lastSeen = it.lastSeen
                 )
             }
         }
     }
 
-    fun announceMyself(wrapper: UserRegistrationWrapper) {
+    fun announceMyself(userPayload: UserPayload) {
         scope.launch {
             try {
-                // Сериализация wrapper в JSON
+                // Подпись данных для сервера
                 val payloadJson = JSONObject().apply {
-                    put("hash", wrapper.data.hash)
-                    put("phone", wrapper.data.phone)
-                    put("phone_hash", wrapper.data.phone_hash)
-                    put("publicKey", wrapper.data.publicKey)
-                    put("ip", wrapper.data.ip)
-                    put("port", wrapper.data.port)
-                    put("lastSeen", wrapper.data.lastSeen)
-                    put("email", wrapper.data.email)
+                    put("hash", userPayload.hash)
+                    put("phone", userPayload.phone)
+                    put("phone_hash", userPayload.phone_hash)
+                    put("publicKey", userPayload.publicKey)
+                    put("ip", userPayload.ip)
+                    put("port", userPayload.port)
+                    put("lastSeen", userPayload.lastSeen)
+                    put("email", userPayload.email)
                 }
 
-                val wrapperJson = JSONObject().apply {
-                    put("payload", payloadJson)
-                    put("signature", Base64.encodeToString(
-                        CryptoManager.sign(payloadJson.toString().toByteArray()), Base64.NO_WRAP
-                    ))
-                }
+                val signature = Base64.encodeToString(
+                    CryptoManager.sign(payloadJson.toString().toByteArray()),
+                    Base64.NO_WRAP
+                )
+
+                // Формируем wrapper
+                val wrapper = UserRegistrationWrapper(
+                    hash = userPayload.hash,
+                    data = userPayload.copy() // можно добавить поле подписи, если сервер требует
+                )
 
                 // Отправка на сервер
-                api.announceSelf(UserRegistrationWrapper(wrapper.data.hash, wrapper.data))
+                try {
+                    api.announceSelf(wrapper)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Server announce failed", e)
+                }
 
                 // Уведомление Wi-Fi пиров
                 wifiPeers.values.forEach { sendUdp(it, "PRESENCE", "ONLINE") }
@@ -179,14 +187,14 @@ class IdentityRepository(private val context: Context) {
         val cached = nodeDao.getNodeByHash(hash)
         if (cached != null && System.currentTimeMillis() - cached.lastSeen < 180_000) {
             return UserPayload(
-                cached.userHash,
-                cached.phone_hash,
-                cached.ip,
-                cached.port,
-                cached.publicKey,
-                cached.phone,
-                null,
-                cached.lastSeen
+                hash = cached.userHash,
+                phone_hash = cached.phone_hash,
+                ip = cached.ip,
+                port = cached.port,
+                publicKey = cached.publicKey,
+                phone = cached.phone,
+                email = null,
+                lastSeen = cached.lastSeen
             )
         }
         return fetchAllNodesFromServer().find { it.hash == hash }
@@ -247,7 +255,9 @@ class IdentityRepository(private val context: Context) {
             json.put("signature", Base64.encodeToString(sig, Base64.NO_WRAP))
 
             val addr = InetAddress.getByName(ip)
-            DatagramSocket().use { it.send(DatagramPacket(json.toString().toByteArray(), json.toString().toByteArray().size, addr, PORT)) }
+            DatagramSocket().use {
+                it.send(DatagramPacket(json.toString().toByteArray(), json.toString().toByteArray().size, addr, PORT))
+            }
             true
         } catch (_: Exception) { false }
     }
