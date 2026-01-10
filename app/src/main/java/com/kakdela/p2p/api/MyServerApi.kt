@@ -1,73 +1,82 @@
 package com.kakdela.p2p.api
 
+import okhttp3.OkHttpClient
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Query
+import java.util.concurrent.TimeUnit
 
 // ================= MODELS =================
 
-/**
- * Основная модель данных пользователя.
- * Полностью синхронизирована с колонками в MySQL и логикой API.php.
- */
 data class UserPayload(
-    val hash: String,              // Security ID (хэш ключа)
-    val phone_hash: String? = null,// Discovery ID (хэш номера для поиска)
-    val ip: String? = null,        // IP-адрес для P2P соединения
-    val port: Int = 8888,          // UDP-порт
-    val publicKey: String,         // Ключ для шифрования сообщений
-    val phone: String? = null,     // Номер для отображения (внутри encrypted_data)
-    val email: String? = null,     // Email пользователя
+    val hash: String,              // Security ID (SHA-256)
+    val phone_hash: String? = null,// Хэш номера для поиска
+    val ip: String? = null,        // IP для P2P
+    val port: Int = 8888,          // UDP порт
+    val publicKey: String,         // Публичный ключ для шифрования
+    val phone: String? = null,     // Номер телефона
+    val email: String? = null,     // Email
     val lastSeen: Long? = null     // Timestamp последнего онлайна
 )
 
-/**
- * Универсальный ответ сервера.
- */
 data class ServerResponse(
     val success: Boolean = false,
-    val users: List<UserPayload>? = null, // Список пиров для Discovery
-    val status: String? = null,           // "Online"
-    val error: String? = null,            // Ошибка, если есть
-    val db_size_mb: Double? = null        // Размер БД на хостинге
+    val users: List<UserPayload>? = null,
+    val status: String? = null,
+    val error: String? = null,
+    val db_size_mb: Double? = null
+)
+
+data class UserRegistrationWrapper(
+    val hash: String,      // user_hash
+    val data: UserPayload  // encrypted_data + phone_hash
 )
 
 // ================= API =================
 
 interface MyServerApi {
 
-    /**
-     * Регистрация или обновление данных узла.
-     * Отправляет UserPayload, включая phone_hash для колонки Discovery.
-     */
     @POST("API.php")
     suspend fun announceSelf(
         @Query("action") action: String = "add_user",
         @Body payload: UserRegistrationWrapper
     ): ServerResponse
 
-    /**
-     * Получение всех активных пользователей для синхронизации контактов.
-     * Сервер вернет список, где у каждого юзера есть phone_hash.
-     */
     @GET("API.php")
     suspend fun getAllNodes(
         @Query("action") action: String = "list_users"
     ): ServerResponse
 
-    /**
-     * Пинг сервера для проверки связи и получения размера БД.
-     */
-    @GET("api.php")
+    @GET("API.php")
     suspend fun checkServerStatus(): ServerResponse
 }
 
-/**
- * Обертка для запроса 'add_user', соответствующая PHP структуре:
- * $input['hash'] и $input['data']
- */
-data class UserRegistrationWrapper(
-    val hash: String,      // Пойдет в колонку user_hash
-    val data: UserPayload  // Пойдет в колонку encrypted_data и phone_hash
-)
+// ================= FACTORY =================
+
+object MyServerApiFactory {
+    private const val BASE_URL = "http://kakdela.infinityfree.me/" // твой сервер
+
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .addInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                .header("Accept", "application/json")
+                .build()
+            chain.proceed(request)
+        }
+        .build()
+
+    val instance: MyServerApi by lazy {
+        Retrofit.Builder()
+            .baseUrl(BASE_URL)
+            .client(client)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(MyServerApi::class.java)
+    }
+}
