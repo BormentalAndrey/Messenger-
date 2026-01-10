@@ -49,6 +49,7 @@ fun NavGraph(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
+    // Маршруты, на которых отображается нижняя навигация
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
     )
@@ -62,8 +63,11 @@ fun NavGraph(
         NavHost(
             navController = navController,
             startDestination = startDestination,
-            modifier = Modifier.padding(paddingValues).background(Color.Black)
+            modifier = Modifier
+                .padding(paddingValues)
+                .background(Color.Black)
         ) {
+            // --- ВХОД И АВТОРИЗАЦИЯ ---
             composable(Routes.SPLASH) {
                 SplashScreen {
                     val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
@@ -83,17 +87,24 @@ fun NavGraph(
 
             composable(Routes.AUTH_EMAIL) {
                 EmailAuthScreen(identityRepository) {
-                    navController.navigate(Routes.CHATS) { popUpTo(Routes.CHOICE) { inclusive = true } }
+                    navController.navigate(Routes.CHATS) {
+                        popUpTo(Routes.CHOICE) { inclusive = true }
+                    }
                 }
             }
 
             composable(Routes.AUTH_PHONE) {
                 PhoneAuthScreen(identityRepository) {
-                    navController.navigate(Routes.CHATS) { popUpTo(Routes.CHOICE) { inclusive = true } }
+                    navController.navigate(Routes.CHATS) {
+                        popUpTo(Routes.CHOICE) { inclusive = true }
+                    }
                 }
             }
 
-            composable(Routes.CHATS) { ChatsListScreen(navController, identityRepository) }
+            // --- ОСНОВНЫЕ РАЗДЕЛЫ ---
+            composable(Routes.CHATS) { 
+                ChatsListScreen(navController, identityRepository) 
+            }
 
             composable(Routes.CONTACTS) {
                 ContactsScreen(identityRepository) { contact ->
@@ -101,6 +112,7 @@ fun NavGraph(
                 }
             }
 
+            // --- ПРЯМОЙ ЧАТ ---
             composable(
                 route = Routes.CHAT_DIRECT,
                 arguments = listOf(navArgument("chatId") { type = NavType.StringType })
@@ -112,17 +124,25 @@ fun NavGraph(
                 LaunchedEffect(chatId) { vm.initChat(chatId) }
 
                 val messagesEntities by vm.messages.collectAsState()
+                
+                // Преобразование Entity в UI-модель данных для экрана
                 val uiMessages = remember(messagesEntities) {
                     messagesEntities.map { entity ->
                         com.kakdela.p2p.data.Message(
-                            id = entity.messageId, text = entity.text, senderId = entity.senderId,
-                            timestamp = entity.timestamp, isMe = entity.isMe, status = entity.status
+                            id = entity.messageId, 
+                            text = entity.text, 
+                            senderId = entity.senderId,
+                            timestamp = entity.timestamp, 
+                            isMe = entity.isMe, 
+                            status = entity.status
                         )
                     }
                 }
 
                 ChatScreen(
-                    chatPartnerId = chatId, messages = uiMessages, identityRepository = identityRepository,
+                    chatPartnerId = chatId, 
+                    messages = uiMessages, 
+                    identityRepository = identityRepository,
                     onSendMessage = { vm.sendMessage(it) },
                     onSendFile = { uri, name -> vm.sendFile(uri.toString(), name) },
                     onSendAudio = { uri, dur -> vm.sendAudio(uri.toString(), dur.toInt()) },
@@ -131,24 +151,21 @@ fun NavGraph(
                 )
             }
 
+            // --- ДОПОЛНИТЕЛЬНЫЕ ЭКРАНЫ ---
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController, identityRepository) }
             composable(Routes.MUSIC) { MusicPlayerScreen() }
             
-            // Исправлено: Вызов игр без аргументов (согласно вашим файлам в UI)
+            // --- ИГРОВОЙ МОДУЛЬ ---
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
             composable(Routes.SUDOKU) { SudokuScreen() }
             composable(Routes.CALCULATOR) { CalculatorScreen() }
-            
-            composable(Routes.JEWELS) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Jewels Game Coming Soon", color = Color.White)
-                }
-            }
+            composable(Routes.JEWELS) { JewelsScreen() }
 
+            // --- AI И ОФФЛАЙН ОБРАБОТКА ---
             composable(Routes.AI_CHAT) { 
                 if (isOnline) AiChatScreen() else NoInternetScreen { navController.popBackStack() } 
             }
@@ -158,7 +175,10 @@ fun NavGraph(
 
 @Composable
 private fun AppBottomBar(currentRoute: String?, navController: NavHostController) {
-    NavigationBar(containerColor = Color(0xFF010101), tonalElevation = 0.dp) {
+    NavigationBar(
+        containerColor = Color(0xFF010101),
+        tonalElevation = 0.dp
+    ) {
         val items = listOf(
             Triple(Routes.CHATS, Icons.Outlined.ChatBubbleOutline, "Чаты"),
             Triple(Routes.DEALS, Icons.Filled.Checklist, "Дела"),
@@ -200,7 +220,9 @@ fun rememberIsOnline(): State<Boolean> {
             override fun onAvailable(network: Network) { status.value = true }
             override fun onLost(network: Network) { status.value = false }
         }
-        val request = NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build()
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
         try { cm.registerNetworkCallback(request, callback) } catch (e: Exception) { status.value = true }
         onDispose { try { cm.unregisterNetworkCallback(callback) } catch (e: Exception) {} }
     }
@@ -209,15 +231,35 @@ fun rememberIsOnline(): State<Boolean> {
 
 @Composable
 fun NoInternetScreen(onBack: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black), 
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally, 
+            modifier = Modifier.padding(24.dp)
+        ) {
             Icon(Icons.Default.CloudOff, null, tint = Color.Gray, modifier = Modifier.size(64.dp))
             Spacer(Modifier.height(16.dp))
-            Text("Офлайн-режим", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "Офлайн-режим", 
+                color = Color.White, 
+                fontSize = 20.sp, 
+                fontWeight = FontWeight.Bold
+            )
             Spacer(Modifier.height(8.dp))
-            Text("Эта функция требует интернет-соединения.", color = Color.Gray, textAlign = TextAlign.Center)
+            Text(
+                "Эта функция требует интернет-соединения для работы с облачным AI.", 
+                color = Color.Gray, 
+                textAlign = TextAlign.Center
+            )
             Spacer(Modifier.height(24.dp))
-            Button(onClick = onBack, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A1A1A))) {
+            Button(
+                onClick = onBack, 
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A1A1A))
+            ) {
                 Text("Вернуться", color = Color.Cyan)
             }
         }
