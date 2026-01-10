@@ -17,31 +17,44 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 /**
- * Менеджер авторизации.
- * Отвечает за регистрацию узла в MySQL Discovery и локальное сохранение сессии.
+ * AuthManager — ЕДИНСТВЕННАЯ точка:
+ * - регистрации
+ * - логина
+ * - server announce
+ * - создания локальной сессии
+ *
+ * Offline-first: сервер может быть недоступен
  */
 class AuthManager(private val context: Context) {
 
     private val TAG = "AuthManager"
-    private val nodeDao = ChatDatabase.getDatabase(context).nodeDao()
+    private val db = ChatDatabase.getDatabase(context)
+    private val nodeDao = db.nodeDao()
+
+    /** Pepper для phone discovery (НЕ хранится на сервере) */
     private val PEPPER = "7fb8a1d2c3e4f5a6"
 
-    // Настройка клиента для обхода ограничений бесплатного хостинга
-    private val okHttpClient = OkHttpClient.Builder()
+    /** OkHttp с защитой от free-hosting */
+    private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .addInterceptor { chain ->
-            val request = chain.request().newBuilder()
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+            val req = chain.request().newBuilder()
+                .header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Android 15; P2P-Messenger)"
+                )
                 .header("Accept", "application/json")
                 .build()
-            chain.proceed(request)
+            chain.proceed(req)
         }
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .writeTimeout(20, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
     private val api: MyServerApi by lazy {
         Retrofit.Builder()
-            .baseUrl("http://kakdela.infinityfree.me/") 
+            .baseUrl("http://kakdela.infinityfree.me/")
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
@@ -49,110 +62,129 @@ class AuthManager(private val context: Context) {
     }
 
     /**
-     * Регистрирует пользователя. 
-     * Даже если сервер недоступен, создает локальный профиль для оффлайн-работы.
+     * Регистрация / логин.
+     * Всегда возвращает true, если локальная сессия создана.
      */
-    suspend fun registerOrLogin(email: String, password: String, phone: String): Boolean =
-        withContext(Dispatchers.IO) {
-            val finalPhone = normalizePhone(phone)
-            val passHash = sha256(password)
-            val securityHash = sha256("$finalPhone|$email|$passHash")
-            
-            try {
-                val pubKey = CryptoManager.getMyPublicKeyStr()
-                val phoneHash = sha256(finalPhone + PEPPER)
+    suspend fun registerOrLogin(
+        email: String,
+        password: String,
+        phone: String
+    ): Boolean = withContext(Dispatchers.IO) {
 
-                val payload = UserPayload(
-                    hash = securityHash,
-                    phone_hash = phoneHash,
-                    ip = "0.0.0.0", 
-                    port = 8888,
-                    publicKey = pubKey,
-                    phone = finalPhone,
+        val normalizedPhone = normalizePhone(phone)
+        val passwordHash = sha256(password)
+
+        /** ГЛАВНЫЙ ID пользователя */
+        val securityHash = sha256(
+            "$normalizedPhone|$email|$passwordHash"
+        )
+
+        val phoneHash = sha256(normalizedPhone + PEPPER)
+        val publicKey = CryptoManager.getMyPublicKeyStr()
+
+        val payload = UserPayload(
+            hash = securityHash,
+            phone_hash = phoneHash,
+            ip = "0.0.0.0", // сервер определит сам
+            port = 8888,
+            publicKey = publicKey,
+            phone = normalizedPhone,
+            email = email,
+            lastSeen = System.currentTimeMillis()
+        )
+
+        val wrapper = UserRegistrationWrapper(
+            hash = securityHash,
+            data = payload
+        )
+
+        try {
+            Log.d(TAG, "AnnounceSelf → server")
+            val response = api.announceSelf(wrapper)
+
+            if (response.success) {
+                Log.d(TAG, "Server announce OK")
+            } else {
+                Log.w(TAG, "Server responded negative: $response")
+            }
+
+        } catch (e: Exception) {
+            Log.w(
+                TAG,
+                "Server unreachable, offline mode: ${e.message}"
+            )
+        }
+
+        /** В ЛЮБОМ СЛУЧАЕ создаём локальную сессию */
+        createLocalSession(
+            payload = payload,
+            email = email,
+            passwordHash = passwordHash,
+            securityHash = securityHash
+        )
+
+        return@withContext true
+    }
+
+    /**
+     * Локальная сессия — источник истины
+     */
+    private suspend fun createLocalSession(
+        payload: UserPayload,
+        email: String,
+        passwordHash: String,
+        securityHash: String
+    ) {
+        try {
+            nodeDao.insert(
+                NodeEntity(
+                    userHash = payload.hash,
+                    phone_hash = payload.phone_hash ?: "",
                     email = email,
+                    passwordHash = passwordHash,
+                    phone = payload.phone ?: "",
+                    ip = payload.ip ?: "0.0.0.0",
+                    port = payload.port,
+                    publicKey = payload.publicKey,
                     lastSeen = System.currentTimeMillis()
                 )
-
-                val wrapper = UserRegistrationWrapper(
-                    hash = securityHash,
-                    data = payload
-                )
-
-                Log.d(TAG, "Попытка регистрации: $finalPhone")
-                
-                // Выполняем сетевой запрос
-                val response = api.announceSelf(payload = wrapper)
-
-                // ИСПРАВЛЕНО: Убрано обращение к response.message, так как поле может отсутствовать
-                if (response.success) {
-                    Log.d(TAG, "Сервер подтвердил регистрацию")
-                } else {
-                    Log.w(TAG, "Сервер вернул отрицательный статус: $response")
-                }
-
-                completeLocalAuth(payload, email, passHash, securityHash)
-                return@withContext true
-
-            } catch (e: Exception) {
-                Log.e(TAG, "Ошибка при регистрации (Offline mode): ${e.message}")
-                
-                val fallbackPayload = UserPayload(
-                    hash = securityHash,
-                    phone_hash = sha256(finalPhone + PEPPER),
-                    publicKey = CryptoManager.getMyPublicKeyStr(),
-                    phone = finalPhone,
-                    email = email
-                )
-                completeLocalAuth(fallbackPayload, email, passHash, securityHash)
-                return@withContext true 
-            }
-        }
-
-    private suspend fun completeLocalAuth(payload: UserPayload, email: String, passHash: String, hash: String) {
-        try {
-            saveUserToLocalDb(payload, email, passHash)
-            
-            // Сохраняем флаг входа для NavGraph
-            context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE).edit().apply {
-                putString("my_security_hash", hash)
-                putString("my_phone", payload.phone)
-                putBoolean("is_logged_in", true)
-                apply()
-            }
-            Log.d(TAG, "Локальная сессия создана")
-        } catch (e: Exception) {
-            Log.e(TAG, "Ошибка локального сохранения: ${e.message}")
-        }
-    }
-
-    private suspend fun saveUserToLocalDb(node: UserPayload, email: String, passHash: String) {
-        nodeDao.insert(
-            NodeEntity(
-                userHash = node.hash,
-                phone_hash = node.phone_hash ?: "",
-                email = email,
-                passwordHash = passHash,
-                phone = node.phone ?: "",
-                ip = node.ip ?: "0.0.0.0",
-                port = node.port,
-                publicKey = node.publicKey,
-                lastSeen = System.currentTimeMillis()
             )
-        )
+
+            context.getSharedPreferences(
+                "auth_prefs",
+                Context.MODE_PRIVATE
+            ).edit()
+                .putBoolean("is_logged_in", true)
+                .putString("my_security_hash", securityHash)
+                .putString("my_phone", payload.phone)
+                .apply()
+
+            Log.d(TAG, "Local session created")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Local auth failed", e)
+        }
     }
 
+    /**
+     * Нормализация телефона
+     */
     private fun normalizePhone(raw: String): String {
-        var digits = raw.replace(Regex("[^0-9]"), "")
+        val digits = raw.replace(Regex("[^0-9]"), "")
         return when {
             digits.length == 10 && digits.startsWith("9") -> "7$digits"
-            digits.length == 11 && digits.startsWith("8") -> "7" + digits.substring(1)
+            digits.length == 11 && digits.startsWith("8") ->
+                "7${digits.substring(1)}"
             else -> digits
         }
     }
 
+    /**
+     * SHA-256 hex
+     */
     private fun sha256(input: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val hash = digest.digest(input.toByteArray())
-        return hash.joinToString("") { "%02x".format(it) }
+        val md = MessageDigest.getInstance("SHA-256")
+        return md.digest(input.toByteArray())
+            .joinToString("") { "%02x".format(it) }
     }
 }
