@@ -1,40 +1,41 @@
 package com.kakdela.p2p.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * Сущность узла распределенной сети (P2P Peer).
- * Хранит данные об активных пирах для маршрутизации, DHT/Swarm и сопоставления контактов.
- *
- * Имена полей — camelCase (Kotlin-style), Room будет использовать их как имена колонок напрямую.
- * Это полностью совместимо с последними версиями NodeDao (updateNetworkInfo, trimCache и т.д.).
+ * Локальная таблица узлов.
+ * Используем @ColumnInfo для явного соответствия имен колонок,
+ * чтобы phone_hash совпадал с серверным именованием.
  */
 @Entity(
     tableName = "dht_nodes",
     indices = [
-        Index(value = ["phoneHash"]),
+        Index(value = ["phone_hash"]),
         Index(value = ["userHash"], unique = true)
     ]
 )
 data class NodeEntity(
     @PrimaryKey
-    val userHash: String,               // Security ID (Primary Key)
+    val userHash: String,
 
-    val phoneHash: String = "",         // Discovery ID (хэш номера + Pepper)
+    @ColumnInfo(name = "phone_hash")
+    val phone_hash: String = "",
 
     val email: String? = null,
 
-    val passwordHash: String? = null,   // Только для своего узла (локальная авторизация)
+    // Хранится только локально для автовхода, на сервер не отправляется
+    val passwordHash: String? = null,
 
     val phone: String? = null,
 
-    val ip: String = "0.0.0.0",         // Последний известный IP (заглушка для оффлайн)
+    val ip: String = "0.0.0.0",
 
     val port: Int = 8888,
 
-    val publicKey: String = "",         // Публичный ключ (обязателен для шифрования)
+    val publicKey: String = "",
 
     val lastSeen: Long = System.currentTimeMillis()
 )
