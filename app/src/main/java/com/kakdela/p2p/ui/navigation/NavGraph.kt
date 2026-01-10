@@ -121,10 +121,14 @@ fun NavGraph(
             ) { entry ->
                 val chatId = entry.arguments?.getString("chatId") ?: ""
                 val app = context.applicationContext as Application
+
+                // Создаём ViewModel через фабрику
                 val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(identityRepository, app))
 
+                // Инициализация чата
                 LaunchedEffect(chatId) { vm.initChat(chatId) }
 
+                // Подписка на StateFlow сообщений
                 val messagesEntities by vm.messages.collectAsState()
                 val uiMessages = remember(messagesEntities) {
                     messagesEntities.map { entity ->
@@ -163,7 +167,7 @@ fun NavGraph(
             composable(Routes.PACMAN) { PacmanScreen() }
             composable(Routes.SUDOKU) { SudokuScreen() }
             composable(Routes.CALCULATOR) { CalculatorScreen() }
-            composable(Routes.JEWELS) { JewelsBlastScreen() } // <- Исправлено
+            composable(Routes.JEWELS) { JewelsBlastScreen() }
 
             // --- AI Chat ---
             composable(Routes.AI_CHAT) {
