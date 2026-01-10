@@ -31,6 +31,16 @@ fun EmailAuthScreen(
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    val textFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = Color.White,
+        unfocusedTextColor = Color.White,
+        focusedBorderColor = Color.Cyan,
+        unfocusedBorderColor = Color.DarkGray,
+        focusedLabelColor = Color.Cyan,
+        unfocusedLabelColor = Color.Gray,
+        cursorColor = Color.Cyan
+    )
+
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
         Column(
             modifier = Modifier.fillMaxSize().padding(32.dp),
@@ -38,17 +48,17 @@ fun EmailAuthScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Text("P2P Личность", style = MaterialTheme.typography.headlineMedium, color = Color.Cyan)
-            Text("Вход восстановит ваши ключи шифрования", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            Text("Вход восстановит доступ к сети", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
 
             Spacer(Modifier.height(32.dp))
 
             OutlinedTextField(
                 value = phone,
-                onValueChange = { phone = it.filter { char -> char.isDigit() || char == '+' } },
+                onValueChange = { phone = it.filter { c -> c.isDigit() || c == '+' } },
                 label = { Text("Номер телефона") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+                colors = textFieldColors
             )
 
             Spacer(Modifier.height(12.dp))
@@ -59,7 +69,7 @@ fun EmailAuthScreen(
                 label = { Text("Email") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+                colors = textFieldColors
             )
 
             Spacer(Modifier.height(12.dp))
@@ -71,45 +81,41 @@ fun EmailAuthScreen(
                 visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+                colors = textFieldColors
             )
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(32.dp))
 
             Button(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan, contentColor = Color.Black),
-                enabled = email.isNotEmpty() && password.isNotEmpty() && phone.isNotEmpty() && !isLoading,
+                enabled = email.isNotBlank() && password.isNotBlank() && phone.isNotBlank() && !isLoading,
                 onClick = {
                     isLoading = true
                     error = null
                     scope.launch {
                         try {
-                            // 1. Генерация хэшей согласно ТЗ (п. 4)
                             val securityHash = identityRepository.generateSecurityHash(phone, email, password)
                             val phoneDiscoveryHash = identityRepository.generatePhoneDiscoveryHash(phone)
-                            val myPubKey = CryptoManager.getMyPublicKeyStr()
-
-                            // 2. Регистрация/Вход через AuthManager
+                            
                             val success = authManager.registerOrLogin(email, password, phone)
                             
                             if (success) {
-                                // 3. Анонс себя на сервер API.php для Discovery
                                 val payload = UserPayload(
                                     hash = securityHash,
                                     phone_hash = phoneDiscoveryHash,
-                                    publicKey = myPubKey,
+                                    publicKey = CryptoManager.getMyPublicKeyStr(),
                                     phone = phone,
                                     email = email
                                 )
                                 identityRepository.announceMyself(UserRegistrationWrapper(securityHash, payload))
-                                
                                 onAuthSuccess()
                             } else {
-                                error = "Ошибка авторизации"
+                                error = "Ошибка авторизации: проверьте данные"
                             }
                         } catch (e: Exception) {
-                            error = "Ошибка: ${e.localizedMessage}"
+                            error = e.localizedMessage ?: "Неизвестная ошибка"
                         } finally {
                             isLoading = false
                         }
@@ -117,15 +123,15 @@ fun EmailAuthScreen(
                 }
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = Color.Black)
+                    CircularProgressIndicator(size = 24.dp, color = Color.Black, strokeWidth = 3.dp)
                 } else {
-                    Text("Войти / Создать")
+                    Text("Войти / Создать", fontWeight = FontWeight.Bold)
                 }
             }
 
             error?.let {
                 Spacer(Modifier.height(16.dp))
-                Text(text = it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Text(text = it, color = Color.Red, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
