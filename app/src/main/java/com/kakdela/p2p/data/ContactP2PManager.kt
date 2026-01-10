@@ -10,55 +10,44 @@ import com.kakdela.p2p.api.UserPayload
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/**
- * P2P Contact Discovery Manager.
- * Сопоставляет локальные контакты с DHT / Discovery сервером.
- */
+// Модель для отображения в UI
+data class AppContact(
+    val name: String,
+    val phoneNumber: String,
+    val userHash: String? = null,
+    val publicKey: String? = null,
+    val lastKnownIp: String? = null,
+    val isOnline: Boolean = false,
+    val isRegistered: Boolean = false
+)
+
 class ContactP2PManager(
     private val context: Context,
     private val identityRepository: IdentityRepository
 ) {
+    private val TAG = "ContactP2PManager"
 
-    companion object {
-        private const val TAG = "ContactP2PManager"
-    }
-
-    /**
-     * Основной метод синхронизации контактов.
-     */
     suspend fun syncContacts(): List<AppContact> = withContext(Dispatchers.IO) {
 
-        // ---------- PERMISSION ----------
-        if (ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.READ_CONTACTS
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            Log.w(TAG, "READ_CONTACTS permission not granted")
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
             return@withContext emptyList()
         }
 
-        // ---------- FETCH ONLINE USERS ----------
-        val onlineUsers: List<UserPayload> = try {
-            identityRepository.fetchAllNodesFromServer()
-                .filter { !it.phone_hash.isNullOrBlank() }
-        } catch (e: Exception) {
-            Log.e(TAG, "Discovery fetch failed", e)
-            emptyList()
-        }
+        // 1. Получаем список всех зарегистрированных пользователей с сервера
+        val onlineUsers: List<UserPayload> = identityRepository.fetchAllNodesFromServer()
+            .filter { !it.phone_hash.isNullOrBlank() }
 
-        // Map: phone_hash -> UserPayload
-        val onlineMap: Map<String, UserPayload> =
-            onlineUsers.associateBy { it.phone_hash!! }
+        // Map для быстрого поиска: phone_hash -> UserPayload
+        val onlineMap = onlineUsers.associateBy { it.phone_hash!! }
 
-        // ---------- READ LOCAL CONTACTS ----------
+        // 2. Читаем локальную телефонную книгу
         val localContacts = fetchLocalContacts()
 
-        // ---------- MATCHING ----------
+        // 3. Сопоставляем
         val mergedContacts = localContacts.map { contact ->
-            val phoneHash =
-                identityRepository.generatePhoneDiscoveryHash(contact.phoneNumber)
-
+            // Генерируем хэш для этого номера так же, как это делается при регистрации
+            val phoneHash = identityRepository.generatePhoneDiscoveryHash(contact.phoneNumber)
+            
             val peer = onlineMap[phoneHash]
 
             if (peer != null) {
@@ -66,19 +55,15 @@ class ContactP2PManager(
                     userHash = peer.hash,
                     publicKey = peer.publicKey,
                     lastKnownIp = peer.ip,
-                    isOnline = true
+                    isOnline = true, // Считаем онлайн, если нашли на сервере (можно уточнить по lastSeen)
+                    isRegistered = true
                 )
             } else {
-                contact.copy(
-                    userHash = null,
-                    publicKey = null,
-                    lastKnownIp = null,
-                    isOnline = false
-                )
+                contact
             }
         }
 
-        // ---------- SORT ----------
+        // 4. Сортировка: Сначала онлайн, потом зарегистрированные, потом остальные по имени
         mergedContacts.sortedWith(
             compareByDescending<AppContact> { it.isOnline }
                 .thenByDescending { it.isRegistered }
@@ -86,13 +71,9 @@ class ContactP2PManager(
         )
     }
 
-    /**
-     * Читает контакты из Android Contacts Provider.
-     */
     private fun fetchLocalContacts(): List<AppContact> {
         val result = mutableListOf<AppContact>()
         val seenNumbers = HashSet<String>()
-
         val projection = arrayOf(
             ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
             ContactsContract.CommonDataKinds.Phone.NUMBER
@@ -101,69 +82,39 @@ class ContactP2PManager(
         try {
             context.contentResolver.query(
                 ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                projection,
-                null,
-                null,
-                null
+                projection, null, null, null
             )?.use { cursor ->
+                val nameIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                val numberIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
 
-                val nameIdx =
-                    cursor.getColumnIndexOrThrow(
-                        ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
-                    )
-                val numberIdx =
-                    cursor.getColumnIndexOrThrow(
-                        ContactsContract.CommonDataKinds.Phone.NUMBER
-                    )
+                if (nameIdx >= 0 && numberIdx >= 0) {
+                    while (cursor.moveToNext()) {
+                        val name = cursor.getString(nameIdx) ?: "Unknown"
+                        val rawNumber = cursor.getString(numberIdx) ?: continue
+                        val normalized = normalizePhone(rawNumber) ?: continue
 
-                while (cursor.moveToNext()) {
-                    val name = cursor.getString(nameIdx) ?: "Unknown"
-                    val rawNumber = cursor.getString(numberIdx) ?: continue
-
-                    val normalized = normalizePhone(rawNumber) ?: continue
-
-                    if (seenNumbers.add(normalized)) {
-                        result.add(
-                            AppContact(
-                                name = name,
-                                phoneNumber = normalized
-                            )
-                        )
+                        if (seenNumbers.add(normalized)) {
+                            result.add(AppContact(name, normalized))
+                        }
                     }
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to read contacts", e)
+            Log.e(TAG, "Error reading contacts", e)
         }
-
         return result
     }
 
-    /**
-     * Строгая продакшн-нормализация номера.
-     * Формат: 7XXXXXXXXXX
-     */
     private fun normalizePhone(raw: String): String? {
         var digits = raw.replace(Regex("[^0-9+]"), "")
-
-        if (digits.startsWith("+")) {
-            digits = digits.substring(1)
-        }
+        if (digits.startsWith("+")) digits = digits.substring(1)
 
         digits = when {
-            digits.length == 11 && digits.startsWith("8") ->
-                "7" + digits.substring(1)
-
-            digits.length == 10 && digits.startsWith("9") ->
-                "7$digits"
-
+            digits.length == 11 && digits.startsWith("8") -> "7" + digits.substring(1)
+            digits.length == 10 && digits.startsWith("9") -> "7$digits"
             else -> digits
         }
 
-        return if (digits.length == 11 && digits.startsWith("7")) {
-            digits
-        } else {
-            null
-        }
+        return if (digits.length == 11 && digits.startsWith("7")) digits else null
     }
 }
