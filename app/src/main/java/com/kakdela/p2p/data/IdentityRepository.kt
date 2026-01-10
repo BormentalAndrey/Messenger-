@@ -59,10 +59,10 @@ class IdentityRepository(private val context: Context) {
                 registerInWifi()
                 discoverInWifi()
                 
-                // Запуск бесконечного цикла синхронизации (Heartbeat)
+                // Запуск бесконечного цикла Heartbeat и синхронизации
                 startSyncLoop()
                 
-                Log.i(TAG, "P2P network stack started with background sync")
+                Log.i(TAG, "P2P network stack started")
             } catch (e: Exception) {
                 Log.e(TAG, "Network start failed", e)
                 isRunning = false
@@ -86,17 +86,20 @@ class IdentityRepository(private val context: Context) {
 
     /* ======================= SERVER & SYNC ======================= */
 
+    /**
+     * Фоновый цикл обновления статуса на сервере и подгрузки новых пиров.
+     */
     private fun startSyncLoop() {
         scope.launch {
             while (isRunning) {
                 try {
                     val myId = getMyId()
                     if (myId.isNotEmpty()) {
-                        // 1. Сообщаем серверу, что мы онлайн
+                        // 1. Обновляем себя на сервере
                         val myPayload = UserPayload(
                             hash = myId,
                             phone_hash = prefs.getString("my_phone_hash", ""),
-                            ip = null, // Сервер определит IP сам
+                            ip = null, 
                             port = PORT,
                             publicKey = CryptoManager.getMyPublicKeyStr(),
                             phone = prefs.getString("my_phone", ""),
@@ -105,11 +108,11 @@ class IdentityRepository(private val context: Context) {
                         )
                         announceMyself(myPayload)
                         
-                        // 2. Обновляем локальную базу из облака
+                        // 2. Синхронизируем список всех узлов в локальную БД
                         fetchAllNodesFromServer()
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Sync loop iteration failed", e)
+                    Log.e(TAG, "Sync loop error: ${e.message}")
                 }
                 delay(SYNC_INTERVAL)
             }
@@ -121,7 +124,7 @@ class IdentityRepository(private val context: Context) {
             val response = api.getAllNodes()
             val users = response.users.orEmpty()
             
-            // Массовое обновление локального кеша (Room)
+            // Сохранение в Room (автоматическое пополнение локальной базы)
             nodeDao.updateCache(users.map {
                 NodeEntity(
                     userHash = it.hash,
@@ -133,21 +136,11 @@ class IdentityRepository(private val context: Context) {
                     lastSeen = it.lastSeen ?: System.currentTimeMillis()
                 )
             })
-            Log.d(TAG, "Synced ${users.size} nodes from server")
             users
         } catch (e: Exception) {
-            Log.e(TAG, "Fetch nodes failed, using cache: ${e.message}")
+            Log.e(TAG, "Fetch failed, returning local cache: ${e.message}")
             nodeDao.getAllNodes().map {
-                UserPayload(
-                    hash = it.userHash,
-                    phone_hash = it.phone_hash,
-                    ip = it.ip,
-                    port = it.port,
-                    publicKey = it.publicKey,
-                    phone = it.phone,
-                    email = null,
-                    lastSeen = it.lastSeen
-                )
+                UserPayload(it.userHash, it.phone_hash, it.ip, it.port, it.publicKey, it.phone, null, it.lastSeen)
             }
         }
     }
@@ -155,20 +148,11 @@ class IdentityRepository(private val context: Context) {
     fun announceMyself(userPayload: UserPayload) {
         scope.launch {
             try {
-                val wrapper = UserRegistrationWrapper(
-                    hash = userPayload.hash,
-                    data = userPayload
-                )
-
+                val wrapper = UserRegistrationWrapper(hash = userPayload.hash, data = userPayload)
                 val response = api.announceSelf(payload = wrapper)
                 
-                if (response.success) {
-                    Log.i(TAG, "Announce successful on server")
-                } else {
-                    Log.w(TAG, "Server rejected: ${response.error}")
-                }
+                if (response.success) Log.i(TAG, "Announce successful")
 
-                // Локальное уведомление в Wi-Fi
                 wifiPeers.values.forEach { ip ->
                     sendUdp(ip, "PRESENCE", "ONLINE")
                 }
@@ -180,9 +164,25 @@ class IdentityRepository(private val context: Context) {
 
     /* ======================= ROUTING & SIGNALING ======================= */
 
+    /**
+     * Метод для WebRTC сигналинга (необходим для звонков и файлов)
+     */
+    fun sendSignaling(targetIp: String, type: String, data: String) {
+        scope.launch {
+            try {
+                val json = JSONObject().apply {
+                    put("subtype", type)
+                    put("payload", data)
+                }
+                sendUdp(targetIp, "WEBRTC_SIGNAL", json.toString())
+            } catch (e: Exception) {
+                Log.e(TAG, "Signaling error to $targetIp", e)
+            }
+        }
+    }
+
     fun sendMessageSmart(targetHash: String, phone: String?, message: String) =
         scope.launch {
-            // Приоритет: Wi-Fi -> Swarm -> Server IP
             val ip = wifiPeers[targetHash]
                 ?: swarmPeers[targetHash]
                 ?: findPeerOnServer(targetHash)?.ip
@@ -196,18 +196,8 @@ class IdentityRepository(private val context: Context) {
 
     private suspend fun findPeerOnServer(hash: String): UserPayload? {
         val cached = nodeDao.getNodeByHash(hash)
-        // Если данные в кеше свежее 3 минут — используем их
         if (cached != null && System.currentTimeMillis() - cached.lastSeen < 180_000) {
-            return UserPayload(
-                hash = cached.userHash,
-                phone_hash = cached.phone_hash,
-                ip = cached.ip,
-                port = cached.port,
-                publicKey = cached.publicKey,
-                phone = cached.phone,
-                email = null,
-                lastSeen = cached.lastSeen
-            )
+            return UserPayload(cached.userHash, cached.phone_hash, cached.ip, cached.port, cached.publicKey, cached.phone, null, cached.lastSeen)
         }
         return fetchAllNodesFromServer().find { it.hash == hash }
     }
@@ -245,9 +235,7 @@ class IdentityRepository(private val context: Context) {
             val signature = Base64.decode(sigBase64, Base64.NO_WRAP)
             val unsignedJson = JSONObject(raw).apply { remove("signature") }.toString()
 
-            if (!CryptoManager.verify(signature, unsignedJson.toByteArray(), pubKey)) {
-                return
-            }
+            if (!CryptoManager.verify(signature, unsignedJson.toByteArray(), pubKey)) return
 
             CryptoManager.savePeerPublicKey(fromHash, pubKey)
             nodeDao.updateNetworkInfo(fromHash, fromIp, PORT, pubKey, System.currentTimeMillis())
@@ -271,16 +259,12 @@ class IdentityRepository(private val context: Context) {
 
             val bytes = json.toString().toByteArray()
             val addr = InetAddress.getByName(ip)
-            DatagramSocket().use {
-                it.send(DatagramPacket(bytes, bytes.size, addr, PORT))
-            }
+            DatagramSocket().use { it.send(DatagramPacket(bytes, bytes.size, addr, PORT)) }
             true
-        } catch (e: Exception) {
-            false
-        }
+        } catch (e: Exception) { false }
     }
 
-    /* ======================= NSD & UTILS ======================= */
+    /* ======================= NSD & WI-FI ======================= */
 
     private val registrationListener = object : NsdManager.RegistrationListener {
         override fun onServiceRegistered(s: NsdServiceInfo) {}
@@ -328,6 +312,8 @@ class IdentityRepository(private val context: Context) {
         } catch (_: Exception) {}
     }
 
+    /* ======================= UTILS ======================= */
+
     private fun sendAsSms(phone: String, message: String) {
         try {
             val sms = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S)
@@ -339,11 +325,7 @@ class IdentityRepository(private val context: Context) {
 
     fun generatePhoneDiscoveryHash(phone: String): String {
         val digits = phone.replace(Regex("[^0-9]"), "")
-        val normalized = when {
-            digits.length == 11 && digits.startsWith("8") -> "7${digits.substring(1)}"
-            digits.length == 10 && digits.startsWith("9") -> "7$digits"
-            else -> digits
-        }
+        val normalized = if (digits.length == 11 && digits.startsWith("8")) "7${digits.substring(1)}" else digits
         return sha256(normalized + PEPPER)
     }
 
