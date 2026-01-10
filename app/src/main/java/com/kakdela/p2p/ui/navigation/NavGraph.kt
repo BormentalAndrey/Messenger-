@@ -34,9 +34,7 @@ import androidx.navigation.navArgument
 import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.data.Message
 import com.kakdela.p2p.ui.*
-import com.kakdela.p2p.ui.auth.EmailAuthScreen
-import com.kakdela.p2p.ui.auth.PhoneAuthScreen
-import com.kakdela.p2p.ui.auth.RegistrationChoiceScreen
+import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
@@ -165,7 +163,7 @@ fun NavGraph(
             composable(Routes.PACMAN) { PacmanScreen() }
             composable(Routes.SUDOKU) { SudokuScreen() }
             composable(Routes.CALCULATOR) { CalculatorScreen() }
-            composable(Routes.JEWELS) { JewelsScreen() }
+            composable(Routes.JEWELS) { JewelsBlastScreen() } // <- Исправлено
 
             // --- AI Chat ---
             composable(Routes.AI_CHAT) {
