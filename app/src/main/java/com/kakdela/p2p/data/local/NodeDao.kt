@@ -9,6 +9,9 @@ import androidx.room.Transaction
 /**
  * DAO для DHT / Swarm / Discovery кэша.
  * Хранит последние известные сетевые данные узлов.
+ *
+ * Все запросы используют camelCase имена колонок для полной совместимости
+ * с актуальной версией NodeEntity (поля: userHash, lastSeen, ip, publicKey и т.д.).
  */
 @Dao
 interface NodeDao {
@@ -17,7 +20,7 @@ interface NodeDao {
 
     @Query(
         "SELECT * FROM dht_nodes " +
-        "WHERE user_hash = :hash " +
+        "WHERE userHash = :hash " +
         "LIMIT 1"
     )
     suspend fun getNodeByHash(hash: String): NodeEntity?
@@ -35,7 +38,7 @@ interface NodeDao {
      */
     @Query(
         "SELECT * FROM dht_nodes " +
-        "ORDER BY last_seen DESC " +
+        "ORDER BY lastSeen DESC " +
         "LIMIT 2500"
     )
     suspend fun getAllNodes(): List<NodeEntity>
@@ -66,11 +69,11 @@ interface NodeDao {
     @Query(
         """
         DELETE FROM dht_nodes
-        WHERE user_hash NOT IN (
-            SELECT user_hash FROM (
-                SELECT user_hash
+        WHERE userHash NOT IN (
+            SELECT userHash FROM (
+                SELECT userHash
                 FROM dht_nodes
-                ORDER BY last_seen DESC
+                ORDER BY lastSeen DESC
                 LIMIT 2500
             )
         )
@@ -83,8 +86,9 @@ interface NodeDao {
     /**
      * Обновление сетевой информации узла.
      * Вызывается при:
-     * - PEER_FOUND
+     * - PEER_FOUND (swarm)
      * - входящем UDP пакете
+     * - синхронизации с сервером
      */
     @Query(
         """
