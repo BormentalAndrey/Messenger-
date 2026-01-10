@@ -83,7 +83,9 @@ class IdentityRepository(private val context: Context) {
 
     suspend fun fetchAllNodesFromServer(): List<UserPayload> = withContext(Dispatchers.IO) {
         try {
-            val users = api.getAllNodes().users.orEmpty()
+            val response = api.getAllNodes()
+            val users = response.users.orEmpty()
+            
             nodeDao.updateCache(users.map {
                 NodeEntity(
                     userHash = it.hash,
@@ -96,15 +98,16 @@ class IdentityRepository(private val context: Context) {
                 )
             })
             users
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e(TAG, "Fetch nodes failed, using cache: ${e.message}")
             nodeDao.getAllNodes().map {
                 UserPayload(
                     hash = it.userHash,
-                    phone = it.phone,
                     phone_hash = it.phone_hash,
                     ip = it.ip,
                     port = it.port,
                     publicKey = it.publicKey,
+                    phone = it.phone,
                     email = null,
                     lastSeen = it.lastSeen
                 )
@@ -112,41 +115,32 @@ class IdentityRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Исправлено: метод принимает UserPayload, формирует обертку
+     * и отправляет через API с обязательным параметром action (по умолчанию add_user)
+     */
     fun announceMyself(userPayload: UserPayload) {
         scope.launch {
             try {
-                // Подпись данных для сервера
-                val payloadJson = JSONObject().apply {
-                    put("hash", userPayload.hash)
-                    put("phone", userPayload.phone)
-                    put("phone_hash", userPayload.phone_hash)
-                    put("publicKey", userPayload.publicKey)
-                    put("ip", userPayload.ip)
-                    put("port", userPayload.port)
-                    put("lastSeen", userPayload.lastSeen)
-                    put("email", userPayload.email)
-                }
-
-                val signature = Base64.encodeToString(
-                    CryptoManager.sign(payloadJson.toString().toByteArray()),
-                    Base64.NO_WRAP
-                )
-
-                // Формируем wrapper
+                // Формируем wrapper для Retrofit @Body
                 val wrapper = UserRegistrationWrapper(
                     hash = userPayload.hash,
-                    data = userPayload.copy() // можно добавить поле подписи, если сервер требует
+                    data = userPayload
                 )
 
-                // Отправка на сервер
-                try {
-                    api.announceSelf(wrapper)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Server announce failed", e)
+                // Отправка на сервер через Retrofit (action подставится автоматически)
+                val response = api.announceSelf(payload = wrapper)
+                
+                if (response.success) {
+                    Log.i(TAG, "Announce successful on server")
+                } else {
+                    Log.w(TAG, "Server rejected announce: ${response.error}")
                 }
 
-                // Уведомление Wi-Fi пиров
-                wifiPeers.values.forEach { sendUdp(it, "PRESENCE", "ONLINE") }
+                // Уведомление локальных пиров в Wi-Fi через UDP
+                wifiPeers.values.forEach { ip ->
+                    sendUdp(ip, "PRESENCE", "ONLINE")
+                }
 
             } catch (e: Exception) {
                 Log.e(TAG, "Announce failed", e)
@@ -154,7 +148,7 @@ class IdentityRepository(private val context: Context) {
         }
     }
 
-    /* ======================= ROUTING & WEBRTC ======================= */
+    /* ======================= ROUTING & SIGNALING ======================= */
 
     fun sendSignaling(targetIp: String, type: String, data: String) {
         scope.launch {
@@ -217,7 +211,7 @@ class IdentityRepository(private val context: Context) {
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "UDP listener failed", e)
+                Log.e(TAG, "UDP listener failure", e)
                 isRunning = false
             }
         }
@@ -229,16 +223,23 @@ class IdentityRepository(private val context: Context) {
             val type = json.getString("type")
             val fromHash = json.getString("from")
             val pubKey = json.getString("pubkey")
-            val sig = Base64.decode(json.getString("signature"), Base64.NO_WRAP)
-            val unsigned = JSONObject(raw).apply { remove("signature") }.toString()
+            val sigBase64 = json.getString("signature")
+            
+            val signature = Base64.decode(sigBase64, Base64.NO_WRAP)
+            val unsignedJson = JSONObject(raw).apply { remove("signature") }.toString()
 
-            if (!CryptoManager.verify(sig, unsigned.toByteArray(), pubKey)) return
+            if (!CryptoManager.verify(signature, unsignedJson.toByteArray(), pubKey)) {
+                Log.w(TAG, "Invalid UDP signature from $fromIp")
+                return
+            }
 
             CryptoManager.savePeerPublicKey(fromHash, pubKey)
             nodeDao.updateNetworkInfo(fromHash, fromIp, PORT, pubKey, System.currentTimeMillis())
 
             listeners.forEach { it(type, json.getString("data"), fromIp, fromHash) }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.v(TAG, "Error handling incoming UDP: ${e.message}")
+        }
     }
 
     private suspend fun sendUdp(ip: String, type: String, data: String): Boolean = withContext(Dispatchers.IO) {
@@ -254,18 +255,22 @@ class IdentityRepository(private val context: Context) {
             val sig = CryptoManager.sign(json.toString().toByteArray())
             json.put("signature", Base64.encodeToString(sig, Base64.NO_WRAP))
 
+            val bytes = json.toString().toByteArray()
             val addr = InetAddress.getByName(ip)
             DatagramSocket().use {
-                it.send(DatagramPacket(json.toString().toByteArray(), json.toString().toByteArray().size, addr, PORT))
+                it.send(DatagramPacket(bytes, bytes.size, addr, PORT))
             }
             true
-        } catch (_: Exception) { false }
+        } catch (e: Exception) {
+            Log.e(TAG, "UDP send failed to $ip", e)
+            false
+        }
     }
 
-    /* ======================= NSD ======================= */
+    /* ======================= NSD (WI-FI DISCOVERY) ======================= */
 
     private val registrationListener = object : NsdManager.RegistrationListener {
-        override fun onServiceRegistered(s: NsdServiceInfo) {}
+        override fun onServiceRegistered(s: NsdServiceInfo) { Log.d(TAG, "NSD Service registered") }
         override fun onRegistrationFailed(s: NsdServiceInfo, e: Int) {}
         override fun onServiceUnregistered(s: NsdServiceInfo) {}
         override fun onUnregistrationFailed(s: NsdServiceInfo, e: Int) {}
@@ -284,7 +289,9 @@ class IdentityRepository(private val context: Context) {
                 override fun onResolveFailed(s: NsdServiceInfo, e: Int) {}
             })
         }
-        override fun onServiceLost(s: NsdServiceInfo) { wifiPeers.entries.removeIf { it.value == s.host?.hostAddress } }
+        override fun onServiceLost(s: NsdServiceInfo) {
+            wifiPeers.entries.removeIf { it.value == s.host?.hostAddress }
+        }
         override fun onDiscoveryStarted(t: String) {}
         override fun onDiscoveryStopped(t: String) {}
         override fun onStartDiscoveryFailed(t: String, e: Int) {}
@@ -293,11 +300,12 @@ class IdentityRepository(private val context: Context) {
 
     private fun registerInWifi() {
         try {
-            nsdManager.registerService(NsdServiceInfo().apply {
+            val serviceInfo = NsdServiceInfo().apply {
                 serviceName = "KakDela-${getMyId().take(8)}-${UUID.randomUUID().toString().take(4)}"
                 serviceType = SERVICE_TYPE
                 port = PORT
-            }, NsdManager.PROTOCOL_DNS_SD, registrationListener)
+            }
+            nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, registrationListener)
         } catch (_: Exception) {}
     }
 
@@ -315,7 +323,9 @@ class IdentityRepository(private val context: Context) {
                 context.getSystemService(SmsManager::class.java)
             else @Suppress("DEPRECATION") SmsManager.getDefault()
             sms.sendTextMessage(phone, null, "[P2P] $message", null, null)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.e(TAG, "SMS send failed", e)
+        }
     }
 
     fun generatePhoneDiscoveryHash(phone: String): String {
