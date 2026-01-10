@@ -26,6 +26,7 @@ class AuthManager(private val context: Context) {
     private val nodeDao = ChatDatabase.getDatabase(context).nodeDao()
     private val PEPPER = "7fb8a1d2c3e4f5a6"
 
+    // Настройка клиента для обхода ограничений бесплатного хостинга
     private val okHttpClient = OkHttpClient.Builder()
         .addInterceptor { chain ->
             val request = chain.request().newBuilder()
@@ -53,7 +54,6 @@ class AuthManager(private val context: Context) {
      */
     suspend fun registerOrLogin(email: String, password: String, phone: String): Boolean =
         withContext(Dispatchers.IO) {
-            // 1. Приведение номера к стандарту 7XXXXXXXXXX
             val finalPhone = normalizePhone(phone)
             val passHash = sha256(password)
             val securityHash = sha256("$finalPhone|$email|$passHash")
@@ -83,20 +83,19 @@ class AuthManager(private val context: Context) {
                 // Выполняем сетевой запрос
                 val response = api.announceSelf(payload = wrapper)
 
+                // ИСПРАВЛЕНО: Убрано обращение к response.message, так как поле может отсутствовать
                 if (response.success) {
                     Log.d(TAG, "Сервер подтвердил регистрацию")
                 } else {
-                    Log.w(TAG, "Сервер вернул ошибку: ${response.message}")
+                    Log.w(TAG, "Сервер вернул отрицательный статус: $response")
                 }
 
-                // В любом случае сохраняем локально, чтобы пустить пользователя в приложение
                 completeLocalAuth(payload, email, passHash, securityHash)
                 return@withContext true
 
             } catch (e: Exception) {
-                Log.e(TAG, "Сетевая ошибка (Offline mode): ${e.message}")
+                Log.e(TAG, "Ошибка при регистрации (Offline mode): ${e.message}")
                 
-                // Создаем локальный профиль даже без интернета
                 val fallbackPayload = UserPayload(
                     hash = securityHash,
                     phone_hash = sha256(finalPhone + PEPPER),
@@ -111,19 +110,18 @@ class AuthManager(private val context: Context) {
 
     private suspend fun completeLocalAuth(payload: UserPayload, email: String, passHash: String, hash: String) {
         try {
-            // Сохраняем себя как основной узел в локальную БД
             saveUserToLocalDb(payload, email, passHash)
             
-            // Сохраняем флаг входа, чтобы NavGraph переключился на "chats"
+            // Сохраняем флаг входа для NavGraph
             context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE).edit().apply {
                 putString("my_security_hash", hash)
                 putString("my_phone", payload.phone)
                 putBoolean("is_logged_in", true)
                 apply()
             }
-            Log.d(TAG, "Локальная авторизация завершена успешно")
+            Log.d(TAG, "Локальная сессия создана")
         } catch (e: Exception) {
-            Log.e(TAG, "Ошибка сохранения локальной сессии: ${e.message}")
+            Log.e(TAG, "Ошибка локального сохранения: ${e.message}")
         }
     }
 
