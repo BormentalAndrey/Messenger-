@@ -11,10 +11,6 @@ import org.webrtc.*
 import java.nio.ByteBuffer
 import java.util.UUID
 
-/**
- * Клиент WebRTC для прямой передачи сообщений между узлами (DataChannel).
- * Обеспечивает минимальную задержку и обход NAT через STUN.
- */
 class WebRtcClient(
     private val context: Context,
     private val identityRepo: IdentityRepository,
@@ -47,40 +43,31 @@ class WebRtcClient(
 
     private fun setupPeerConnection() {
         val iceServers = listOf(
-            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-            PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
+            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
         )
         
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
         }
 
         peerConnection = factory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
             override fun onIceCandidate(candidate: IceCandidate?) {
                 candidate?.let {
                     val json = JSONObject().apply {
-                        put("type", "ICE_CANDIDATE")
                         put("sdpMid", it.sdpMid)
                         put("sdpMLineIndex", it.sdpMLineIndex)
                         put("sdp", it.sdp)
                     }
-                    identityRepo.sendSignaling(targetIp, "WEBRTC_SIGNAL", json.toString())
+                    // FIX: 3 параметра
+                    identityRepo.sendSignaling(targetIp, "ICE_CANDIDATE", json.toString())
                 }
             }
 
             override fun onDataChannel(dc: DataChannel?) {
-                Log.d(TAG, "Remote DataChannel received")
                 dc?.let { setupDataChannel(it) }
             }
 
-            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
-                Log.d(TAG, "ICE Connection State: $state")
-                if (state == PeerConnection.IceConnectionState.DISCONNECTED) {
-                    // Логика переподключения может быть добавлена здесь
-                }
-            }
-
+            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {}
             override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
             override fun onIceConnectionReceivingChange(b: Boolean) {}
             override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {}
@@ -91,11 +78,8 @@ class WebRtcClient(
             override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {}
         })
 
-        // Создаем локальный DataChannel (только если мы инициатор)
-        val dcInit = DataChannel.Init().apply {
-            ordered = true
-        }
-        dataChannel = peerConnection?.createDataChannel("p2p_chat_channel_$chatId", dcInit)
+        val dcInit = DataChannel.Init().apply { ordered = true }
+        dataChannel = peerConnection?.createDataChannel("p2p_chat", dcInit)
         dataChannel?.let { setupDataChannel(it) }
     }
 
@@ -110,31 +94,21 @@ class WebRtcClient(
                 scope.launch {
                     try {
                         val decryptedText = CryptoManager.decryptMessage(encryptedData)
-                        
-                        // Создаем сущность сообщения без параметра 'encrypted', так как 
-                        // в NodeEntity/MessageEntity его нет (согласно ошибке компилятора)
                         val message = MessageEntity(
                             messageId = UUID.randomUUID().toString(),
                             chatId = chatId,
                             senderId = targetHash,
-                            receiverId = identityRepo.getMyId(),
+                            receiverId = identityRepo.getMyId(), // FIX: добавлен метод
                             text = decryptedText,
                             timestamp = System.currentTimeMillis(),
                             isMe = false,
-                            isRead = false,
-                            status = "RECEIVED" 
+                            status = "RECEIVED"
                         )
                         dao.insert(message)
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Failed to process incoming WebRTC message", e)
-                    }
+                    } catch (e: Exception) { Log.e(TAG, "Error", e) }
                 }
             }
-
-            override fun onStateChange() {
-                Log.d(TAG, "DataChannel State: ${dc.state()}")
-            }
-
+            override fun onStateChange() {}
             override fun onBufferedAmountChange(l: Long) {}
         })
     }
@@ -144,98 +118,72 @@ class WebRtcClient(
             if (fromId != targetHash || type != "WEBRTC_SIGNAL") return@addListener
             try {
                 val json = JSONObject(data)
-                when (json.optString("type")) {
-                    "OFFER" -> handleOffer(json.getString("sdp"))
-                    "ANSWER" -> handleAnswer(json.getString("sdp"))
+                val signalType = json.getString("type")
+                val signalData = json.getString("data")
+
+                when (signalType) {
+                    "OFFER" -> handleOffer(signalData)
+                    "ANSWER" -> handleAnswer(signalData)
                     "ICE_CANDIDATE" -> {
+                        val iceJson = JSONObject(signalData)
                         val candidate = IceCandidate(
-                            json.getString("sdpMid"),
-                            json.getInt("sdpMLineIndex"),
-                            json.getString("sdp")
+                            iceJson.getString("sdpMid"),
+                            iceJson.getInt("sdpMLineIndex"),
+                            iceJson.getString("sdp")
                         )
                         peerConnection?.addIceCandidate(candidate)
                     }
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Signaling parsing error", e)
-            }
+            } catch (e: Exception) { Log.e(TAG, "Signaling Error", e) }
         }
     }
 
     fun initiateConnection() {
-        val constraints = MediaConstraints().apply {
-            mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "false"))
-            mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false"))
-        }
-
+        val constraints = MediaConstraints()
         peerConnection?.createOffer(object : SimpleSdpObserver() {
-            override fun onCreateSuccess(description: SessionDescription?) {
-                description?.let { sdp ->
-                    peerConnection?.setLocalDescription(object : SimpleSdpObserver() {
-                        override fun onSetSuccess() {
-                            val json = JSONObject().apply {
-                                put("type", "OFFER")
-                                put("sdp", sdp.description)
-                            }
-                            identityRepo.sendSignaling(targetIp, "WEBRTC_SIGNAL", json.toString())
-                        }
-                    }, sdp)
+            override fun onCreateSuccess(sdp: SessionDescription?) {
+                sdp?.let {
+                    peerConnection?.setLocalDescription(SimpleSdpObserver(), it)
+                    // FIX: 3 параметра
+                    identityRepo.sendSignaling(targetIp, "OFFER", it.description)
                 }
             }
         }, constraints)
     }
 
     private fun handleOffer(sdp: String) {
-        val remoteDescription = SessionDescription(SessionDescription.Type.OFFER, sdp)
+        val offer = SessionDescription(SessionDescription.Type.OFFER, sdp)
         peerConnection?.setRemoteDescription(object : SimpleSdpObserver() {
             override fun onSetSuccess() {
                 peerConnection?.createAnswer(object : SimpleSdpObserver() {
-                    override fun onCreateSuccess(description: SessionDescription?) {
-                        description?.let { answerSdp ->
-                            peerConnection?.setLocalDescription(object : SimpleSdpObserver() {
-                                override fun onSetSuccess() {
-                                    val json = JSONObject().apply {
-                                        put("type", "ANSWER")
-                                        put("sdp", answerSdp.description)
-                                    }
-                                    identityRepo.sendSignaling(targetIp, "WEBRTC_SIGNAL", json.toString())
-                                }
-                            }, answerSdp)
+                    override fun onCreateSuccess(answer: SessionDescription?) {
+                        answer?.let {
+                            peerConnection?.setLocalDescription(SimpleSdpObserver(), it)
+                            // FIX: 3 параметра
+                            identityRepo.sendSignaling(targetIp, "ANSWER", it.description)
                         }
                     }
                 }, MediaConstraints())
             }
-        }, remoteDescription)
+        }, offer)
     }
 
     private fun handleAnswer(sdp: String) {
-        val remoteDescription = SessionDescription(SessionDescription.Type.ANSWER, sdp)
-        peerConnection?.setRemoteDescription(SimpleSdpObserver(), remoteDescription)
+        peerConnection?.setRemoteDescription(SimpleSdpObserver(), SessionDescription(SessionDescription.Type.ANSWER, sdp))
     }
 
-    /**
-     * Шифрует и отправляет сообщение через открытый DataChannel.
-     */
     fun send(text: String): Boolean {
-        if (dataChannel?.state() != DataChannel.State.OPEN) {
-            Log.e(TAG, "Cannot send: DataChannel is not open")
-            return false
-        }
-        
+        if (dataChannel?.state() != DataChannel.State.OPEN) return false
         return try {
-            val peerPubKey = CryptoManager.getPeerPublicKey(targetHash) ?: ""
-            val encrypted = CryptoManager.encryptMessage(text, peerPubKey)
-            val buffer = ByteBuffer.wrap(encrypted.toByteArray(Charsets.UTF_8))
+            val peerKey = CryptoManager.getPeerPublicKey(targetHash) ?: ""
+            val encrypted = CryptoManager.encryptMessage(text, peerKey)
+            val buffer = ByteBuffer.wrap(encrypted.toByteArray())
             dataChannel?.send(DataChannel.Buffer(buffer, false))
             true
-        } catch (e: Exception) {
-            Log.e(TAG, "Encryption or Send failed", e)
-            false
-        }
+        } catch (e: Exception) { false }
     }
 
     fun close() {
-        dataChannel?.unregisterObserver()
         dataChannel?.close()
         peerConnection?.dispose()
         factory.dispose()
@@ -243,9 +191,9 @@ class WebRtcClient(
     }
 
     open class SimpleSdpObserver : SdpObserver {
-        override fun onCreateSuccess(description: SessionDescription?) {}
+        override fun onCreateSuccess(p0: SessionDescription?) {}
         override fun onSetSuccess() {}
-        override fun onCreateFailure(error: String?) { Log.e("WebRtcClient", "SDP Create Error: $error") }
-        override fun onSetFailure(error: String?) { Log.e("WebRtcClient", "SDP Set Error: $error") }
+        override fun onCreateFailure(p0: String?) {}
+        override fun onSetFailure(p0: String?) {}
     }
 }
