@@ -18,6 +18,7 @@ import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.security.CryptoManager
 import com.kakdela.p2p.services.P2PService
 import com.kakdela.p2p.ui.navigation.NavGraph
+import com.kakdela.p2p.ui.navigation.Routes
 import com.kakdela.p2p.ui.theme.KakdelaTheme
 import com.kakdela.p2p.ui.player.MusicManager
 
@@ -26,7 +27,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var identityRepository: IdentityRepository
     private val TAG = "MainActivity"
 
-    // Расширенный список разрешений: Музыка + Контакты
+    // Лаунчер для запроса разрешений: Музыка + Контакты
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -43,14 +44,14 @@ class MainActivity : ComponentActivity() {
         }
         
         if (!contactsGranted) {
-            Toast.makeText(this, "Доступ к контактам нужен для работы P2P", Toast.LENGTH_LONG).show()
+            Log.w(TAG, "Доступ к контактам отклонен пользователем")
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 1. Инициализируем критические компоненты
+        // 1. Инициализация систем безопасности и данных
         try {
             CryptoManager.init(applicationContext)
             identityRepository = IdentityRepository(applicationContext)
@@ -58,29 +59,30 @@ class MainActivity : ComponentActivity() {
             Log.e(TAG, "Критическая ошибка инициализации: ${e.message}")
         }
 
-        // 2. Запуск P2P сервиса в фоне
+        // 2. Запуск фонового P2P-сервиса
         startP2PService()
 
-        // 3. Запрос разрешений (включая контакты)
+        // 3. Проверка разрешений при запуске
         checkAndRequestPermissions()
 
-        // 4. Логика определения стартового экрана
+        // 4. Определение состояния авторизации
         val prefs = getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
         val isLoggedIn = prefs.getBoolean("is_logged_in", false)
-        
-        // ОТЛАДКА: Если нужно принудительно увидеть регистрацию, раскомментируйте строку ниже:
-        // prefs.edit().clear().apply()
 
         setContent {
             KakdelaTheme {
                 val navController = rememberNavController()
                 val repo = remember { identityRepository }
 
-                // Передаем флаг isLoggedIn в NavGraph для управления стартовым экраном
+                // ПРАВКА: Используем константы из Routes, чтобы избежать IllegalArgumentException.
+                // Если isLoggedIn == true, идем сразу в CHATS.
+                // Если false, идем в SPLASH, который покажет лого и перекинет на CHOICE.
+                val startRoute = if (isLoggedIn) Routes.CHATS else Routes.SPLASH
+
                 NavGraph(
                     navController = navController,
                     identityRepository = repo,
-                    startDestination = if (isLoggedIn) "contacts" else "auth"
+                    startDestination = startRoute
                 )
             }
         }
@@ -95,20 +97,20 @@ class MainActivity : ComponentActivity() {
                 startService(serviceIntent)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Не удалось запустить P2P Service: ${e.message}")
+            Log.e(TAG, "Ошибка запуска сервиса: ${e.message}")
         }
     }
 
     private fun checkAndRequestPermissions() {
         val permissionsToRequest = mutableListOf<String>()
 
-        // Разрешение на контакты (обязательно для синхронизации)
+        // Контакты
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) 
             != PackageManager.PERMISSION_GRANTED) {
             permissionsToRequest.add(Manifest.permission.READ_CONTACTS)
         }
 
-        // Разрешение на медиа
+        // Музыка/Хранилище
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) 
                 != PackageManager.PERMISSION_GRANTED) {
