@@ -11,131 +11,162 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * Менеджер контактов P2P.
- * Сопоставляет локальную книгу с данными из api.php (ТЗ п. 2.2).
- * Исправлена логика нормализации для точного совпадения хэшей.
+ * P2P Contact Discovery Manager.
+ * Сопоставляет локальные контакты с DHT / Discovery сервером.
  */
 class ContactP2PManager(
     private val context: Context,
-    private val identityRepo: IdentityRepository
+    private val identityRepository: IdentityRepository
 ) {
-    companion object { 
-        private const val TAG = "ContactP2PManager" 
+
+    companion object {
+        private const val TAG = "ContactP2PManager"
     }
 
     /**
-     * Основной метод синхронизации.
-     * Сверяет локальные номера с базой активных узлов на сервере.
+     * Основной метод синхронизации контактов.
      */
     suspend fun syncContacts(): List<AppContact> = withContext(Dispatchers.IO) {
-        // 1. Проверка разрешений перед доступом к ContentResolver
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
-            Log.e(TAG, "Ошибка: Разрешение READ_CONTACTS не предоставлено")
+
+        // ---------- PERMISSION ----------
+        if (ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.READ_CONTACTS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.w(TAG, "READ_CONTACTS permission not granted")
             return@withContext emptyList()
         }
 
-        // 2. Получение списка активных пользователей с сервера Discovery
-        val onlineNodes: List<UserPayload> = try {
-            identityRepo.fetchAllNodesFromServer()
+        // ---------- FETCH ONLINE USERS ----------
+        val onlineUsers: List<UserPayload> = try {
+            identityRepository.fetchAllNodesFromServer()
+                .filter { !it.phone_hash.isNullOrBlank() }
         } catch (e: Exception) {
-            Log.e(TAG, "Ошибка синхронизации с сервером: ${e.message}")
+            Log.e(TAG, "Discovery fetch failed", e)
             emptyList()
         }
 
-        // 3. Создаем карту для быстрого поиска O(1). Ключ — phone_hash.
-        val onlineHashMap = onlineNodes.associateBy { it.phone_hash ?: "" }
+        // Map: phone_hash -> UserPayload
+        val onlineMap: Map<String, UserPayload> =
+            onlineUsers.associateBy { it.phone_hash!! }
 
-        // 4. Читаем контакты из телефонной книги
-        val localContacts = fetchLocalPhoneContacts()
-        
-        // 5. Процесс сопоставления (Matching)
-        val merged = localContacts.map { contact ->
-            // Генерируем хэш от НОРМАЛИЗОВАННОГО номера (7900...)
-            val phoneDiscoveryHash = identityRepo.generatePhoneDiscoveryHash(contact.phoneNumber)
-            
-            val peer = onlineHashMap[phoneDiscoveryHash]
+        // ---------- READ LOCAL CONTACTS ----------
+        val localContacts = fetchLocalContacts()
+
+        // ---------- MATCHING ----------
+        val mergedContacts = localContacts.map { contact ->
+            val phoneHash =
+                identityRepository.generatePhoneDiscoveryHash(contact.phoneNumber)
+
+            val peer = onlineMap[phoneHash]
 
             if (peer != null) {
-                // Пользователь найден в сети
                 contact.copy(
                     isRegistered = true,
-                    userHash = peer.hash,         // ID для маршрутизации сообщений
+                    isOnline = true,
+                    userHash = peer.hash,
                     publicKey = peer.publicKey,
-                    lastKnownIp = peer.ip,
-                    isOnline = true               // Узел активен
+                    lastKnownIp = peer.ip
                 )
             } else {
-                // Пользователь не зарегистрирован или не в сети
-                contact.copy(isRegistered = false, isOnline = false)
+                contact.copy(
+                    isRegistered = false,
+                    isOnline = false,
+                    userHash = null,
+                    publicKey = null,
+                    lastKnownIp = null
+                )
             }
         }
 
-        // 6. Финальная сортировка: Сначала онлайн-контакты, затем остальные по алфавиту
-        merged.sortedWith(
-            compareByDescending<AppContact> { it.isRegistered }
+        // ---------- SORT ----------
+        mergedContacts.sortedWith(
+            compareByDescending<AppContact> { it.isOnline }
+                .thenByDescending { it.isRegistered }
                 .thenBy { it.name.lowercase() }
         )
     }
 
     /**
-     * Извлекает контакты из Android Contacts Provider.
+     * Читает контакты из Android Contacts Provider.
      */
-    private fun fetchLocalPhoneContacts(): List<AppContact> {
-        val contacts = mutableListOf<AppContact>()
-        val seenPhones = HashSet<String>()
-        
+    private fun fetchLocalContacts(): List<AppContact> {
+        val result = mutableListOf<AppContact>()
+        val seenNumbers = HashSet<String>()
+
         val projection = arrayOf(
-            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, 
+            ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
             ContactsContract.CommonDataKinds.Phone.NUMBER
         )
 
         try {
             context.contentResolver.query(
-                ContactsContract.CommonDataKinds.Phone.CONTENT_URI, 
-                projection, null, null, null
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                projection,
+                null,
+                null,
+                null
             )?.use { cursor ->
-                val nameIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
-                val phoneIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+
+                val nameIdx =
+                    cursor.getColumnIndexOrThrow(
+                        ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME
+                    )
+                val numberIdx =
+                    cursor.getColumnIndexOrThrow(
+                        ContactsContract.CommonDataKinds.Phone.NUMBER
+                    )
 
                 while (cursor.moveToNext()) {
                     val name = cursor.getString(nameIdx) ?: "Unknown"
-                    val rawPhone = cursor.getString(phoneIdx) ?: continue
-                    
-                    // Важный этап: приведение любого ввода к стандарту 79XXXXXXXXX
-                    val normalized = normalizePhone(rawPhone) ?: continue
+                    val rawNumber = cursor.getString(numberIdx) ?: continue
 
-                    // Исключаем дубликаты, если один контакт записан несколько раз
-                    if (seenPhones.add(normalized)) {
-                        contacts.add(AppContact(name = name, phoneNumber = normalized))
+                    val normalized = normalizePhone(rawNumber) ?: continue
+
+                    if (seenNumbers.add(normalized)) {
+                        result.add(
+                            AppContact(
+                                name = name,
+                                phoneNumber = normalized
+                            )
+                        )
                     }
                 }
             }
-        } catch (e: Exception) { 
-            Log.e(TAG, "Ошибка чтения контактов: ${e.message}") 
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to read contacts", e)
         }
-        return contacts
+
+        return result
     }
 
     /**
-     * Продакшн-логика нормализации номера:
-     * 1. Убирает лишние символы.
-     * 2. Превращает 8... в 7...
-     * 3. Добавляет 7 к 10-значным номерам.
-     * Это гарантирует, что хэш в приложении совпадет с хэшем в MySQL.
+     * Строгая продакшн-нормализация номера.
+     *
+     * Приводит к формату: 7XXXXXXXXXX
      */
     private fun normalizePhone(raw: String): String? {
-        // Очистка от скобок, тире и пробелов
-        var digits = raw.replace(Regex("[^0-9]"), "")
-        if (digits.isEmpty()) return null
-        
-        // Корректировка префикса РФ/СНГ
+        var digits = raw.replace(Regex("[^0-9+]"), "")
+
+        if (digits.startsWith("+")) {
+            digits = digits.substring(1)
+        }
+
         digits = when {
-            digits.length == 11 && digits.startsWith("8") -> "7" + digits.substring(1)
-            digits.length == 10 && digits.startsWith("9") -> "7" + digits
+            digits.length == 11 && digits.startsWith("8") ->
+                "7" + digits.substring(1)
+
+            digits.length == 10 && digits.startsWith("9") ->
+                "7$digits"
+
             else -> digits
         }
-        
-        // Проверяем минимально допустимую длину (для РФ это 11 цифр)
-        return if (digits.length >= 11) digits else null
+
+        return if (digits.length == 11 && digits.startsWith("7")) {
+            digits
+        } else {
+            null
+        }
     }
 }
