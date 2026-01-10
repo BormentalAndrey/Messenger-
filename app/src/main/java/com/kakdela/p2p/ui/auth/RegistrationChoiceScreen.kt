@@ -1,6 +1,5 @@
 package com.kakdela.p2p.ui.auth
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -20,7 +19,7 @@ fun RegistrationChoiceScreen(
 ) {
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = Color.Black // Принудительный черный фон для P2P стиля
+        color = Color.Black
     ) {
         Column(
             modifier = Modifier
@@ -37,10 +36,10 @@ fun RegistrationChoiceScreen(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
 
             Text(
-                text = "Децентрализованная сеть общения.\nВаша личность хранится только у вас.",
+                text = "Ваша личность — ваши ключи.\nНикаких центральных серверов.",
                 fontSize = 14.sp,
                 color = Color.Gray,
                 textAlign = TextAlign.Center,
@@ -49,7 +48,6 @@ fun RegistrationChoiceScreen(
 
             Spacer(Modifier.height(64.dp))
 
-            // Основная кнопка регистрации
             Button(
                 onClick = onPhone,
                 modifier = Modifier
@@ -65,40 +63,42 @@ fun RegistrationChoiceScreen(
                 )
             }
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(24.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Divider(modifier = Modifier.weight(1f), color = Color.DarkGray)
+                HorizontalDivider(modifier = Modifier.weight(1f), color = Color.DarkGray)
                 Text(
                     text = " или ",
                     modifier = Modifier.padding(horizontal = 16.dp),
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray
                 )
-                Divider(modifier = Modifier.weight(1f), color = Color.DarkGray)
+                HorizontalDivider(modifier = Modifier.weight(1f), color = Color.DarkGray)
             }
 
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(24.dp))
 
-            // Legacy вход
             OutlinedButton(
                 onClick = onEmailOnly,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
-                border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(Color.DarkGray)),
+                border = ButtonDefaults.outlinedButtonBorder.copy(
+                    brush = androidx.compose.ui.graphics.SolidColor(Color.DarkGray)
+                ),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text("Войти через Email (Legacy)", color = Color.White)
+                Text("Использовать Email (Legacy)", color = Color.White)
             }
             
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(48.dp))
             
             Text(
-                text = "Нажимая кнопку, вы генерируете уникальный приватный ключ RSA-2048 на этом устройстве.",
+                text = "При регистрации генерируется уникальный RSA-2048 ключ.\nНикто, кроме вас, не имеет к нему доступа.",
                 fontSize = 10.sp,
-                color = Color(0xFF444444),
-                textAlign = TextAlign.Center
+                color = Color.DarkGray,
+                textAlign = TextAlign.Center,
+                lineHeight = 14.sp
             )
         }
     }
