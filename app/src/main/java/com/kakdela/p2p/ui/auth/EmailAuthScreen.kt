@@ -1,12 +1,14 @@
 package com.kakdela.p2p.ui.auth
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.kakdela.p2p.data.AuthManager
@@ -123,7 +125,11 @@ fun EmailAuthScreen(
                 }
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(size = 24.dp, color = Color.Black, strokeWidth = 3.dp)
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp), 
+                        color = Color.Black, 
+                        strokeWidth = 3.dp
+                    )
                 } else {
                     Text("Войти / Создать", fontWeight = FontWeight.Bold)
                 }
