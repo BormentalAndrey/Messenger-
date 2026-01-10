@@ -39,21 +39,21 @@ import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 import com.kakdela.p2p.ui.ChatViewModel
 
 /**
- * Основной граф навигации приложения KakDela P2P.
- * Реализована строгая проверка авторизации на этапе Splash.
+ * Основной граф навигации приложения.
+ * startDestination теперь динамически определяется в MainActivity.
  */
 @Composable
 fun NavGraph(
     navController: NavHostController,
     identityRepository: IdentityRepository,
-    startDestination: String = Routes.SPLASH // Добавлен параметр для гибкости из MainActivity
+    startDestination: String // Сюда теперь передается Routes.SPLASH или Routes.CHATS
 ) {
     val context = LocalContext.current
     val isOnline by rememberIsOnline()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    // Определяем видимость нижней панели
+    // Определяем, нужно ли показывать BottomBar на текущем экране
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
     )
@@ -74,13 +74,12 @@ fun NavGraph(
                 .background(Color.Black)
         ) {
             
-            // --- СТАРТОВЫЙ ЭКРАН (ЛОГИКА ВХОДА) ---
+            // --- ЭКРАН ЗАГРУЗКИ / ПРОВЕРКИ ---
             composable(Routes.SPLASH) {
                 SplashScreen {
                     val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
                     val isLoggedIn = prefs.getBoolean("is_logged_in", false)
                     
-                    // Если флаг входа false, всегда отправляем на регистрацию
                     val nextRoute = if (isLoggedIn) Routes.CHATS else Routes.CHOICE
                     
                     navController.navigate(nextRoute) {
@@ -89,7 +88,7 @@ fun NavGraph(
                 }
             }
 
-            // --- ЭКРАНЫ РЕГИСТРАЦИИ ---
+            // --- БЛОК АВТОРИЗАЦИИ ---
             composable(Routes.CHOICE) {
                 RegistrationChoiceScreen(
                     onPhone = { navController.navigate(Routes.AUTH_PHONE) },
@@ -99,7 +98,6 @@ fun NavGraph(
 
             composable(Routes.AUTH_EMAIL) {
                 EmailAuthScreen(identityRepository) {
-                    // После успешной авторизации флаг ставится в AuthManager
                     navController.navigate(Routes.CHATS) {
                         popUpTo(Routes.CHOICE) { inclusive = true }
                     }
@@ -114,11 +112,12 @@ fun NavGraph(
                 }
             }
 
-            // --- ЧАТЫ И КОНТАКТЫ ---
+            // --- СПИСОК ЧАТОВ ---
             composable(Routes.CHATS) { 
                 ChatsListScreen(navController, identityRepository) 
             }
 
+            // --- КОНТАКТЫ ---
             composable(Routes.CONTACTS) {
                 ContactsScreen(
                     identityRepository = identityRepository,
@@ -130,12 +129,13 @@ fun NavGraph(
                 )
             }
 
+            // --- ЭКРАН ПРЯМОГО ЧАТА ---
             composable(
                 route = "chat/{chatId}",
                 arguments = listOf(navArgument("chatId") { type = NavType.StringType })
             ) { entry ->
                 val chatId = entry.arguments?.getString("chatId") ?: return@composable
-                val app = LocalContext.current.applicationContext as Application
+                val app = context.applicationContext as Application
                 val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(identityRepository, app))
 
                 LaunchedEffect(chatId) { vm.initChat(chatId) }
@@ -166,17 +166,18 @@ fun NavGraph(
                 )
             }
 
-            // --- ОСНОВНЫЕ РАЗДЕЛЫ ---
+            // --- СЕРВИСНЫЕ ЭКРАНЫ ---
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController, identityRepository) }
             
-            // --- ДОПОЛНИТЕЛЬНЫЕ СЕРВИСЫ ---
+            // --- РАЗВЛЕЧЕНИЯ ---
             composable(Routes.MUSIC) { MusicPlayerScreen() }
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
 
+            // --- ИИ ЧАТ (ОНЛАЙН) ---
             composable(Routes.AI_CHAT) { 
                 if (isOnline) AiChatScreen() else NoInternetScreen { navController.popBackStack() } 
             }
