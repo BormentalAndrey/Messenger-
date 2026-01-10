@@ -38,7 +38,8 @@ import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
-import com.kakdela.p2p.viewmodel.ChatViewModel
+// ИСПРАВЛЕННЫЕ ИМПОРТЫ:
+import com.kakdela.p2p.ui.ChatViewModel 
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
 @Composable
@@ -122,13 +123,13 @@ fun NavGraph(
                 val chatId = entry.arguments?.getString("chatId") ?: ""
                 val app = context.applicationContext as Application
 
-                // Создаём ViewModel через фабрику
-                val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(identityRepository, app))
+                // Использование правильной фабрики и класса из com.kakdela.p2p.ui
+                val vm: ChatViewModel = viewModel(
+                    factory = ChatViewModelFactory(identityRepository, app)
+                )
 
-                // Инициализация чата
                 LaunchedEffect(chatId) { vm.initChat(chatId) }
 
-                // Подписка на StateFlow сообщений
                 val messagesEntities by vm.messages.collectAsState()
                 val uiMessages = remember(messagesEntities) {
                     messagesEntities.map { entity ->
