@@ -35,8 +35,6 @@ import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen 
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
-import com.kakdela.p2p.ui.games.* // Импорт игровых экранов
-import com.kakdela.p2p.ui.tools.CalculatorScreen // Импорт инструментов
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 import com.kakdela.p2p.viewmodel.ChatViewModel
 
@@ -57,21 +55,15 @@ fun NavGraph(
 
     Scaffold(
         bottomBar = { 
-            if (showBottomBar) {
-                AppBottomBar(currentRoute, navController) 
-            }
+            if (showBottomBar) { AppBottomBar(currentRoute, navController) }
         },
         containerColor = Color.Black
     ) { paddingValues ->
         NavHost(
             navController = navController,
             startDestination = startDestination,
-            modifier = Modifier
-                .padding(paddingValues)
-                .background(Color.Black)
+            modifier = Modifier.padding(paddingValues).background(Color.Black)
         ) {
-            
-            // --- СИСТЕМНЫЕ И АВТОРИЗАЦИЯ ---
             composable(Routes.SPLASH) {
                 SplashScreen {
                     val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
@@ -101,9 +93,8 @@ fun NavGraph(
                 }
             }
 
-            // --- ОСНОВНЫЕ МОДУЛИ ---
             composable(Routes.CHATS) { ChatsListScreen(navController, identityRepository) }
-            
+
             composable(Routes.CONTACTS) {
                 ContactsScreen(identityRepository) { contact ->
                     contact.userHash?.let { navController.navigate(Routes.buildChatRoute(it)) }
@@ -115,7 +106,8 @@ fun NavGraph(
                 arguments = listOf(navArgument("chatId") { type = NavType.StringType })
             ) { entry ->
                 val chatId = entry.arguments?.getString("chatId") ?: ""
-                val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(identityRepository, context.applicationContext as Application))
+                val app = context.applicationContext as Application
+                val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(identityRepository, app))
 
                 LaunchedEffect(chatId) { vm.initChat(chatId) }
 
@@ -123,20 +115,14 @@ fun NavGraph(
                 val uiMessages = remember(messagesEntities) {
                     messagesEntities.map { entity ->
                         com.kakdela.p2p.data.Message(
-                            id = entity.messageId,
-                            text = entity.text,
-                            senderId = entity.senderId,
-                            timestamp = entity.timestamp,
-                            isMe = entity.isMe,
-                            status = entity.status
+                            id = entity.messageId, text = entity.text, senderId = entity.senderId,
+                            timestamp = entity.timestamp, isMe = entity.isMe, status = entity.status
                         )
                     }
                 }
 
                 ChatScreen(
-                    chatPartnerId = chatId,
-                    messages = uiMessages, 
-                    identityRepository = identityRepository,
+                    chatPartnerId = chatId, messages = uiMessages, identityRepository = identityRepository,
                     onSendMessage = { vm.sendMessage(it) },
                     onSendFile = { uri, name -> vm.sendFile(uri.toString(), name) },
                     onSendAudio = { uri, dur -> vm.sendAudio(uri.toString(), dur.toInt()) },
@@ -145,31 +131,30 @@ fun NavGraph(
                 )
             }
 
-            // --- ДОСУГ И ИНСТРУМЕНТЫ ---
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController, identityRepository) }
-            
             composable(Routes.MUSIC) { MusicPlayerScreen() }
+            
+            // Исправлено: Вызов игр без аргументов (согласно вашим файлам в UI)
+            composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
+            composable(Routes.CHESS) { ChessScreen() }
+            composable(Routes.PACMAN) { PacmanScreen() }
+            composable(Routes.SUDOKU) { SudokuScreen() }
             composable(Routes.CALCULATOR) { CalculatorScreen() }
             
-            // ИГРОВОЙ ХАБ
-            composable(Routes.TIC_TAC_TOE) { TicTacToeScreen { navController.popBackStack() } }
-            composable(Routes.CHESS) { ChessScreen { navController.popBackStack() } }
-            composable(Routes.PACMAN) { PacmanScreen { navController.popBackStack() } }
-            composable(Routes.JEWELS) { JewelsScreen { navController.popBackStack() } }
-            composable(Routes.SUDOKU) { SudokuScreen { navController.popBackStack() } }
+            composable(Routes.JEWELS) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Jewels Game Coming Soon", color = Color.White)
+                }
+            }
 
-            // ИИ СЕРВИСЫ
             composable(Routes.AI_CHAT) { 
-                if (isOnline) AiChatScreen { navController.popBackStack() } 
-                else NoInternetScreen { navController.popBackStack() } 
+                if (isOnline) AiChatScreen() else NoInternetScreen { navController.popBackStack() } 
             }
         }
     }
 }
-
-// --- ВСПОМОГАТЕЛЬНЫЕ КОМПОНЕНТЫ ---
 
 @Composable
 private fun AppBottomBar(currentRoute: String?, navController: NavHostController) {
@@ -216,8 +201,8 @@ fun rememberIsOnline(): State<Boolean> {
             override fun onLost(network: Network) { status.value = false }
         }
         val request = NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build()
-        cm.registerNetworkCallback(request, callback)
-        onDispose { cm.unregisterNetworkCallback(callback) }
+        try { cm.registerNetworkCallback(request, callback) } catch (e: Exception) { status.value = true }
+        onDispose { try { cm.unregisterNetworkCallback(callback) } catch (e: Exception) {} }
     }
     return status
 }
