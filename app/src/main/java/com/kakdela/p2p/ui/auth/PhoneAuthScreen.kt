@@ -137,7 +137,11 @@ fun PhoneAuthScreen(
                     }
                 ) { 
                     if (isLoading) {
-                        CircularProgressIndicator(size = 24.dp, color = Color.Black)
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp), 
+                            color = Color.Black, 
+                            strokeWidth = 3.dp
+                        )
                     } else {
                         Text("Подтвердить и войти", fontWeight = FontWeight.Bold)
                     }
