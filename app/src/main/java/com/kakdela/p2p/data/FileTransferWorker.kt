@@ -20,9 +20,20 @@ class FileTransferWorker(
     private val activeDownloads = ConcurrentHashMap<String, DownloadSession>()
 
     private val listener: (String, String, String, String) -> Unit = { type, data, fromIp, fromId ->
-        when (type) {
-            "FILE_CHUNK_REQ" -> handleChunkRequest(data, fromIp)
-            "FILE_CHUNK_DATA" -> handleChunkData(data)
+        // Проверяем тип WEBRTC_SIGNAL, так как sendSignaling шлет именно его
+        if (type == "WEBRTC_SIGNAL") {
+            try {
+                val json = JSONObject(data)
+                val signalType = json.optString("type")
+                val signalData = json.optString("data")
+                
+                when (signalType) {
+                    "FILE_CHUNK_REQ" -> handleChunkRequest(signalData, fromIp)
+                    "FILE_CHUNK_DATA" -> handleChunkData(signalData)
+                }
+            } catch (e: Exception) {
+                // Игнорируем ошибки парсинга не файловых сигналов
+            }
         }
     }
 
@@ -60,6 +71,7 @@ class FileTransferWorker(
                         put("chunk_index", chunkIndex)
                         put("data", Base64.encodeToString(if (read == buffer.size) buffer else buffer.copyOf(read), Base64.NO_WRAP))
                     }
+                    // FIX: передаем 3 параметра
                     identityRepo.sendSignaling(targetIp, "FILE_CHUNK_DATA", response.toString())
                 }
             } catch (e: Exception) { Log.e("P2P_FILE", "Error", e) }
@@ -72,9 +84,13 @@ class FileTransferWorker(
         activeDownloads[fileId] = session
 
         for (i in 0 until totalChunks) {
-            val req = JSONObject().apply { put("file_id", fileId); put("chunk_index", i) }
+            val req = JSONObject().apply { 
+                put("file_id", fileId)
+                put("chunk_index", i) 
+            }
+            // FIX: передаем 3 параметра
             identityRepo.sendSignaling(targetIp, "FILE_CHUNK_REQ", req.toString())
-            delay(50) 
+            delay(20) // Небольшая задержка, чтобы не забить UDP буфер
         }
         session.await()
         activeDownloads.remove(fileId)
@@ -102,7 +118,12 @@ class FileTransferWorker(
         private val received = BooleanArray(totalChunks)
         private val latch = CountDownLatch(totalChunks)
         fun markChunkReceived(index: Int) {
-            synchronized(received) { if (!received[index]) { received[index] = true; latch.countDown() } }
+            synchronized(received) { 
+                if (index < totalChunks && !received[index]) { 
+                    received[index] = true
+                    latch.countDown() 
+                } 
+            }
         }
         fun await() = latch.await()
     }
