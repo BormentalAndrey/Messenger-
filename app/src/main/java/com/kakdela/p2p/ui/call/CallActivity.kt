@@ -2,13 +2,13 @@ package com.kakdela.p2p.ui.call
 
 import android.Manifest
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import com.kakdela.p2p.MyApplication
 import com.kakdela.p2p.data.IdentityRepository
+import org.json.JSONObject
 import org.webrtc.*
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -27,13 +27,18 @@ class CallActivity : ComponentActivity() {
     private val pendingIce = CopyOnWriteArrayList<IceCandidate>()
     @Volatile private var isRemoteSdpSet = false
 
-    // Исправлено: 4 аргумента в слушателе
-    private val signalingListener: (String, String, String, String) -> Unit = { type, data, fromIp, fromId ->
-        if (fromIp == targetIp) {
-            when (type) {
-                "ANSWER" -> handleAnswer(data)
-                "ICE" -> handleRemoteIce(data)
-            }
+    private val signalingListener: (String, String, String, String) -> Unit = { type, data, fromIp, _ ->
+        if (fromIp == targetIp && type == "WEBRTC_SIGNAL") {
+            try {
+                val json = JSONObject(data)
+                val signalType = json.getString("type")
+                val signalData = json.getString("data")
+
+                when (signalType) {
+                    "ANSWER" -> handleAnswer(signalData)
+                    "ICE" -> handleRemoteIce(signalData)
+                }
+            } catch (e: Exception) { e.printStackTrace() }
         }
     }
 
@@ -89,6 +94,7 @@ class CallActivity : ComponentActivity() {
         peerConnection = factory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
             override fun onIceCandidate(candidate: IceCandidate) {
                 val payload = "${candidate.sdpMid}|${candidate.sdpMLineIndex}|${candidate.sdp}"
+                // FIX: 3 параметра
                 identityRepo.sendSignaling(targetIp, "ICE", payload)
             }
             override fun onTrack(transceiver: RtpTransceiver?) {
@@ -130,6 +136,7 @@ class CallActivity : ComponentActivity() {
             drainIce()
             peerConnection?.createAnswer(SdpAdapter { answer ->
                 peerConnection?.setLocalDescription(SdpAdapter(), answer)
+                // FIX: 3 параметра
                 identityRepo.sendSignaling(targetIp, "ANSWER", answer.description)
             }, MediaConstraints())
         }, offer)
@@ -138,6 +145,7 @@ class CallActivity : ComponentActivity() {
     private fun makeOffer() {
         peerConnection?.createOffer(SdpAdapter { offer ->
             peerConnection?.setLocalDescription(SdpAdapter(), offer)
+            // FIX: 3 параметра
             identityRepo.sendSignaling(targetIp, "OFFER", offer.description)
         }, MediaConstraints())
     }
