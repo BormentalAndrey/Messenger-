@@ -16,28 +16,27 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
-/**
- * Менеджер авторизации уровня Production.
- * Реализует гибридную модель: попытка регистрации на сервере + обязательная локальная активация.
- */
 class AuthManager(private val context: Context) {
 
     private val TAG = "AuthManager"
     private val nodeDao = ChatDatabase.getDatabase(context).nodeDao()
     private val PEPPER = "7fb8a1d2c3e4f5a6"
 
-    // HTTP-клиент с оптимизированными таймаутами для мобильных сетей
+    // 1. Обязательно добавляем Interceptor для User-Agent (обход защиты хостинга)
     private val okHttpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .writeTimeout(20, TimeUnit.SECONDS)
+        .addInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .build()
+            chain.proceed(request)
+        }
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
-        .followSslRedirects(true)
         .build()
 
     private val api: MyServerApi by lazy {
         Retrofit.Builder()
-            // Используем HTTPS, если сервер поддерживает, иначе HTTP
             .baseUrl("http://kakdela.infinityfree.me/") 
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
@@ -45,27 +44,32 @@ class AuthManager(private val context: Context) {
             .create(MyServerApi::class.java)
     }
 
-    /**
-     * Основной метод входа. 
-     * Даже если сервер недоступен, пользователь будет авторизован локально (P2P-режим).
-     */
     suspend fun registerOrLogin(email: String, password: String, phone: String): Boolean =
         withContext(Dispatchers.IO) {
+            // 2. Улучшенная нормализация номера телефона
+            var digits = phone.replace(Regex("[^0-9]"), "")
+            val finalPhone = when {
+                digits.length == 10 && digits.startsWith("9") -> "7$digits"
+                digits.length == 11 && digits.startsWith("8") -> "7" + digits.substring(1)
+                digits.length == 11 && digits.startsWith("7") -> digits
+                else -> digits // Если номер короче или длиннее, оставляем как есть
+            }
+
             val passHash = sha256(password)
-            val securityHash = sha256("$phone|$email|$passHash")
+            // Используем уже нормализованный finalPhone для генерации хеша безопасности
+            val securityHash = sha256("$finalPhone|$email|$passHash")
             
             try {
                 val pubKey = CryptoManager.getMyPublicKeyStr()
-                val cleanPhone = phone.replace(Regex("[^0-9]"), "").takeLast(10)
-                val phoneHash = sha256(cleanPhone + PEPPER)
+                val phoneHash = sha256(finalPhone + PEPPER)
 
                 val payload = UserPayload(
                     hash = securityHash,
                     phone_hash = phoneHash,
-                    ip = "0.0.0.0", // Сервер определит IP самостоятельно через $_SERVER['REMOTE_ADDR']
+                    ip = "0.0.0.0", 
                     port = 8888,
                     publicKey = pubKey,
-                    phone = phone,
+                    phone = finalPhone, // Теперь здесь будет 7900...
                     email = email,
                     lastSeen = System.currentTimeMillis()
                 )
@@ -75,57 +79,43 @@ class AuthManager(private val context: Context) {
                     data = payload
                 )
 
-                // Вызов API (api.php?action=add_user)
+                Log.d(TAG, "Отправка на сервер: ${finalPhone}, hash: $securityHash")
+                
                 val response = api.announceSelf(payload = wrapper)
 
-                // Проверка успеха. Если поля message нет в модели, ошибка не возникнет.
                 if (response.success) {
                     Log.d(TAG, "Server registration successful")
                 } else {
-                    Log.w(TAG, "Server rejected registration, continuing in offline mode")
+                    Log.w(TAG, "Server rejected: ${response.toString()}")
                 }
 
-                // В любом случае завершаем локальную настройку
                 completeLocalAuth(payload, email, passHash, securityHash)
                 return@withContext true
 
             } catch (e: Exception) {
-                Log.e(TAG, "Network error during auth: ${e.localizedMessage}")
+                Log.e(TAG, "Network error: ${e.message}")
                 
-                // P2P Фаворитизм: сервер упал, но мы создаем аккаунт локально
                 val fallbackPayload = UserPayload(
                     hash = securityHash,
+                    phone_hash = sha256(finalPhone + PEPPER),
                     publicKey = CryptoManager.getMyPublicKeyStr(),
-                    phone = phone,
+                    phone = finalPhone,
                     email = email
                 )
                 completeLocalAuth(fallbackPayload, email, passHash, securityHash)
-                
                 return@withContext true 
             }
         }
 
-    /**
-     * Финализация процесса: сохранение в БД Room и настройка сессии в SharedPreferences.
-     */
-    private suspend fun completeLocalAuth(
-        payload: UserPayload, 
-        email: String, 
-        passHash: String, 
-        hash: String
-    ) {
+    private suspend fun completeLocalAuth(payload: UserPayload, email: String, passHash: String, hash: String) {
         try {
             saveUserToLocalDb(payload, email, passHash)
-            
-            context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
-                .edit()
+            context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE).edit()
                 .putString("my_security_hash", hash)
                 .putBoolean("is_logged_in", true)
                 .apply()
-            
-            Log.d(TAG, "Local session established for $hash")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to save local auth data: ${e.message}")
+            Log.e(TAG, "Local save error: ${e.message}")
         }
     }
 
@@ -146,12 +136,8 @@ class AuthManager(private val context: Context) {
     }
 
     private fun sha256(input: String): String {
-        return try {
-            val digest = MessageDigest.getInstance("SHA-256")
-            val hash = digest.digest(input.toByteArray())
-            hash.joinToString("") { "%02x".format(it) }
-        } catch (e: Exception) {
-            input.hashCode().toString() // Резервный вариант (небезопасно, но предотвращает крэш)
-        }
+        val digest = MessageDigest.getInstance("SHA-256")
+        val hash = digest.digest(input.toByteArray())
+        return hash.joinToString("") { "%02x".format(it) }
     }
 }
