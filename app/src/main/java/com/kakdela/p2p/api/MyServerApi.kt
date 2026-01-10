@@ -1,5 +1,6 @@
 package com.kakdela.p2p.api
 
+import com.google.gson.annotations.SerializedName
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -11,34 +12,36 @@ import java.util.concurrent.TimeUnit
 
 // ================= MODELS =================
 
+/**
+ * Модель данных пользователя для обмена с сервером.
+ * Имена полей в @SerializedName СТРОГО соответствуют колонкам в MySQL (см. скриншот).
+ */
 data class UserPayload(
-    val hash: String,              // Security ID (SHA-256)
-    val phone_hash: String? = null,// Хэш номера для поиска
-    val ip: String? = null,        // IP для P2P
-    val port: Int = 8888,          // UDP порт
-    val publicKey: String,         // Публичный ключ для шифрования
-    val phone: String? = null,     // Номер телефона
-    val email: String? = null,     // Email
-    val lastSeen: Long? = null     // Timestamp последнего онлайна
+    @SerializedName("hash") val hash: String,              // Security ID
+    @SerializedName("phone_hash") val phone_hash: String?, // Discovery ID
+    @SerializedName("ip") val ip: String?,
+    @SerializedName("port") val port: Int = 8888,
+    @SerializedName("publicKey") val publicKey: String,
+    @SerializedName("phone") val phone: String?,
+    @SerializedName("email") val email: String?,
+    @SerializedName("lastSeen") val lastSeen: Long?
 )
 
 data class ServerResponse(
-    val success: Boolean = false,
-    val users: List<UserPayload>? = null,
-    val status: String? = null,
-    val error: String? = null,
-    val db_size_mb: Double? = null
+    @SerializedName("success") val success: Boolean = false,
+    @SerializedName("users") val users: List<UserPayload>? = null,
+    @SerializedName("status") val status: String? = null,
+    @SerializedName("error") val error: String? = null
 )
 
 data class UserRegistrationWrapper(
-    val hash: String,      // user_hash
-    val data: UserPayload  // encrypted_data + phone_hash
+    @SerializedName("hash") val hash: String,
+    @SerializedName("data") val data: UserPayload
 )
 
-// ================= API =================
+// ================= API INTERFACE =================
 
 interface MyServerApi {
-
     @POST("api.php")
     suspend fun announceSelf(
         @Query("action") action: String = "add_user",
@@ -49,22 +52,21 @@ interface MyServerApi {
     suspend fun getAllNodes(
         @Query("action") action: String = "list_users"
     ): ServerResponse
-
-    @GET("api.php")
-    suspend fun checkServerStatus(): ServerResponse
 }
 
 // ================= FACTORY =================
 
 object MyServerApiFactory {
-    private const val BASE_URL = "http://kakdela.infinityfree.me/" // твой сервер
+    private const val BASE_URL = "http://kakdela.infinityfree.me/"
 
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .addInterceptor { chain ->
             val request = chain.request().newBuilder()
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                .header("User-Agent", "KakDela-P2P/1.0 (Android)")
                 .header("Accept", "application/json")
                 .build()
             chain.proceed(request)
