@@ -36,10 +36,12 @@ import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen 
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
-import com.kakdela.p2p.viewmodel.ChatViewModel // Исправленный импорт
+import com.kakdela.p2p.viewmodel.ChatViewModel
 
-
-
+/**
+ * Основной навигационный граф приложения.
+ * Управляет переходами между экранами и инициализацией ViewModel.
+ */
 @Composable
 fun NavGraph(
     navController: NavHostController,
@@ -51,7 +53,7 @@ fun NavGraph(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    // Определяем видимость BottomBar
+    // Логика отображения нижней панели навигации
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
     )
@@ -72,6 +74,7 @@ fun NavGraph(
                 .background(Color.Black)
         ) {
             
+            // --- ЭКРАН ЗАГРУЗКИ ---
             composable(Routes.SPLASH) {
                 SplashScreen {
                     val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
@@ -84,6 +87,7 @@ fun NavGraph(
                 }
             }
 
+            // --- РЕГИСТРАЦИЯ И ВХОД ---
             composable(Routes.CHOICE) {
                 RegistrationChoiceScreen(
                     onPhone = { navController.navigate(Routes.AUTH_PHONE) },
@@ -107,6 +111,7 @@ fun NavGraph(
                 }
             }
 
+            // --- ОСНОВНЫЕ ВКЛАДКИ ---
             composable(Routes.CHATS) { 
                 ChatsListScreen(navController, identityRepository) 
             }
@@ -122,6 +127,7 @@ fun NavGraph(
                 )
             }
 
+            // --- ПРЯМОЙ ЧАТ (P2P ENGINE) ---
             composable(
                 route = Routes.CHAT_DIRECT,
                 arguments = listOf(navArgument("chatId") { type = NavType.StringType })
@@ -138,6 +144,8 @@ fun NavGraph(
                 }
 
                 val messagesEntities by vm.messages.collectAsState()
+                
+                // Преобразование доменных моделей в UI модели для экрана чата
                 val uiMessages = remember(messagesEntities) {
                     messagesEntities.map { entity ->
                         com.kakdela.p2p.data.Message(
@@ -163,20 +171,21 @@ fun NavGraph(
                 )
             }
 
+            // --- СЕРВИСНЫЕ ЭКРАНЫ ---
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController, identityRepository) }
             
+            // --- ИНСТРУМЕНТЫ И ИГРЫ ---
             composable(Routes.MUSIC) { MusicPlayerScreen() }
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
-            
-            // Новые маршруты для предотвращения FAILED compile
-            composable(Routes.CALCULATOR) { /* Экран калькулятора */ }
-            composable(Routes.JEWELS) { /* Экран игры Jewels */ }
-            composable(Routes.SUDOKU) { /* Экран Sudoku */ }
+            composable(Routes.CALCULATOR) { CalculatorScreen() }
+            composable(Routes.JEWELS) { JewelsScreen() }
+            composable(Routes.SUDOKU) { SudokuScreen() }
 
+            // --- ИИ ЧАТ (ТРЕБУЕТ ИНТЕРНЕТ) ---
             composable(Routes.AI_CHAT) { 
                 if (isOnline) AiChatScreen() else NoInternetScreen { navController.popBackStack() } 
             }
@@ -184,6 +193,9 @@ fun NavGraph(
     }
 }
 
+/**
+ * Компонент нижней панели навигации.
+ */
 @Composable
 private fun AppBottomBar(currentRoute: String?, navController: NavHostController) {
     NavigationBar(
@@ -221,6 +233,9 @@ private fun AppBottomBar(currentRoute: String?, navController: NavHostController
     }
 }
 
+/**
+ * Отслеживание состояния интернет-соединения в реальном времени.
+ */
 @Composable
 fun rememberIsOnline(): State<Boolean> {
     val context = LocalContext.current
@@ -250,6 +265,9 @@ fun rememberIsOnline(): State<Boolean> {
     return status
 }
 
+/**
+ * Заглушка при отсутствии интернета для онлайн-зависимых функций.
+ */
 @Composable
 fun NoInternetScreen(onBack: () -> Unit) {
     Box(
@@ -264,7 +282,7 @@ fun NoInternetScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(16.dp))
             Text("Офлайн-режим", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
-            Text("Эта функция требует интернет-соединения.", 
+            Text("Эта функция требует интернет-соединения для работы с облачными сервисами.", 
                 color = Color.Gray, textAlign = TextAlign.Center)
             Spacer(Modifier.height(24.dp))
             Button(
