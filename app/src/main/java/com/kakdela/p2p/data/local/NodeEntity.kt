@@ -1,49 +1,40 @@
 package com.kakdela.p2p.data.local
 
-import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
  * Сущность узла распределенной сети (P2P Peer).
- * Хранит данные об активных пирах для маршрутизации и сопоставления контактов.
- * * Индекс по phone_hash критически важен для мгновенного сопоставления контактов
- * из телефонной книги со списком зарегистрированных пользователей.
+ * Хранит данные об активных пирах для маршрутизации, DHT/Swarm и сопоставления контактов.
+ *
+ * Имена полей — camelCase (Kotlin-style), Room будет использовать их как имена колонок напрямую.
+ * Это полностью совместимо с последними версиями NodeDao (updateNetworkInfo, trimCache и т.д.).
  */
 @Entity(
     tableName = "dht_nodes",
     indices = [
-        Index(value = ["phone_hash"]),
-        Index(value = ["user_hash"], unique = true)
+        Index(value = ["phoneHash"]),
+        Index(value = ["userHash"], unique = true)
     ]
 )
 data class NodeEntity(
     @PrimaryKey
-    @ColumnInfo(name = "user_hash")
-    val userHash: String,      // Security ID (Primary Key)
+    val userHash: String,               // Security ID (Primary Key)
 
-    @ColumnInfo(name = "phone_hash")
-    val phone_hash: String,    // Discovery ID (Хеш номера + Pepper)
+    val phoneHash: String = "",         // Discovery ID (хэш номера + Pepper)
 
-    @ColumnInfo(name = "email")
-    val email: String? = null, 
+    val email: String? = null,
 
-    @ColumnInfo(name = "password_hash")
-    val passwordHash: String? = null, 
+    val passwordHash: String? = null,   // Только для своего узла (локальная авторизация)
 
-    @ColumnInfo(name = "phone")
-    val phone: String? = null, 
+    val phone: String? = null,
 
-    @ColumnInfo(name = "ip_address")
-    val ip: String,            
+    val ip: String = "0.0.0.0",         // Последний известный IP (заглушка для оффлайн)
 
-    @ColumnInfo(name = "port")
-    val port: Int = 8888,             
+    val port: Int = 8888,
 
-    @ColumnInfo(name = "public_key")
-    val publicKey: String,     
+    val publicKey: String = "",         // Публичный ключ (обязателен для шифрования)
 
-    @ColumnInfo(name = "last_seen")
     val lastSeen: Long = System.currentTimeMillis()
 )
