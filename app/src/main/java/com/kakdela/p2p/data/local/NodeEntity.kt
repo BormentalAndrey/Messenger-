@@ -8,19 +8,23 @@ import androidx.room.PrimaryKey
 /**
  * Сущность узла распределенной сети (P2P Peer).
  * Хранит данные об активных пирах для маршрутизации и сопоставления контактов.
- * * Индекс по phone_hash ускоряет поиск контактов при синхронизации телефонной книги.
+ * * Индекс по phone_hash критически важен для мгновенного сопоставления контактов
+ * из телефонной книги со списком зарегистрированных пользователей.
  */
 @Entity(
     tableName = "dht_nodes",
-    indices = [Index(value = ["phone_hash"])]
+    indices = [
+        Index(value = ["phone_hash"]),
+        Index(value = ["user_hash"], unique = true)
+    ]
 )
 data class NodeEntity(
     @PrimaryKey
     @ColumnInfo(name = "user_hash")
-    val userHash: String,      // Security ID (Хеш публичного ключа или связки данных)
+    val userHash: String,      // Security ID (Primary Key)
 
     @ColumnInfo(name = "phone_hash")
-    val phone_hash: String,    // Discovery ID (SHA-256 номера телефона с PEPPER)
+    val phone_hash: String,    // Discovery ID (Хеш номера + Pepper)
 
     @ColumnInfo(name = "email")
     val email: String? = null, 
