@@ -13,12 +13,14 @@ import com.kakdela.p2p.data.local.ChatDatabase
 import com.kakdela.p2p.data.local.NodeEntity
 import com.kakdela.p2p.security.CryptoManager
 import kotlinx.coroutines.*
+import okhttp3.OkHttpClient
 import org.json.JSONObject
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.net.*
 import java.security.MessageDigest
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
 
 /**
  * Центральный репозиторий управления личностью и сетевыми узлами.
@@ -40,9 +42,21 @@ class IdentityRepository(private val context: Context) {
     
     private val PEPPER = "7fb8a1d2c3e4f5a6" 
 
+    // Оптимизированный клиент для InfinityFree
+    private val okHttpClient = OkHttpClient.Builder()
+        .addInterceptor { chain ->
+            val request = chain.request().newBuilder()
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .build()
+            chain.proceed(request)
+        }
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .build()
+
     private val api: MyServerApi by lazy {
         Retrofit.Builder()
             .baseUrl("http://kakdela.infinityfree.me/")
+            .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(MyServerApi::class.java)
@@ -61,12 +75,27 @@ class IdentityRepository(private val context: Context) {
     // --- УПРАВЛЕНИЕ ЛИЧНОСТЬЮ ---
 
     fun generateSecurityHash(phone: String, email: String, pass: String): String {
-        return sha256("$phone|$email|$pass")
+        // Приводим телефон к стандарту 7... перед хешированием безопасности
+        val cleanPhone = normalizePhoneInternal(phone)
+        return sha256("$cleanPhone|$email|$pass")
     }
 
+    /**
+     * ИСПРАВЛЕНО: Теперь генерирует хэш от полного номера (7900...),
+     * чтобы он совпадал с тем, что AuthManager отправляет на сервер.
+     */
     fun generatePhoneDiscoveryHash(phone: String): String {
-        val cleanPhone = phone.replace(Regex("[^0-9]"), "").takeLast(10)
-        return sha256(cleanPhone + PEPPER)
+        val normalized = normalizePhoneInternal(phone)
+        return sha256(normalized + PEPPER)
+    }
+
+    private fun normalizePhoneInternal(raw: String): String {
+        var digits = raw.replace(Regex("[^0-9]"), "")
+        return when {
+            digits.length == 11 && digits.startsWith("8") -> "7" + digits.substring(1)
+            digits.length == 10 && digits.startsWith("9") -> "7" + digits
+            else -> digits
+        }
     }
 
     fun savePeerPublicKey(hash: String, key: String) {
@@ -81,10 +110,6 @@ class IdentityRepository(private val context: Context) {
         }
     }
 
-    /**
-     * Алиас для совместимости с AuthScreen. 
-     * Решает ошибку компиляции "Unresolved reference: announceMyself".
-     */
     suspend fun announceMyself(wrapper: UserRegistrationWrapper): Boolean {
         return try {
             val response = api.announceSelf(payload = wrapper)
@@ -133,6 +158,7 @@ class IdentityRepository(private val context: Context) {
             val response = api.getAllNodes()
             response.users ?: emptyList()
         } catch (e: Exception) {
+            Log.e(TAG, "Fetch all nodes failed: ${e.message}")
             emptyList()
         }
     }
@@ -142,18 +168,21 @@ class IdentityRepository(private val context: Context) {
             val response = api.getAllNodes()
             val users = response.users ?: return@async null
             
-            val entities = users.map { 
-                NodeEntity(
-                    userHash = it.hash,
-                    phone_hash = it.phone_hash ?: "", 
-                    ip = it.ip ?: "0.0.0.0",
-                    port = it.port,
-                    publicKey = it.publicKey,
-                    phone = it.phone,
-                    lastSeen = it.lastSeen ?: System.currentTimeMillis()
-                )
+            // Фоновое обновление кэша
+            scope.launch {
+                val entities = users.map { 
+                    NodeEntity(
+                        userHash = it.hash,
+                        phone_hash = it.phone_hash ?: "", 
+                        ip = it.ip ?: "0.0.0.0",
+                        port = it.port,
+                        publicKey = it.publicKey,
+                        phone = it.phone,
+                        lastSeen = it.lastSeen ?: System.currentTimeMillis()
+                    )
+                }
+                db.nodeDao().updateCache(entities)
             }
-            db.nodeDao().updateCache(entities)
             
             return@async users.find { it.hash == hash }
         } catch (e: Exception) {
@@ -169,16 +198,15 @@ class IdentityRepository(private val context: Context) {
                         hash = securityHash,
                         phone_hash = phoneHash,
                         publicKey = getMyPublicKeyStr(),
-                        phone = phone,
+                        phone = normalizePhoneInternal(phone),
                         email = email,
                         port = 8888
                     )
-                    // Исправленный вызов: передаем Wrapper, как ожидает MyServerApi
                     api.announceSelf(payload = UserRegistrationWrapper(hash = securityHash, data = payload))
                 } catch (e: Exception) { 
                     Log.e(TAG, "KeepAlive failed")
                 }
-                delay(180_000) 
+                delay(180_000) // Раз в 3 минуты
             }
         }
     }
