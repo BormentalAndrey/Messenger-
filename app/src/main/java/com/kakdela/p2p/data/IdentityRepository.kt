@@ -122,30 +122,34 @@ class IdentityRepository(private val context: Context) {
         }
 
     /**
-     * 🔥 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ:
-     * API принимает String → сериализуем UserRegistrationWrapper вручную
+     * 🔥 Исправлено: сериализация UserRegistrationWrapper в JSON вручную
      */
     fun announceMyself(wrapper: UserRegistrationWrapper) {
         scope.launch {
             try {
                 val json = JSONObject().apply {
-                    put("payload", JSONObject().apply {
-                        put("hash", wrapper.payload.hash)
-                        put("phone", wrapper.payload.phone)
-                        put("phone_hash", wrapper.payload.phone_hash)
-                        put("publicKey", wrapper.payload.publicKey)
-                        put("ip", wrapper.payload.ip)
-                        put("port", wrapper.payload.port)
-                        put("lastSeen", wrapper.payload.lastSeen)
-                    })
+                    put(
+                        "payload", JSONObject().apply {
+                            put("hash", wrapper.payload.hash)
+                            put("phone", wrapper.payload.phone)
+                            put("phone_hash", wrapper.payload.phone_hash)
+                            put("publicKey", wrapper.payload.publicKey)
+                            put("ip", wrapper.payload.ip)
+                            put("port", wrapper.payload.port)
+                            put("lastSeen", wrapper.payload.lastSeen)
+                        }
+                    )
                     put("signature", wrapper.signature)
                 }
 
+                // Передаем JSON как строку в API
                 api.announceSelf(json.toString())
 
+                // Уведомление всех Wi-Fi пиров
                 wifiPeers.values.forEach {
                     sendUdp(it, "PRESENCE", "ONLINE")
                 }
+
             } catch (e: Exception) {
                 Log.e(TAG, "Announce failed", e)
             }
