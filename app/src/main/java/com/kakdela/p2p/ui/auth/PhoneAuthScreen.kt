@@ -1,5 +1,9 @@
 package com.kakdela.p2p.ui.auth
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -10,6 +14,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.kakdela.p2p.auth.SmsCodeManager
 import com.kakdela.p2p.auth.SmsCodeStore
 import com.kakdela.p2p.data.IdentityRepository
@@ -34,6 +39,22 @@ fun PhoneAuthScreen(
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    // Лаунчер для запроса разрешений на SMS
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val isGranted = permissions[Manifest.permission.SEND_SMS] == true &&
+                        permissions[Manifest.permission.RECEIVE_SMS] == true
+        if (isGranted) {
+            // Если разрешили, генерируем и отправляем код
+            val code = SmsCodeManager.generateCode()
+            sentCode = code
+            SmsCodeManager.sendCode(context, phone, code)
+        } else {
+            error = "Необходимо разрешение на SMS для регистрации"
+        }
+    }
+
     val textFieldColors = OutlinedTextFieldDefaults.colors(
         focusedTextColor = Color.White,
         unfocusedTextColor = Color.White,
@@ -43,6 +64,7 @@ fun PhoneAuthScreen(
         unfocusedLabelColor = Color.Gray
     )
 
+    // Авто-подстановка кода (слушаем SmsCodeStore)
     LaunchedEffect(sentCode) {
         if (sentCode != null) {
             while (isActive) {
@@ -84,9 +106,20 @@ fun PhoneAuthScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan, contentColor = Color.Black),
                     onClick = {
                         if (phone.length >= 10) {
-                            val code = SmsCodeManager.generateCode()
-                            sentCode = code
-                            SmsCodeManager.sendCode(context, phone, code)
+                            // ПРОВЕРКА РАЗРЕШЕНИЙ ПЕРЕД ОТПРАВКОЙ
+                            val hasSendPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+                            val hasReceivePermission = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
+
+                            if (hasSendPermission && hasReceivePermission) {
+                                val code = SmsCodeManager.generateCode()
+                                sentCode = code
+                                SmsCodeManager.sendCode(context, phone, code)
+                            } else {
+                                // Запрашиваем разрешения, если их нет
+                                permissionLauncher.launch(
+                                    arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS)
+                                )
+                            }
                         } else { 
                             error = "Некорректный номер телефона" 
                         }
@@ -95,6 +128,7 @@ fun PhoneAuthScreen(
                     Text("Получить SMS код", fontWeight = FontWeight.Bold) 
                 }
             } else {
+                // ... (оставшаяся часть экрана с вводом кода подтверждения без изменений)
                 OutlinedTextField(
                     value = inputCode,
                     onValueChange = { inputCode = it },
@@ -116,7 +150,6 @@ fun PhoneAuthScreen(
                                 try {
                                     val securityHash = identityRepository.generateSecurityHash(phone, "p2p_direct", inputCode)
                                     val discoveryHash = identityRepository.generatePhoneDiscoveryHash(phone)
-                                    
                                     val payload = UserPayload(
                                         hash = securityHash,
                                         phone_hash = discoveryHash,
@@ -127,21 +160,14 @@ fun PhoneAuthScreen(
                                     onSuccess()
                                 } catch (e: Exception) {
                                     error = e.localizedMessage
-                                } finally {
                                     isLoading = false
                                 }
                             }
-                        } else { 
-                            error = "Неверный код подтверждения" 
-                        }
+                        } else { error = "Неверный код" }
                     }
-                ) { 
+                ) {
                     if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp), 
-                            color = Color.Black, 
-                            strokeWidth = 3.dp
-                        )
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Black)
                     } else {
                         Text("Подтвердить и войти", fontWeight = FontWeight.Bold)
                     }
