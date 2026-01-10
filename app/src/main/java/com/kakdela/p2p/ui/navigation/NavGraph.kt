@@ -37,22 +37,23 @@ import com.kakdela.p2p.ui.chat.ChatScreen
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 import com.kakdela.p2p.ui.ChatViewModel
-import java.net.URLDecoder
-import java.nio.charset.StandardCharsets
 
 /**
  * Основной граф навигации приложения KakDela P2P.
+ * Реализована строгая проверка авторизации на этапе Splash.
  */
 @Composable
 fun NavGraph(
     navController: NavHostController,
-    identityRepository: IdentityRepository
+    identityRepository: IdentityRepository,
+    startDestination: String = Routes.SPLASH // Добавлен параметр для гибкости из MainActivity
 ) {
+    val context = LocalContext.current
     val isOnline by rememberIsOnline()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    // Список маршрутов, на которых отображается нижняя панель навигации
+    // Определяем видимость нижней панели
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
     )
@@ -67,19 +68,20 @@ fun NavGraph(
     ) { paddingValues ->
         NavHost(
             navController = navController,
-            startDestination = Routes.SPLASH,
+            startDestination = startDestination,
             modifier = Modifier
                 .padding(paddingValues)
                 .background(Color.Black)
         ) {
             
-            // --- СТАРТОВЫЙ ЭКРАН ---
+            // --- СТАРТОВЫЙ ЭКРАН (ЛОГИКА ВХОДА) ---
             composable(Routes.SPLASH) {
                 SplashScreen {
-                    val myId = identityRepository.getMyId()
-                    // Проверка на валидность сессии (хэш должен быть длинным)
-                    val hasAccount = myId.isNotEmpty() && myId.length > 20
-                    val nextRoute = if (hasAccount) Routes.CHATS else Routes.CHOICE
+                    val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
+                    val isLoggedIn = prefs.getBoolean("is_logged_in", false)
+                    
+                    // Если флаг входа false, всегда отправляем на регистрацию
+                    val nextRoute = if (isLoggedIn) Routes.CHATS else Routes.CHOICE
                     
                     navController.navigate(nextRoute) {
                         popUpTo(Routes.SPLASH) { inclusive = true }
@@ -97,6 +99,7 @@ fun NavGraph(
 
             composable(Routes.AUTH_EMAIL) {
                 EmailAuthScreen(identityRepository) {
+                    // После успешной авторизации флаг ставится в AuthManager
                     navController.navigate(Routes.CHATS) {
                         popUpTo(Routes.CHOICE) { inclusive = true }
                     }
@@ -132,8 +135,8 @@ fun NavGraph(
                 arguments = listOf(navArgument("chatId") { type = NavType.StringType })
             ) { entry ->
                 val chatId = entry.arguments?.getString("chatId") ?: return@composable
-                val context = LocalContext.current.applicationContext as Application
-                val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(identityRepository, context))
+                val app = LocalContext.current.applicationContext as Application
+                val vm: ChatViewModel = viewModel(factory = ChatViewModelFactory(identityRepository, app))
 
                 LaunchedEffect(chatId) { vm.initChat(chatId) }
                 val messagesEntities by vm.messages.collectAsState()
@@ -237,9 +240,6 @@ fun rememberIsOnline(): State<Boolean> {
     return status
 }
 
-/**
- * Экран-заглушка при отсутствии интернета для онлайн-функций.
- */
 @Composable
 fun NoInternetScreen(onBack: () -> Unit) {
     Box(
@@ -254,16 +254,9 @@ fun NoInternetScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(16.dp))
             Text("Офлайн-режим", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
-            Text(
-                "Эта функция требует интернет-соединения.",
-                color = Color.Gray,
-                textAlign = TextAlign.Center
-            )
+            Text("Эта функция требует интернет-соединения.", color = Color.Gray, textAlign = TextAlign.Center)
             Spacer(Modifier.height(24.dp))
-            Button(
-                onClick = onBack,
-                colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
-            ) {
+            Button(onClick = onBack, colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)) {
                 Text("Назад")
             }
         }
