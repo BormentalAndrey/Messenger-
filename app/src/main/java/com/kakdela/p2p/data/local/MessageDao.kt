@@ -5,14 +5,13 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  * Интерфейс доступа к данным сообщений.
- * Обеспечивает реактивное обновление UI через Flow и эффективное управление P2P-логами.
+ * Реализует реактивное обновление через Flow и оптимизированные SQL-запросы.
  */
 @Dao
 interface MessageDao {
 
     /**
      * Получение всей переписки с конкретным пиром.
-     * Используется в ChatScreen.
      */
     @Query("""
         SELECT * FROM messages 
@@ -22,52 +21,44 @@ interface MessageDao {
     fun observeMessages(chatId: String): Flow<List<MessageEntity>>
 
     /**
-     * ОПТИМИЗИРОВАНО ДЛЯ ПРОДАКШНА:
+     * ОПТИМИЗИРОВАНО ДЛЯ KSP/ROOM:
      * Получает список последних сообщений для каждого уникального chatId.
-     * Использует обобщенное табличное выражение (CTE) и оконную функцию ROW_NUMBER.
-     * Это гарантирует, что каждый чат представлен ровно одним (самым свежим) сообщением.
+     * Мы используем подзапрос для поиска максимального времени, что гарантирует
+     * корректную работу Flow и совместимость с парсером Room.
      */
     @Query("""
-        WITH RankedMessages AS (
-            SELECT *,
-                   ROW_NUMBER() OVER (
-                       PARTITION BY chatId 
-                       ORDER BY timestamp DESC, messageId DESC
-                   ) as rn
-            FROM messages
-            WHERE chatId != 'global'
+        SELECT * FROM messages 
+        WHERE messageId IN (
+            SELECT messageId FROM messages AS m2
+            WHERE m2.chatId = messages.chatId
+            ORDER BY m2.timestamp DESC, m2.messageId DESC
+            LIMIT 1
         )
-        SELECT 
-            messageId, chatId, senderId, receiverId, text, timestamp, 
-            isMe, isRead, status, messageType, fileName, fileMime, 
-            fileBytes, contactPhone
-        FROM RankedMessages
-        WHERE rn = 1
+        AND chatId != 'global'
         ORDER BY timestamp DESC
     """)
     fun observeLastMessages(): Flow<List<MessageEntity>>
 
     /**
      * Вставка или обновление сообщения. 
-     * Если сообщение с таким ID уже есть (например, статус обновился), оно будет перезаписано.
      */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(message: MessageEntity)
 
     /**
-     * Массовая вставка. Полезна при синхронизации истории.
+     * Массовая вставка.
      */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(messages: List<MessageEntity>)
 
     /**
-     * Атомарное обновление статуса (например, с PENDING на SENT_WIFI).
+     * Атомарное обновление статуса доставки.
      */
     @Query("UPDATE messages SET status = :status WHERE messageId = :id")
     suspend fun updateStatus(id: String, status: String)
 
     /**
-     * Отмечает все входящие сообщения от конкретного пользователя как прочитанные.
+     * Пометка всех входящих сообщений в чате как прочитанных.
      */
     @Query("""
         UPDATE messages 
@@ -77,20 +68,19 @@ interface MessageDao {
     suspend fun markChatAsRead(chatId: String)
 
     /**
-     * Возвращает общее количество непрочитанных сообщений во всех чатах.
-     * Идеально подходит для отображения счетчика на главном экране или иконке.
+     * Подсчет общего количества непрочитанных входящих сообщений.
      */
     @Query("SELECT COUNT(*) FROM messages WHERE isRead = 0 AND isMe = 0")
     fun getUnreadCountGlobal(): Flow<Int>
 
     /**
-     * Проверяет, есть ли хотя бы одно сообщение в данном чате.
+     * Проверка существования переписки.
      */
     @Query("SELECT EXISTS(SELECT 1 FROM messages WHERE chatId = :chatId LIMIT 1)")
     suspend fun hasMessages(chatId: String): Boolean
 
     /**
-     * Поиск конкретного сообщения.
+     * Получение конкретного сообщения по ID.
      */
     @Query("SELECT * FROM messages WHERE messageId = :id LIMIT 1")
     suspend fun getMessageById(id: String): MessageEntity?
@@ -108,7 +98,7 @@ interface MessageDao {
     suspend fun clearChatHistory(chatId: String)
 
     /**
-     * Удаление старых сообщений для экономии места (согласно лимитам устройства).
+     * Очистка старых сообщений (гигиена базы данных).
      */
     @Query("DELETE FROM messages WHERE timestamp < :expiryTime")
     suspend fun clearOldMessages(expiryTime: Long)
