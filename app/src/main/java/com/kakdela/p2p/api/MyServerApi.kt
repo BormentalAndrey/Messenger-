@@ -39,18 +39,18 @@ data class UserRegistrationWrapper(
 
 interface MyServerApi {
 
-    @POST("API.php")
+    @POST("api.php")
     suspend fun announceSelf(
         @Query("action") action: String = "add_user",
         @Body payload: UserRegistrationWrapper
     ): ServerResponse
 
-    @GET("API.php")
+    @GET("api.php")
     suspend fun getAllNodes(
         @Query("action") action: String = "list_users"
     ): ServerResponse
 
-    @GET("API.php")
+    @GET("api.php")
     suspend fun checkServerStatus(): ServerResponse
 }
 
