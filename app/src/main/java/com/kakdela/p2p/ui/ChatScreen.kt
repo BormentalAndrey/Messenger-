@@ -14,10 +14,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColor
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -26,14 +25,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -48,7 +49,7 @@ import java.util.*
 private val NeonCyan = Color(0xFF00FFFF)
 private val NeonMagenta = Color(0xFFFF00FF)
 private val DarkBackground = Color(0xFF0A0A0A)
-private val SurfaceGray = Color(0xFF1A1A1A)
+private val SurfaceGray = Color(0xFF1E1E1E)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,7 +66,6 @@ fun ChatScreen(
     var textState by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val context = LocalContext.current
-    
     val displayName by rememberContactName(chatPartnerId)
 
     LaunchedEffect(messages.size) {
@@ -84,17 +84,17 @@ fun ChatScreen(
     }
 
     Scaffold(
+        // Очищаем стандартные инсеты, чтобы обрабатывать их вручную через padding и Modifier
+        contentWindowInsets = WindowInsets(0),
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding(), // ГЛАВНОЕ: поднимает весь экран при появлении клавиатуры
         topBar = {
             CenterAlignedTopAppBar(
                 title = {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = displayName, 
-                            color = NeonCyan, 
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1
-                        )
-                        Text("P2P E2EE Protected", fontSize = 10.sp, color = Color.Gray)
+                        Text(text = displayName, color = NeonCyan, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Text("P2P E2EE Connection", fontSize = 10.sp, color = Color.Gray)
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = DarkBackground),
@@ -104,7 +104,6 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    // Звонок перенесен в верхнюю панель
                     IconButton(onClick = {
                         val intent = Intent(context, CallActivity::class.java).apply {
                             putExtra("chatId", chatPartnerId)
@@ -117,24 +116,27 @@ fun ChatScreen(
             )
         },
         bottomBar = {
-            ChatInputArea(
-                text = textState,
-                onTextChange = { textState = it },
-                onSend = {
-                    if (textState.isNotBlank()) {
-                        onSendMessage(textState)
-                        textState = ""
+            // Добавляем отступ для системной навигации
+            Box(modifier = Modifier.navigationBarsPadding()) {
+                ChatInputArea(
+                    text = textState,
+                    onTextChange = { textState = it },
+                    onSend = {
+                        if (textState.isNotBlank()) {
+                            onSendMessage(textState)
+                            textState = ""
+                        }
+                    },
+                    onAttachFile = { filePickerLauncher.launch("*/*") },
+                    onSendAudio = onSendAudio,
+                    onScheduleMessage = { scheduledTime ->
+                        if (textState.isNotBlank()) {
+                            onScheduleMessage(textState, scheduledTime)
+                            textState = ""
+                        }
                     }
-                },
-                onAttachFile = { filePickerLauncher.launch("*/*") },
-                onSendAudio = onSendAudio,
-                onScheduleMessage = { scheduledTime ->
-                    if (textState.isNotBlank()) {
-                        onScheduleMessage(textState, scheduledTime)
-                        textState = ""
-                    }
-                }
-            )
+                )
+            }
         },
         containerColor = DarkBackground
     ) { padding ->
@@ -143,8 +145,8 @@ fun ChatScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 12.dp),
-            contentPadding = PaddingValues(vertical = 16.dp)
+                .padding(horizontal = 8.dp),
+            contentPadding = PaddingValues(vertical = 12.dp)
         ) {
             items(messages, key = { it.id }) { message ->
                 ChatBubble(message)
@@ -153,53 +155,112 @@ fun ChatScreen(
     }
 }
 
+// ... (ChatBubble, ImageAttachmentView, FileAttachmentView остаются без изменений) ...
+
 @Composable
 fun ChatBubble(message: Message) {
     val isMe = message.isMe
-    val bubbleColor = if (isMe) NeonCyan.copy(alpha = 0.2f) else NeonMagenta.copy(alpha = 0.2f)
-    val borderColor = if (isMe) NeonCyan else NeonMagenta
+    val bubbleColor = if (isMe) Color(0xFF003D3D) else Color(0xFF262626)
+    val alignment = if (isMe) Alignment.End else Alignment.Start
+    val shape = RoundedCornerShape(
+        topStart = 16.dp, topEnd = 16.dp,
+        bottomStart = if (isMe) 16.dp else 4.dp,
+        bottomEnd = if (isMe) 4.dp else 16.dp
+    )
 
     Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        horizontalAlignment = alignment
     ) {
-        Box(
-            modifier = Modifier
-                .widthIn(max = 280.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .border(1.dp, borderColor.copy(alpha = 0.5f), RoundedCornerShape(18.dp))
-                .background(bubbleColor)
-                .padding(12.dp)
+        Surface(
+            color = bubbleColor,
+            shape = shape,
+            border = borderStrokeFor(isMe),
+            modifier = Modifier.widthIn(max = 300.dp)
         ) {
             Column {
                 when (message.type) {
-                    MessageType.TEXT -> Text(message.text, color = Color.White, fontSize = 14.sp)
-                    MessageType.IMAGE -> AsyncImage(
-                        model = message.fileUrl,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(200.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                    )
+                    MessageType.IMAGE -> ImageAttachmentView(message.fileUrl)
+                    MessageType.FILE -> FileAttachmentView(message.fileName ?: "Document")
                     MessageType.AUDIO -> AudioPlayerView(message.fileUrl ?: "", message.durationSeconds)
-                    MessageType.FILE -> FileP2PView(message.fileName ?: "Файл")
-                    else -> Text(message.text, color = Color.White)
+                    else -> {}
+                }
+                
+                if (message.text.isNotBlank()) {
+                    Text(
+                        text = message.text,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
                 }
 
                 Text(
                     text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp)),
                     fontSize = 10.sp,
-                    color = Color.Gray,
-                    modifier = Modifier.align(Alignment.End)
+                    color = Color.LightGray.copy(alpha = 0.6f),
+                    modifier = Modifier.align(Alignment.End).padding(end = 8.dp, bottom = 4.dp)
                 )
             }
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun ImageAttachmentView(url: String?) {
+    AsyncImage(
+        model = url,
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 240.dp)
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+    )
+}
+
+@Composable
+fun FileAttachmentView(fileName: String) {
+    val extension = fileName.substringAfterLast('.', "").uppercase()
+    Row(
+        modifier = Modifier
+            .padding(8.dp)
+            .fillMaxWidth()
+            .background(Color.Black.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(42.dp)
+                .background(NeonCyan.copy(alpha = 0.2f), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.FilePresent, contentDescription = null, tint = NeonCyan, modifier = Modifier.size(24.dp))
+        }
+        
+        Spacer(Modifier.width(12.dp))
+        
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = fileName,
+                color = Color.White,
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = if (extension.isNotEmpty()) "$extension Document" else "Document",
+                color = Color.Gray,
+                fontSize = 11.sp
+            )
+        }
+        
+        Icon(Icons.Default.Download, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(20.dp))
+    }
+}
+
 @Composable
 fun ChatInputArea(
     text: String,
@@ -216,7 +277,7 @@ fun ChatInputArea(
 
     val infiniteTransition = rememberInfiniteTransition(label = "glow")
     val glowColor by infiniteTransition.animateColor(
-        initialValue = NeonCyan.copy(alpha = 0.4f),
+        initialValue = NeonCyan.copy(alpha = 0.2f),
         targetValue = NeonCyan,
         animationSpec = infiniteRepeatable(tween(1500), RepeatMode.Reverse),
         label = "color"
@@ -225,113 +286,112 @@ fun ChatInputArea(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .background(DarkBackground), // Чтобы не было прозрачности при подъеме
+        verticalAlignment = Alignment.Bottom
     ) {
-        // Прикрепить файл
-        IconButton(onClick = onAttachFile) { 
-            Icon(Icons.Default.AttachFile, contentDescription = null, tint = NeonCyan) 
-        }
-
-        // Кнопка отложенного сообщения (новое)
-        IconButton(onClick = { 
-            // По умолчанию +1 час, можно вызвать TimePicker
-            onScheduleMessage(System.currentTimeMillis() + 3600000) 
-        }) { 
-            Icon(Icons.Outlined.Schedule, contentDescription = "Schedule", tint = NeonCyan) 
-        }
-
-        TextField(
-            value = text,
-            onValueChange = onTextChange,
-            placeholder = { Text("Сообщение...", color = Color.Gray, fontSize = 14.sp) },
+        Surface(
+            color = SurfaceGray,
+            shape = RoundedCornerShape(28.dp),
             modifier = Modifier
                 .weight(1f)
-                .border(1.dp, glowColor, RoundedCornerShape(24.dp)),
-            shape = RoundedCornerShape(24.dp),
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = SurfaceGray,
-                unfocusedContainerColor = SurfaceGray,
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                cursorColor = NeonCyan,
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent
-            )
-        )
-
-        Spacer(Modifier.width(4.dp))
-
-        // Голосовое
-        IconButton(onClick = {
-            if (!recording) {
-                val file = File(context.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
-                audioFile = file
-                recorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else MediaRecorder()).apply {
-                    setAudioSource(MediaRecorder.AudioSource.MIC)
-                    setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                    setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                    setOutputFile(file.absolutePath)
-                    prepare()
-                    start()
+                .border(1.dp, glowColor.copy(alpha = 0.5f), RoundedCornerShape(28.dp))
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
+                IconButton(onClick = onAttachFile) {
+                    Icon(Icons.Default.Add, contentDescription = null, tint = NeonCyan)
                 }
-                recording = true
-            } else {
-                try {
-                    recorder?.stop()
-                    recorder?.release()
-                } catch (e: Exception) { e.printStackTrace() }
-                recording = false
-                audioFile?.let { onSendAudio(Uri.fromFile(it), 0) }
+                
+                TextField(
+                    value = text,
+                    onValueChange = onTextChange,
+                    placeholder = { Text("Сообщение...", color = Color.Gray) },
+                    modifier = Modifier.weight(1f),
+                    maxLines = 4, // Позволяем полю расти вверх
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedTextColor = Color.White,
+                        cursorColor = NeonCyan,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent
+                    )
+                )
+
+                IconButton(onClick = { onScheduleMessage(System.currentTimeMillis() + 3600000) }) {
+                    Icon(Icons.Outlined.Schedule, contentDescription = null, tint = Color.Gray)
+                }
             }
-        }) {
-            Icon(
-                if (recording) Icons.Default.Stop else Icons.Default.Mic, 
-                contentDescription = null, 
-                tint = if (recording) Color.Red else NeonCyan
-            )
         }
 
-        // Кнопка отправки
+        Spacer(Modifier.width(8.dp))
+
+        val isTyping = text.isNotBlank()
+        
         Box(
             modifier = Modifier
-                .size(44.dp)
+                .size(50.dp)
                 .clip(CircleShape)
-                .background(if(text.isNotBlank()) NeonCyan.copy(alpha = 0.1f) else Color.Transparent)
-                .combinedClickable(
-                    onClick = onSend,
-                    onLongClick = { onScheduleMessage(System.currentTimeMillis() + 3600000) }
-                ),
+                .background(NeonCyan)
+                .clickable {
+                    if (isTyping) onSend() 
+                    else if (!recording) {
+                        val file = File(context.cacheDir, "v_${System.currentTimeMillis()}.m4a")
+                        audioFile = file
+                        recorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else MediaRecorder()).apply {
+                            setAudioSource(MediaRecorder.AudioSource.MIC)
+                            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                            setOutputFile(file.absolutePath)
+                            prepare()
+                            start()
+                        }
+                        recording = true
+                    } else {
+                        try { recorder?.stop(); recorder?.release() } catch (e: Exception) {}
+                        recording = false
+                        audioFile?.let { onSendAudio(Uri.fromFile(it), 0) }
+                    }
+                },
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.Send, contentDescription = null, tint = NeonCyan)
+            Icon(
+                imageVector = when {
+                    isTyping -> Icons.Default.Send
+                    recording -> Icons.Default.Stop
+                    else -> Icons.Default.Mic
+                },
+                contentDescription = null,
+                tint = Color.Black
+            )
         }
     }
 }
+
+// ... (остальные функции rememberContactName, getFileName, AudioPlayerView, borderStrokeFor) ...
+@Composable
+fun borderStrokeFor(isMe: Boolean) = androidx.compose.foundation.BorderStroke(
+    width = 0.5.dp,
+    color = if (isMe) NeonCyan.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.1f)
+)
 
 @SuppressLint("Range")
 @Composable
 fun rememberContactName(identifier: String): State<String> {
     val context = LocalContext.current
-    val contactName = remember { mutableStateOf("ID: ${identifier.take(8)}") }
+    val contactName = remember { mutableStateOf("ID: ${identifier.take(6)}") }
 
     LaunchedEffect(identifier) {
         try {
             val contentResolver: ContentResolver = context.contentResolver
-            val uri = Uri.withAppendedPath(
-                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
-                Uri.encode(identifier)
-            )
+            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(identifier))
             val cursor = contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)
-            
             cursor?.use {
                 if (it.moveToFirst()) {
                     contactName.value = it.getString(it.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME))
                 }
             }
-        } catch (e: Exception) {
-            // Если нет разрешений или ошибка, оставляем ID
-        }
+        } catch (e: Exception) { }
     }
     return contactName
 }
@@ -347,24 +407,7 @@ fun getFileName(context: Context, uri: Uri): String {
             }
         }
     }
-    if (result == null) {
-        result = uri.path
-        val cut = result?.lastIndexOf('/') ?: -1
-        if (cut != -1) result = result?.substring(cut + 1)
-    }
     return result ?: "file_${System.currentTimeMillis()}"
-}
-
-@Composable
-fun FileP2PView(fileName: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(4.dp)
-    ) {
-        Icon(Icons.Default.FilePresent, null, tint = NeonCyan, modifier = Modifier.size(24.dp))
-        Spacer(Modifier.width(8.dp))
-        Text(fileName, color = Color.White, fontSize = 13.sp, maxLines = 1)
-    }
 }
 
 @Composable
@@ -373,25 +416,31 @@ fun AudioPlayerView(url: String, duration: Int) {
     var isPlaying by remember { mutableStateOf(false) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
         IconButton(onClick = {
             try {
                 if (isPlaying) {
-                    mediaPlayer?.pause()
-                    isPlaying = false
+                    mediaPlayer?.pause(); isPlaying = false
                 } else {
                     mediaPlayer = MediaPlayer().apply {
                         setDataSource(context, Uri.parse(url))
-                        prepare()
-                        start()
+                        prepare(); start()
                         setOnCompletionListener { isPlaying = false }
                     }
                     isPlaying = true
                 }
-            } catch (e: Exception) { e.printStackTrace() }
-        }) {
+            } catch (e: Exception) { }
+        }, modifier = Modifier.size(36.dp)) {
             Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = NeonCyan)
         }
-        Text("Voice Note", color = Color.White, fontSize = 12.sp)
+        
+        LinearProgressIndicator(
+            progress = 0f, 
+            modifier = Modifier.weight(1f).height(2.dp).padding(horizontal = 8.dp),
+            color = NeonCyan,
+            trackColor = Color.Gray
+        )
+        
+        Text("Voice", color = Color.Gray, fontSize = 11.sp)
     }
 }
