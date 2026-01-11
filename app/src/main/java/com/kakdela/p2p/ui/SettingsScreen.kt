@@ -26,11 +26,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -38,7 +36,7 @@ import coil.compose.AsyncImage
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.ktx.Firebase
 import com.google.firebase.storage.ktx.storage
-import com.kakdela.p2p.R // <-- ВАЖНО: Убедитесь, что этот путь совпадает с вашим applicationId
+import com.kakdela.p2p.R // Путь должен соответствовать вашему applicationId в build.gradle
 import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.data.local.ChatDatabase
 import com.kakdela.p2p.data.local.NodeEntity
@@ -58,8 +56,7 @@ fun SettingsScreen(
     val user = auth.currentUser
     val clipboardManager = LocalClipboardManager.current
     
-    // Получаем ID. Если пустой — пытаемся сгенерировать/получить заново
-    val myP2PId by remember { mutableStateOf(identityRepository.getMyId()) }
+    val myP2PId = remember { identityRepository.getMyId() }
     
     var photoUrl by remember { mutableStateOf(user?.photoUrl?.toString()) }
     var isUploading by remember { mutableStateOf(false) }
@@ -70,11 +67,12 @@ fun SettingsScreen(
     val db = remember { ChatDatabase.getDatabase(context) }
     var nodes by remember { mutableStateOf<List<NodeEntity>>(emptyList()) }
     
-    // Эффективное обновление списка узлов
+    // Функция обновления списка узлов
     val refreshNodes: () -> Unit = {
         scope.launch(Dispatchers.IO) {
             val nodeList = db.nodeDao().getAllNodes()
             withContext(Dispatchers.Main) {
+                // Сортируем: сначала те, кто был в сети недавно
                 nodes = nodeList.sortedByDescending { it.lastSeen }.take(50)
             }
         }
@@ -127,7 +125,7 @@ fun SettingsScreen(
         ) {
             Spacer(Modifier.height(20.dp))
             
-            // --- АВАТАР ---
+            // --- СЕКЦИЯ АВАТАРА ---
             Box(contentAlignment = Alignment.BottomEnd) {
                 if (photoUrl != null) {
                     AsyncImage(
@@ -158,7 +156,11 @@ fun SettingsScreen(
                     shape = CircleShape
                 ) {
                     if (isUploading) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.Black, strokeWidth = 2.dp)
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp), 
+                            color = Color.Black, 
+                            strokeWidth = 2.dp
+                        )
                     } else {
                         Text("+", color = Color.Black, fontWeight = FontWeight.Bold)
                     }
@@ -175,7 +177,7 @@ fun SettingsScreen(
             
             Spacer(Modifier.height(24.dp))
 
-            // --- КАРТОЧКА МОЕГО ID ---
+            // --- КАРТОЧКА МОЕГО ID (SECURITY HASH) ---
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF111111)),
                 shape = RoundedCornerShape(16.dp),
@@ -188,7 +190,7 @@ fun SettingsScreen(
                         modifier = Modifier.padding(top = 4.dp)
                     ) {
                         Text(
-                            text = myP2PId.ifBlank { "Генерация..." },
+                            text = myP2PId,
                             color = Color.Cyan,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 13.sp,
@@ -198,7 +200,7 @@ fun SettingsScreen(
                         IconButton(onClick = {
                             val intent = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
-                                putExtra(Intent.EXTRA_TEXT, "Мой ID в KakDela P2P:\n$myP2PId")
+                                putExtra(Intent.EXTRA_TEXT, "Мой ID в KakDela:\n$myP2PId")
                             }
                             context.startActivity(Intent.createChooser(intent, "Поделиться ID"))
                         }) {
@@ -216,7 +218,7 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // --- ДОБАВЛЕНИЕ ПО КОДУ ---
+            // --- ДОБАВЛЕНИЕ НОВОГО УЗЛА ---
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF111111)),
                 shape = RoundedCornerShape(16.dp),
@@ -228,7 +230,7 @@ fun SettingsScreen(
                     OutlinedTextField(
                         value = manualHashInput,
                         onValueChange = { manualHashInput = it },
-                        placeholder = { Text("Вставьте хеш друга", fontSize = 14.sp) },
+                        placeholder = { Text("Вставьте хеш друга", fontSize = 14.sp, color = Color.DarkGray) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -249,7 +251,7 @@ fun SettingsScreen(
                                 withContext(Dispatchers.Main) {
                                     isAddingNode = false
                                     if (success) {
-                                        Toast.makeText(context, "Успешно добавлено", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Узел синхронизирован", Toast.LENGTH_SHORT).show()
                                         manualHashInput = ""
                                         refreshNodes()
                                     } else {
@@ -264,9 +266,13 @@ fun SettingsScreen(
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         if (isAddingNode) {
-                            CircularProgressIndicator(size = 20.dp, color = Color.Black)
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp), 
+                                color = Color.Black,
+                                strokeWidth = 2.dp
+                            )
                         } else {
-                            Text("Синхронизировать узел", color = Color.Black, fontWeight = FontWeight.Bold)
+                            Text("Синхронизировать", color = Color.Black, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -274,7 +280,7 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(20.dp))
             
-            // --- СПИСОК УЗЛОВ ---
+            // --- СПИСОК КЭШИРОВАННЫХ УЗЛОВ (DEBUG/NETWORK) ---
             Text(
                 "Известные пиры (${nodes.size}):",
                 color = Color.Gray,
@@ -323,7 +329,7 @@ fun SettingsScreen(
                 }
             }
 
-            // --- ВЫХОД ---
+            // --- ВЫХОД ИЗ АККАУНТА ---
             TextButton(
                 onClick = {
                     identityRepository.stopNetwork()
@@ -336,7 +342,7 @@ fun SettingsScreen(
             ) {
                 Icon(Icons.Default.ExitToApp, null, tint = Color.Red, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Отключить узел и выйти", color = Color.Red, fontSize = 14.sp)
+                Text("Завершить сеанс и выйти", color = Color.Red, fontSize = 14.sp)
             }
         }
     }
