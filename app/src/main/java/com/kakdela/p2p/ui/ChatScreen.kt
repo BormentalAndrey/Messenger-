@@ -45,6 +45,8 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 private val NeonCyan = Color(0xFF00FFFF)
+private val NeonGreen = Color(0xFF00FF9D)
+private val NeonPurple = Color(0xFFB042FF)
 private val DarkBackground = Color(0xFF0A0A0A)
 private val SurfaceGray = Color(0xFF1E1E1E)
 
@@ -64,7 +66,6 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     var textState by remember { mutableStateOf("") }
 
-    // 1. Отображение имени контакта
     val contactName by rememberContactName(chatPartnerId)
     val displayName = if (contactName == chatPartnerId.take(10)) "ID: ${chatPartnerId.take(8)}" else contactName
     val contactAvatar by rememberContactAvatar(chatPartnerId)
@@ -110,11 +111,9 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    // 2. Обычный звонок
                     IconButton(onClick = { startCall(context, chatPartnerId, isVideo = false) }) {
                         Icon(Icons.Default.Call, "Call", tint = NeonCyan)
                     }
-                    // 3. Видео звонок
                     IconButton(onClick = { startCall(context, chatPartnerId, isVideo = true) }) {
                         Icon(Icons.Outlined.Videocam, "Video Call", tint = NeonCyan)
                     }
@@ -142,7 +141,7 @@ fun ChatScreen(
             state = listState,
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(messages, key = { it.messageId }) { message ->
                 ChatBubble(message)
@@ -211,10 +210,10 @@ fun ChatInputArea(
     Column(Modifier.navigationBarsPadding()) {
         Row(
             Modifier.fillMaxWidth().padding(8.dp),
-            verticalAlignment = Alignment.Bottom
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onAttachFile, modifier = Modifier.padding(bottom = 4.dp)) {
-                Icon(Icons.Default.Add, "Attach", tint = NeonCyan)
+            IconButton(onClick = onAttachFile) {
+                Icon(Icons.Default.Add, "Attach", tint = NeonPurple, modifier = Modifier.rotate(45f))
             }
 
             Box(modifier = Modifier.weight(1f)) {
@@ -223,7 +222,7 @@ fun ChatInputArea(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp)
-                            .background(SurfaceGray, RoundedCornerShape(24.dp))
+                            .background(SurfaceGray, RoundedCornerShape(28.dp))
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -238,19 +237,24 @@ fun ChatInputArea(
                         Text("Запись...", color = Color.Gray, fontSize = 14.sp)
                     }
                 } else {
+                    // Поле ввода с неоновым свечением (Glow Effect)
                     TextField(
                         value = text,
                         onValueChange = onTextChange,
-                        placeholder = { Text("Сообщение...", color = Color.Gray) },
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)),
+                        placeholder = { Text("Запрос в нейросеть...", color = Color.Gray, fontSize = 14.sp) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(8.dp, RoundedCornerShape(28.dp), ambientColor = NeonGreen, spotColor = NeonGreen)
+                            .border(1.5.dp, NeonGreen, RoundedCornerShape(28.dp)),
                         colors = TextFieldDefaults.colors(
-                            focusedContainerColor = SurfaceGray,
-                            unfocusedContainerColor = SurfaceGray,
+                            focusedContainerColor = DarkBackground,
+                            unfocusedContainerColor = DarkBackground,
                             focusedIndicatorColor = Color.Transparent,
                             unfocusedIndicatorColor = Color.Transparent,
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White
                         ),
+                        shape = RoundedCornerShape(28.dp),
                         trailingIcon = {
                             if (text.isNotBlank()) {
                                 IconButton(onClick = { openSchedulePicker() }) {
@@ -268,39 +272,37 @@ fun ChatInputArea(
                 onClick = {
                     if (text.isNotBlank()) {
                         onSend()
-                    } else {
-                        if (!isRecording) {
-                            val file = File(context.cacheDir, "rec_${System.currentTimeMillis()}.m4a")
-                            audioFile = file
-                            recorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else MediaRecorder()).apply {
-                                setAudioSource(MediaRecorder.AudioSource.MIC)
-                                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                                setOutputFile(file.absolutePath)
-                                try {
-                                    prepare()
-                                    start()
-                                    isRecording = true
-                                } catch (e: Exception) { 
-                                    e.printStackTrace()
-                                    Toast.makeText(context, "Ошибка микрофона", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        } else {
+                    } else if (!isRecording) {
+                        val file = File(context.cacheDir, "rec_${System.currentTimeMillis()}.m4a")
+                        audioFile = file
+                        recorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else MediaRecorder()).apply {
+                            setAudioSource(MediaRecorder.AudioSource.MIC)
+                            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                            setOutputFile(file.absolutePath)
                             try {
-                                recorder?.stop()
-                                recorder?.release()
-                                recorder = null
-                                isRecording = false
-                                audioFile?.let { onSendAudio(Uri.fromFile(it), recordingTime.toInt()) }
+                                prepare()
+                                start()
+                                isRecording = true
                             } catch (e: Exception) { 
-                                e.printStackTrace() 
-                                isRecording = false
+                                e.printStackTrace()
+                                Toast.makeText(context, "Ошибка микрофона", Toast.LENGTH_SHORT).show()
                             }
+                        }
+                    } else {
+                        try {
+                            recorder?.stop()
+                            recorder?.release()
+                            recorder = null
+                            isRecording = false
+                            audioFile?.let { onSendAudio(Uri.fromFile(it), recordingTime.toInt()) }
+                        } catch (e: Exception) { 
+                            e.printStackTrace() 
+                            isRecording = false
                         }
                     }
                 },
-                containerColor = if (isRecording) Color.Red else NeonCyan,
+                containerColor = if (isRecording) Color.Red else NeonGreen,
                 shape = CircleShape,
                 modifier = Modifier.size(48.dp)
             ) {
@@ -321,26 +323,29 @@ fun ChatInputArea(
 @Composable
 fun ChatBubble(message: MessageEntity) {
     val isMe = message.isMe
-    val bubbleColor = if (isMe) Color(0xFF003D3D) else Color(0xFF262626)
+    val bubbleColor = if (isMe) Color(0xFF003D3D) else Color(0xFF2D1442)
+    val borderColor = if (isMe) NeonCyan.copy(alpha = 0.6f) else NeonPurple.copy(alpha = 0.6f)
     val alignment = if (isMe) Alignment.End else Alignment.Start
     
     Column(Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
         Surface(
             color = bubbleColor,
-            shape = RoundedCornerShape(
-                topStart = 16.dp, topEnd = 16.dp,
-                bottomStart = if (isMe) 16.dp else 4.dp,
-                bottomEnd = if (isMe) 4.dp else 16.dp
-            ),
-            modifier = Modifier.widthIn(max = 300.dp)
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.dp, borderColor),
+            modifier = Modifier
+                .widthIn(max = 300.dp)
+                .padding(horizontal = 4.dp)
+                .shadow(
+                    elevation = 6.dp, 
+                    shape = RoundedCornerShape(18.dp), 
+                    ambientColor = borderColor, 
+                    spotColor = borderColor
+                )
         ) {
-            Column(Modifier.padding(12.dp)) {
+            Column(Modifier.padding(14.dp)) {
                 val content = message.text ?: ""
                 when {
-                    // 4. Плеер аудиосообщения
-                    content.startsWith("AUDIO:") -> {
-                        AudioPlayerBubble(content)
-                    }
+                    content.startsWith("AUDIO:") -> AudioPlayerBubble(content)
                     content.startsWith("FILE:") -> {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.FilePresent, null, tint = NeonCyan, modifier = Modifier.size(20.dp))
@@ -349,7 +354,7 @@ fun ChatBubble(message: MessageEntity) {
                         }
                     }
                     else -> {
-                        Text(text = content, color = Color.White, fontSize = 15.sp)
+                        Text(text = content, color = Color.White, fontSize = 15.sp, lineHeight = 20.sp)
                     }
                 }
                 
@@ -367,7 +372,7 @@ fun ChatBubble(message: MessageEntity) {
                 Text(
                     text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp)),
                     fontSize = 10.sp,
-                    color = Color.Gray,
+                    color = Color.Gray.copy(alpha = 0.8f),
                     modifier = Modifier.align(Alignment.End).padding(top = 4.dp)
                 )
             }
@@ -399,7 +404,6 @@ fun AudioPlayerBubble(audioData: String) {
         Spacer(Modifier.width(12.dp))
         
         Column(Modifier.weight(1f)) {
-            // Визуализация прогресса
             LinearProgressIndicator(
                 progress = if (isPlaying) 0.5f else 0f,
                 modifier = Modifier.fillMaxWidth().height(3.dp).clip(CircleShape),
@@ -424,23 +428,25 @@ fun AnimatedAvatar(avatarUri: Uri?) {
     Box(contentAlignment = Alignment.Center) {
         Box(Modifier.size(42.dp).scale(scale).background(NeonCyan.copy(alpha = 0.1f), CircleShape))
         
-        if (avatarUri != null) {
-            AsyncImage(
-                model = avatarUri,
-                contentDescription = "Avatar",
-                modifier = Modifier.size(36.dp).clip(CircleShape).border(1.dp, NeonCyan.copy(alpha = 0.3f), CircleShape),
-                contentScale = ContentScale.Crop
-            )
-        } else {
-            Surface(
-                modifier = Modifier.size(36.dp).clip(CircleShape).border(1.dp, NeonCyan.copy(alpha = 0.3f), CircleShape),
-                color = SurfaceGray
-            ) {
+        Surface(
+            modifier = Modifier.size(36.dp),
+            shape = CircleShape,
+            color = SurfaceGray,
+            border = BorderStroke(1.dp, NeonCyan.copy(alpha = 0.4f))
+        ) {
+            if (avatarUri != null) {
+                AsyncImage(
+                    model = avatarUri,
+                    contentDescription = "Avatar",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
                 Icon(
                     imageVector = Icons.Default.Person,
                     contentDescription = "Default Avatar",
                     tint = Color.Gray,
-                    modifier = Modifier.padding(4.dp)
+                    modifier = Modifier.padding(6.dp)
                 )
             }
         }
