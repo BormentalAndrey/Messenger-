@@ -32,12 +32,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.kakdela.p2p.data.IdentityRepository
-import com.kakdela.p2p.ui.*
-import com.kakdela.p2p.ui.auth.*
-// Исправленные импорты согласно структуре проекта
+// ИСПРАВЛЕННЫЕ ИМПОРТЫ:
+import com.kakdela.p2p.ui.* import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen
-import com.kakdela.p2p.ui.chat.ChatViewModel 
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
@@ -69,7 +67,7 @@ fun NavGraph(
                 .padding(paddingValues)
                 .background(Color.Black)
         ) {
-            // --- Сплеш и Авторизация ---
+            // --- Авторизация ---
             composable(Routes.SPLASH) {
                 SplashScreen {
                     val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
@@ -103,7 +101,7 @@ fun NavGraph(
                 }
             }
 
-            // --- Основные экраны ---
+            // --- Главные экраны ---
             composable(Routes.CHATS) {
                 ChatsListScreen(navController = navController)
             }
@@ -114,7 +112,7 @@ fun NavGraph(
                 }
             }
 
-            // --- Прямой чат ---
+            // --- Чат ---
             composable(
                 route = Routes.CHAT_DIRECT,
                 arguments = listOf(navArgument("chatId") { type = NavType.StringType })
@@ -122,14 +120,13 @@ fun NavGraph(
                 val chatId = entry.arguments?.getString("chatId") ?: ""
                 val app = context.applicationContext as Application
 
-                // Получаем ViewModel через фабрику
+                // Так как ChatViewModel находится в пакете com.kakdela.p2p.ui, 
+                // импорт import com.kakdela.p2p.ui.* его подхватит.
                 val vm: ChatViewModel = viewModel(
                     factory = ChatViewModelFactory(identityRepository, app)
                 )
 
-                LaunchedEffect(chatId) { 
-                    vm.initChat(chatId) 
-                }
+                LaunchedEffect(chatId) { vm.initChat(chatId) }
 
                 val messages by vm.messages.collectAsState()
 
@@ -145,13 +142,18 @@ fun NavGraph(
                 )
             }
 
-            // --- Вспомогательные экраны ---
+            // --- Разделы ---
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
-            composable(Routes.SETTINGS) { SettingsScreen(navController, identityRepository) }
+            
+            // ИСПРАВЛЕНО: Передан navController в SettingsScreen
+            composable(Routes.SETTINGS) { 
+                SettingsScreen(navController = navController, identityRepository = identityRepository) 
+            }
+            
             composable(Routes.MUSIC) { MusicPlayerScreen() }
 
-            // --- WebView (Решение проблемы со скриншота) ---
+            // --- WebView ---
             composable(
                 route = "webview/{url}/{title}",
                 arguments = listOf(
@@ -166,7 +168,12 @@ fun NavGraph(
 
             // --- Инструменты и Игры ---
             composable(Routes.CALCULATOR) { CalculatorScreen() }
-            composable(Routes.TEXT_EDITOR) { TextEditorScreen() } // Убедитесь, что этот экран создан
+            composable(Routes.TEXT_EDITOR) { 
+                // Если экрана еще нет, можно оставить временную заглушку:
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Редактор в разработке", color = Color.White)
+                }
+            }
             
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
@@ -174,7 +181,6 @@ fun NavGraph(
             composable(Routes.SUDOKU) { SudokuScreen() }
             composable(Routes.JEWELS) { JewelsBlastScreen() }
 
-            // --- AI Чат ---
             composable(Routes.AI_CHAT) {
                 if (isOnline) AiChatScreen()
                 else NoInternetScreen { navController.popBackStack() }
@@ -241,35 +247,15 @@ fun rememberIsOnline(): State<Boolean> {
 
 @Composable
 fun NoInternetScreen(onBack: () -> Unit) {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color.Black),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(24.dp)
-        ) {
-            Icon(Icons.Default.CloudOff, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(64.dp))
+    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+            Icon(Icons.Default.CloudOff, null, tint = Color.Gray, modifier = Modifier.size(64.dp))
             Spacer(Modifier.height(16.dp))
-            Text(
-                "Офлайн-режим",
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Text("Офлайн-режим", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
-            Text(
-                "Эта функция требует интернет-соединения для работы с облачным AI.",
-                color = Color.Gray,
-                textAlign = TextAlign.Center
-            )
+            Text("Нужен интернет для AI.", color = Color.Gray, textAlign = TextAlign.Center)
             Spacer(Modifier.height(24.dp))
-            Button(
-                onClick = onBack,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A1A1A))
-            ) {
+            Button(onClick = onBack, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A1A1A))) {
                 Text("Вернуться", color = Color.Cyan)
             }
         }
