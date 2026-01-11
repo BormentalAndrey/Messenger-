@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -52,7 +53,7 @@ fun ChatScreen(
     onSendMessage: (String) -> Unit,
     onSendFile: (Uri, String) -> Unit,
     onSendAudio: (Uri, Int) -> Unit,
-    onScheduleMessage: (String, Long) -> Unit, // Добавлено
+    onScheduleMessage: (String, Long) -> Unit,
     onBack: () -> Unit
 ) {
     var textState by remember { mutableStateOf("") }
@@ -98,9 +99,9 @@ fun ChatScreen(
                 },
                 onAttachFile = { filePickerLauncher.launch("*/*") },
                 onSendAudio = onSendAudio,
-                onScheduleMessage = { 
+                onScheduleMessage = { scheduledTime ->
                     if (textState.isNotBlank()) {
-                        onScheduleMessage(textState, it)
+                        onScheduleMessage(textState, scheduledTime)
                         textState = ""
                     }
                 },
@@ -122,7 +123,7 @@ fun ChatScreen(
                 .padding(horizontal = 12.dp),
             contentPadding = PaddingValues(vertical = 16.dp)
         ) {
-            items(messages, key = { it.id }) { message -> // Исправлено на it.id
+            items(messages, key = { it.id }) { message ->
                 ChatBubble(message)
             }
         }
@@ -183,7 +184,7 @@ fun ChatInputArea(
     onSend: () -> Unit,
     onAttachFile: () -> Unit,
     onSendAudio: (Uri, Int) -> Unit,
-    onScheduleMessage: (Long) -> Unit, // Для отложенной отправки
+    onScheduleMessage: (Long) -> Unit,
     onStartCall: () -> Unit
 ) {
     val context = LocalContext.current
@@ -230,7 +231,6 @@ fun ChatInputArea(
 
         Spacer(Modifier.width(8.dp))
 
-        // Кнопка микрофона
         IconButton(onClick = {
             if (!recording) {
                 val file = File(context.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
@@ -260,18 +260,19 @@ fun ChatInputArea(
             )
         }
 
-        // Кнопка отправки с поддержкой долгого нажатия для планировщика
+        // Кнопка отправки с поддержкой долгого нажатия
         Box(
             modifier = Modifier
+                .size(48.dp)
                 .clip(CircleShape)
                 .combinedClickable(
                     onClick = onSend,
                     onLongClick = { 
-                        // Пример: планируем через 1 час при долгом нажатии
+                        // Пример: планируем через 1 час
                         onScheduleMessage(System.currentTimeMillis() + 3600000) 
                     }
-                )
-                .padding(8.dp)
+                ),
+            contentAlignment = Alignment.Center
         ) {
             Icon(Icons.Default.Send, contentDescription = null, tint = NeonCyan)
         }
