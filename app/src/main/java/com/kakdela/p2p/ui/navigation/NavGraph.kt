@@ -32,11 +32,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.kakdela.p2p.data.IdentityRepository
-import com.kakdela.p2p.data.local.MessageEntity
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen
+import com.kakdela.p2p.ui.chat.ChatViewModel
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
@@ -121,12 +121,10 @@ fun NavGraph(
                 val chatId = entry.arguments?.getString("chatId") ?: ""
                 val app = context.applicationContext as Application
 
-                // Использование фабрики для создания ViewModel с зависимостями
                 val vm: ChatViewModel = viewModel(
                     factory = ChatViewModelFactory(identityRepository, app)
                 )
 
-                // Инициализация чата при входе
                 LaunchedEffect(chatId) { 
                     vm.initChat(chatId) 
                 }
@@ -138,18 +136,9 @@ fun NavGraph(
                     messages = messages,
                     identityRepository = identityRepository,
                     onSendMessage = { text -> vm.sendMessage(text) },
-                    onSendFile = { uri, name -> 
-                        // Конвертируем Uri в String для соответствия методу vm.sendFile(String, String)
-                        vm.sendFile(uri.toString(), name) 
-                    },
-                    onSendAudio = { uri, dur -> 
-                        // Конвертируем Uri в String для соответствия методу vm.sendAudio(String, Int)
-                        vm.sendAudio(uri.toString(), dur) 
-                    },
-                    onScheduleMessage = { text, time -> 
-                        // Конвертируем Long время в String для соответствия методу vm.scheduleMessage(String, String)
-                        vm.scheduleMessage(text, time.toString()) 
-                    },
+                    onSendFile = { uri, name -> vm.sendFile(uri.toString(), name) },
+                    onSendAudio = { uri, dur -> vm.sendAudio(uri.toString(), dur) },
+                    onScheduleMessage = { text, time -> vm.scheduleMessage(text, time.toString()) },
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -160,13 +149,34 @@ fun NavGraph(
             composable(Routes.SETTINGS) { SettingsScreen(navController, identityRepository) }
             composable(Routes.MUSIC) { MusicPlayerScreen() }
 
-            // --- Games ---
+            // --- WebView Screen (ИСПРАВЛЕНО: Добавлен отсутствующий маршрут) ---
+            composable(
+                route = "webview/{url}/{title}",
+                arguments = listOf(
+                    navArgument("url") { type = NavType.StringType },
+                    navArgument("title") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val url = backStackEntry.arguments?.getString("url") ?: ""
+                val title = backStackEntry.arguments?.getString("title") ?: "Просмотр"
+                WebViewScreen(url = url, title = title, navController = navController)
+            }
+
+            // --- Games & Tools ---
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
             composable(Routes.SUDOKU) { SudokuScreen() }
             composable(Routes.CALCULATOR) { CalculatorScreen() }
             composable(Routes.JEWELS) { JewelsBlastScreen() }
+            
+            // Текстовый редактор (добавлен для соответствия DealsScreen)
+            composable(Routes.TEXT_EDITOR) { 
+                // Замените на ваш реальный экран редактора, если он есть
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Текстовый редактор", color = Color.White)
+                }
+            }
 
             // --- AI Chat ---
             composable(Routes.AI_CHAT) {
