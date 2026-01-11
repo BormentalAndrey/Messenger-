@@ -1,6 +1,8 @@
 package com.kakdela.p2p.ui.chat
 
 import android.annotation.SuppressLint
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
@@ -12,7 +14,6 @@ import android.provider.ContactsContract
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.animateColor
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -71,7 +72,7 @@ fun ChatScreen(
 
     val filePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
+    ) { uri ->
         uri?.let { onSendFile(it, getFileName(context, it)) }
     }
 
@@ -88,30 +89,21 @@ fun ChatScreen(
                     }
                 },
                 title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        AnimatedAvatar(avatarUri = contactAvatar)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AnimatedAvatar(contactAvatar)
+                        Spacer(Modifier.width(12.dp))
                         Column {
-                            Text(
-                                text = contactName,
-                                color = NeonCyan,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                fontSize = 16.sp
-                            )
-                            Text("P2P E2EE Connection", fontSize = 10.sp, color = Color.Gray)
+                            Text(contactName, color = NeonCyan, fontWeight = FontWeight.Bold)
+                            Text("P2P E2EE", fontSize = 10.sp, color = Color.Gray)
                         }
                     }
                 },
                 actions = {
                     IconButton(onClick = {
-                        val intent = Intent(context, CallActivity::class.java).apply {
-                            putExtra("chatId", chatPartnerId)
-                        }
-                        context.startActivity(intent)
+                        context.startActivity(
+                            Intent(context, CallActivity::class.java)
+                                .putExtra("chatId", chatPartnerId)
+                        )
                     }) {
                         Icon(Icons.Default.Call, null, tint = NeonCyan)
                     }
@@ -119,24 +111,20 @@ fun ChatScreen(
             )
         },
         bottomBar = {
-            Box(Modifier.navigationBarsPadding()) {
-                ChatInputArea(
-                    text = textState,
-                    onTextChange = { textState = it },
-                    onSend = {
-                        if (textState.isNotBlank()) {
-                            onSendMessage(textState)
-                            textState = ""
-                        }
-                    },
-                    onAttachFile = { filePicker.launch("*/*") },
-                    onSendAudio = onSendAudio,
-                    onScheduleMessage = { time ->
-                        onScheduleMessage(textState, time)
-                        textState = ""
-                    }
-                )
-            }
+            ChatInputArea(
+                text = textState,
+                onTextChange = { textState = it },
+                onSend = {
+                    onSendMessage(textState)
+                    textState = ""
+                },
+                onAttachFile = { filePicker.launch("*/*") },
+                onSendAudio = onSendAudio,
+                onScheduleMessage = { scheduledTime ->
+                    onScheduleMessage(textState, scheduledTime)
+                    textState = ""
+                }
+            )
         }
     ) { padding ->
         LazyColumn(
@@ -145,14 +133,14 @@ fun ChatScreen(
             contentPadding = PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(messages, key = { it.id }) { message ->
-                ChatBubble(message)
+            items(messages, key = { it.id }) {
+                ChatBubble(it)
             }
         }
     }
 }
 
-/* -------------------- КОМПОНЕНТЫ ВВОДА -------------------- */
+/* ================= ОТЛОЖЕННАЯ ОТПРАВКА ================= */
 
 @Composable
 fun ChatInputArea(
@@ -164,14 +152,38 @@ fun ChatInputArea(
     onScheduleMessage: (Long) -> Unit
 ) {
     val context = LocalContext.current
-    var recording by remember { mutableStateOf(false) }
-    var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
-    var audioFile by remember { mutableStateOf<File?>(null) }
+    val calendar = remember { Calendar.getInstance() }
+
+    fun openSchedulePicker() {
+        DatePickerDialog(
+            context,
+            { _, y, m, d ->
+                calendar.set(y, m, d)
+                TimePickerDialog(
+                    context,
+                    { _, h, min ->
+                        calendar.set(Calendar.HOUR_OF_DAY, h)
+                        calendar.set(Calendar.MINUTE, min)
+                        calendar.set(Calendar.SECOND, 0)
+
+                        val time = calendar.timeInMillis
+                        if (time > System.currentTimeMillis()) {
+                            onScheduleMessage(time)
+                        }
+                    },
+                    calendar.get(Calendar.HOUR_OF_DAY),
+                    calendar.get(Calendar.MINUTE),
+                    true
+                ).show()
+            },
+            calendar.get(Calendar.YEAR),
+            calendar.get(Calendar.MONTH),
+            calendar.get(Calendar.DAY_OF_MONTH)
+        ).show()
+    }
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(8.dp),
+        Modifier.fillMaxWidth().padding(8.dp),
         verticalAlignment = Alignment.Bottom
     ) {
         IconButton(onClick = onAttachFile) {
@@ -181,20 +193,19 @@ fun ChatInputArea(
         TextField(
             value = text,
             onValueChange = onTextChange,
-            placeholder = { Text("Сообщение...", color = Color.Gray) },
-            modifier = Modifier
-                .weight(1f)
-                .clip(RoundedCornerShape(24.dp)),
+            placeholder = { Text("Сообщение…", color = Color.Gray) },
+            modifier = Modifier.weight(1f),
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = SurfaceGray,
                 unfocusedContainerColor = SurfaceGray,
                 focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White
+                unfocusedIndicatorColor = Color.Transparent
             ),
             trailingIcon = {
-                IconButton(onClick = { onScheduleMessage(System.currentTimeMillis() + 3600000) }) {
+                IconButton(
+                    enabled = text.isNotBlank(),
+                    onClick = openSchedulePicker
+                ) {
                     Icon(Icons.Outlined.Schedule, null, tint = Color.Gray)
                 }
             }
@@ -203,160 +214,78 @@ fun ChatInputArea(
         Spacer(Modifier.width(8.dp))
 
         FloatingActionButton(
-            onClick = {
-                if (text.isNotBlank()) onSend()
-                else {
-                    if (!recording) {
-                        val file = File(context.cacheDir, "audio_${System.currentTimeMillis()}.m4a")
-                        audioFile = file
-                        recorder = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context) else MediaRecorder()).apply {
-                            setAudioSource(MediaRecorder.AudioSource.MIC)
-                            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                            setOutputFile(file.absolutePath)
-                            prepare()
-                            start()
-                        }
-                        recording = true
-                    } else {
-                        try {
-                            recorder?.stop()
-                            recorder?.release()
-                        } catch (e: Exception) { e.printStackTrace() }
-                        recording = false
-                        audioFile?.let { onSendAudio(Uri.fromFile(it), 0) }
-                    }
-                }
-            },
-            shape = CircleShape,
-            containerColor = if (recording) Color.Red else NeonCyan,
+            onClick = { if (text.isNotBlank()) onSend() },
+            containerColor = NeonCyan,
             modifier = Modifier.size(48.dp)
         ) {
-            Icon(
-                if (text.isNotBlank()) Icons.Default.Send else if (recording) Icons.Default.Stop else Icons.Default.Mic,
-                null,
-                tint = Color.Black
-            )
+            Icon(Icons.Default.Send, null, tint = Color.Black)
         }
     }
 }
 
-/* -------------------- ВИЗУАЛИЗАЦИЯ СООБЩЕНИЙ -------------------- */
+/* ================= СООБЩЕНИЯ ================= */
 
 @Composable
 fun ChatBubble(message: Message) {
     val isMe = message.isMe
-    val bubbleColor = if (isMe) Color(0xFF003D3D) else Color(0xFF262626)
-    val alignment = if (isMe) Alignment.End else Alignment.Start
-    val shape = RoundedCornerShape(
-        topStart = 16.dp, topEnd = 16.dp,
-        bottomStart = if (isMe) 16.dp else 4.dp,
-        bottomEnd = if (isMe) 4.dp else 16.dp
-    )
+    val color = if (isMe) Color(0xFF003D3D) else Color(0xFF262626)
 
-    Column(Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
+    Column(
+        Modifier.fillMaxWidth(),
+        horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
+    ) {
         Surface(
-            color = bubbleColor,
-            shape = shape,
+            color = color,
+            shape = RoundedCornerShape(16.dp),
             modifier = Modifier.widthIn(max = 300.dp)
         ) {
             Column {
-                when (message.type) {
-                    MessageType.IMAGE -> {
-                        AsyncImage(
-                            model = message.fileUrl,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxWidth().height(200.dp).clip(shape),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
-                    MessageType.FILE -> {
-                        FileView(message.fileName ?: "Document")
-                    }
-                    MessageType.AUDIO -> {
-                        AudioView(message.fileUrl ?: "")
-                    }
-                    else -> {}
-                }
-
                 if (message.text.isNotBlank()) {
                     Text(
                         message.text,
                         color = Color.White,
-                        fontSize = 15.sp,
                         modifier = Modifier.padding(12.dp)
                     )
                 }
 
-                Text(
-                    SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp)),
-                    fontSize = 10.sp,
-                    color = Color.Gray,
-                    modifier = Modifier.align(Alignment.End).padding(end = 12.dp, bottom = 6.dp)
-                )
+                if (message.scheduledTime != null) {
+                    Text(
+                        "Запланировано: ${
+                            SimpleDateFormat("dd.MM HH:mm", Locale.getDefault())
+                                .format(Date(message.scheduledTime))
+                        }",
+                        fontSize = 10.sp,
+                        color = Color.Gray,
+                        modifier = Modifier.padding(6.dp)
+                    )
+                }
             }
         }
     }
 }
 
-@Composable
-fun FileView(name: String) {
-    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Default.FilePresent, null, tint = NeonCyan)
-        Spacer(Modifier.width(8.dp))
-        Text(name, color = Color.White, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-@Composable
-fun AudioView(url: String) {
-    val context = LocalContext.current
-    var isPlaying by remember { mutableStateOf(false) }
-    val mediaPlayer = remember { MediaPlayer() }
-
-    Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = {
-            try {
-                if (isPlaying) {
-                    mediaPlayer.pause()
-                    isPlaying = false
-                } else {
-                    mediaPlayer.reset()
-                    mediaPlayer.setDataSource(context, Uri.parse(url))
-                    mediaPlayer.prepare()
-                    mediaPlayer.start()
-                    isPlaying = true
-                    mediaPlayer.setOnCompletionListener { isPlaying = false }
-                }
-            } catch (e: Exception) { e.printStackTrace() }
-        }) {
-            Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = NeonCyan)
-        }
-        Text("Голосовое сообщение", color = Color.White, fontSize = 13.sp)
-    }
-}
-
-/* -------------------- АВАТАР И КОНТАКТЫ -------------------- */
+/* ================= АВАТАР ================= */
 
 @Composable
 fun AnimatedAvatar(avatarUri: Uri?) {
     val infinite = rememberInfiniteTransition(label = "avatar")
     val scale by infinite.animateFloat(
         1f, 1.05f,
-        infiniteRepeatable(tween(1500, easing = EaseInOut), RepeatMode.Reverse),
+        infiniteRepeatable(tween(1500), RepeatMode.Reverse),
         label = "scale"
     )
 
-    Box(contentAlignment = Alignment.Center) {
-        Box(Modifier.size(44.dp).scale(scale).background(NeonCyan.copy(alpha = 0.2f), CircleShape))
+    Box {
         AsyncImage(
-            model = avatarUri ?: Icons.Default.Person, // Заглушка, если нет фото
+            model = avatarUri ?: Icons.Default.Person,
             contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(38.dp).clip(CircleShape)
+            modifier = Modifier.size(40.dp).scale(scale).clip(CircleShape),
+            contentScale = ContentScale.Crop
         )
     }
 }
+
+/* ================= КОНТАКТЫ ================= */
 
 @SuppressLint("Range")
 @Composable
@@ -365,12 +294,15 @@ fun rememberContactName(id: String): State<String> {
     val state = remember { mutableStateOf(id.take(8)) }
 
     LaunchedEffect(id) {
-        try {
-            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(id))
-            context.contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)?.use {
-                if (it.moveToFirst()) state.value = it.getString(0)
-            }
-        } catch (e: Exception) {}
+        val uri = Uri.withAppendedPath(
+            ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+            Uri.encode(id)
+        )
+        context.contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
+            null, null, null
+        )?.use {
+            if (it.moveToFirst()) state.value = it.getString(0)
+        }
     }
     return state
 }
@@ -382,24 +314,23 @@ fun rememberContactAvatar(id: String): State<Uri?> {
     val state = remember { mutableStateOf<Uri?>(null) }
 
     LaunchedEffect(id) {
-        try {
-            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(id))
-            context.contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup.PHOTO_URI), null, null, null)?.use {
-                if (it.moveToFirst()) state.value = it.getString(0)?.let(Uri::parse)
-            }
-        } catch (e: Exception) {}
+        val uri = Uri.withAppendedPath(
+            ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+            Uri.encode(id)
+        )
+        context.contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup.PHOTO_URI),
+            null, null, null
+        )?.use {
+            if (it.moveToFirst()) state.value = it.getString(0)?.let(Uri::parse)
+        }
     }
     return state
 }
 
 fun getFileName(context: Context, uri: Uri): String {
-    try {
-        context.contentResolver.query(uri, null, null, null, null)?.use {
-            if (it.moveToFirst()) {
-                val idx = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (idx != -1) return it.getString(idx)
-            }
-        }
-    } catch (e: Exception) {}
+    context.contentResolver.query(uri, null, null, null, null)?.use {
+        val idx = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (it.moveToFirst() && idx != -1) return it.getString(idx)
+    }
     return "file_${System.currentTimeMillis()}"
 }
