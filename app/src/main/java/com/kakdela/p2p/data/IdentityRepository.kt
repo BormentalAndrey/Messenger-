@@ -25,8 +25,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * Core P2P Repository.
- * Handles Wi-Fi Discovery (NSD), Server Sync (Anti-Bot bypass), and UDP Messaging.
+ * Репозиторий идентификации и сетевого взаимодействия.
+ * Реализует гибридную схему: NSD (Wi-Fi), Центральный сервер (DHT) и UDP P2P.
  */
 class IdentityRepository(private val context: Context) {
 
@@ -41,6 +41,7 @@ class IdentityRepository(private val context: Context) {
     private val nodeDao = db.nodeDao()
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
 
+    // Ленивая инициализация для избежания круговой зависимости
     private val messageRepository by lazy { 
         MessageRepository(context, db.messageDao(), this) 
     }
@@ -67,7 +68,7 @@ class IdentityRepository(private val context: Context) {
             try {
                 CryptoManager.init(context)
                 val myId = getMyId()
-                Log.i(TAG, "Network starting. Local Node ID: $myId")
+                Log.i(TAG, "Сеть запускается. Локальный ID: $myId")
 
                 launch { startUdpListener() }
                 launch { registerInWifi() }
@@ -80,7 +81,7 @@ class IdentityRepository(private val context: Context) {
                 startSyncLoop()
                 
             } catch (e: Exception) {
-                Log.e(TAG, "Network start failed", e)
+                Log.e(TAG, "Сбой запуска сети", e)
                 isRunning = false
             }
         }
@@ -93,7 +94,7 @@ class IdentityRepository(private val context: Context) {
             nsdManager.stopServiceDiscovery(discoveryListener)
         } catch (_: Exception) {}
         scope.coroutineContext.cancelChildren()
-        Log.i(TAG, "Network stopped")
+        Log.i(TAG, "Сеть остановлена")
     }
 
     fun addListener(l: (String, String, String, String) -> Unit) = listeners.add(l)
@@ -105,26 +106,39 @@ class IdentityRepository(private val context: Context) {
             id = CryptoManager.getMyIdentityHash()
             if (id.isNotEmpty()) {
                 prefs.edit().putString("my_security_hash", id).apply()
-                Log.i(TAG, "New Identity generated: $id")
             }
         }
         return id
     }
 
     /**
-     * MANUAL ADD NODE FEATURE
-     * Used when auto-discovery fails. Forces a server lookup for a specific hash.
+     * Отправка сигнальных данных (WebRTC / Передача файлов).
+     * Этот метод КРИТИЧЕСКИ ВАЖЕН для исправления ошибок компиляции.
+     */
+    fun sendSignaling(targetIp: String, type: String, data: String) {
+        scope.launch {
+            try {
+                val json = JSONObject().apply {
+                    put("subtype", type)
+                    put("payload", data)
+                }
+                // Инкапсулируем сигнальные данные в UDP пакет типа WEBRTC_SIGNAL
+                sendUdp(targetIp, "WEBRTC_SIGNAL", json.toString())
+            } catch (e: Exception) {
+                Log.e(TAG, "Ошибка отправки сигнала на $targetIp: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Добавление узла вручную по хешу.
      */
     suspend fun addNodeByHash(targetHash: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            // Force fetch latest list from server
             val allNodes = fetchAllNodesFromServer()
-            
-            // Look for specific hash
             val foundNode = allNodes.find { it.hash == targetHash }
 
             if (foundNode != null) {
-                // Force save to local DB
                 nodeDao.insert(NodeEntity(
                     userHash = foundNode.hash,
                     phone_hash = foundNode.phone_hash ?: "",
@@ -134,19 +148,16 @@ class IdentityRepository(private val context: Context) {
                     phone = foundNode.phone ?: "",
                     lastSeen = System.currentTimeMillis()
                 ))
-                Log.i(TAG, "Manual Node Add Success: $targetHash")
                 return@withContext true
-            } else {
-                Log.w(TAG, "Manual Node Add Failed: Hash not found on server")
-                return@withContext false
             }
+            false
         } catch (e: Exception) {
-            Log.e(TAG, "Manual Add Error: ${e.message}")
+            Log.e(TAG, "Ошибка ручного добавления: ${e.message}")
             false
         }
     }
 
-    /* ======================= SERVER & SYNC ======================= */
+    /* ======================= SERVER SYNC ======================= */
 
     private fun startSyncLoop() {
         scope.launch {
@@ -155,7 +166,7 @@ class IdentityRepository(private val context: Context) {
                     val myId = getMyId()
                     if (myId.isNotEmpty()) performServerSync(myId)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Sync loop failed: ${e.message}")
+                    Log.e(TAG, "Ошибка цикла синхронизации: ${e.message}")
                 }
                 delay(SYNC_INTERVAL)
             }
@@ -174,11 +185,10 @@ class IdentityRepository(private val context: Context) {
                 email = prefs.getString("my_email", null),
                 lastSeen = System.currentTimeMillis()
             )
-            
             announceMyself(myPayload)
             fetchAllNodesFromServer()
         } catch (e: Exception) {
-            Log.e(TAG, "Server sync error: ${e.message}")
+            Log.e(TAG, "Ошибка синхронизации: ${e.message}")
         }
     }
 
@@ -186,24 +196,14 @@ class IdentityRepository(private val context: Context) {
         try {
             val response = api.getAllNodes()
             val users = response.users.orEmpty()
-            
             if (users.isNotEmpty()) {
                 nodeDao.updateCache(users.map {
-                    NodeEntity(
-                        userHash = it.hash,
-                        phone_hash = it.phone_hash ?: "",
-                        ip = it.ip ?: "0.0.0.0",
-                        port = it.port,
-                        publicKey = it.publicKey,
-                        phone = it.phone ?: "",
-                        lastSeen = it.lastSeen ?: System.currentTimeMillis()
-                    )
+                    NodeEntity(it.hash, it.phone_hash ?: "", it.ip ?: "0.0.0.0", it.port, it.publicKey, it.phone ?: "", it.lastSeen ?: System.currentTimeMillis())
                 })
-                Log.d(TAG, "Fetched ${users.size} nodes from server")
             }
             users
         } catch (e: Exception) {
-            Log.e(TAG, "Fetch failed, using cache. Error: ${e.message}")
+            Log.e(TAG, "Ошибка загрузки узлов: ${e.message}")
             nodeDao.getAllNodes().map {
                 UserPayload(it.userHash, it.phone_hash, it.ip, it.port, it.publicKey, it.phone, null, it.lastSeen)
             }
@@ -215,13 +215,11 @@ class IdentityRepository(private val context: Context) {
             try {
                 val wrapper = UserRegistrationWrapper(hash = userPayload.hash, data = userPayload)
                 val response = api.announceSelf(payload = wrapper)
-                
                 if (response.success) {
-                    Log.d(TAG, "Announce OK")
                     wifiPeers.values.forEach { ip -> sendUdp(ip, "PRESENCE", "ONLINE") }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Announce Error: ${e.message}")
+                Log.e(TAG, "Ошибка анонса: ${e.message}")
             }
         }
     }
@@ -231,8 +229,7 @@ class IdentityRepository(private val context: Context) {
     fun sendMessageSmart(targetHash: String, phone: String?, message: String): Boolean {
         var delivered = false
         runBlocking(Dispatchers.IO) { 
-            var ip = wifiPeers[targetHash] 
-            if (ip == null) ip = swarmPeers[targetHash]
+            var ip = wifiPeers[targetHash] ?: swarmPeers[targetHash]
             if (ip == null) ip = findPeerOnServer(targetHash)?.ip
 
             if (!ip.isNullOrBlank() && ip != "0.0.0.0") {
@@ -255,10 +252,6 @@ class IdentityRepository(private val context: Context) {
         return fetchAllNodesFromServer().find { it.hash == hash }
     }
 
-    fun getPeerPublicKey(hash: String): String? {
-        return runBlocking { nodeDao.getNodeByHash(hash)?.publicKey }
-    }
-
     /* ======================= UDP CORE ======================= */
 
     private fun startUdpListener() {
@@ -268,19 +261,17 @@ class IdentityRepository(private val context: Context) {
                     socket.reuseAddress = true
                     socket.bind(InetSocketAddress(PORT))
                     val buffer = ByteArray(65507) 
-                    
                     while (isRunning) {
                         try {
                             val packet = DatagramPacket(buffer, buffer.size)
                             socket.receive(packet)
-                            val data = String(packet.data, 0, packet.length)
-                            handleIncoming(data, packet.address.hostAddress ?: "")
+                            handleIncoming(String(packet.data, 0, packet.length), packet.address.hostAddress ?: "")
                         } catch (e: Exception) {
-                            if (isRunning) Log.e(TAG, "Packet receive error: ${e.message}")
+                            if (isRunning) Log.e(TAG, "Ошибка приема пакета: ${e.message}")
                         }
                     }
                 }
-            } catch (e: Exception) { Log.e(TAG, "UDP Bind failed: ${e.message}") }
+            } catch (e: Exception) { Log.e(TAG, "UDP ошибка: ${e.message}") }
         }
     }
 
@@ -296,15 +287,13 @@ class IdentityRepository(private val context: Context) {
                 val signature = Base64.decode(sigBase64, Base64.NO_WRAP)
                 val unsignedJson = JSONObject(raw).apply { remove("signature") }.toString()
 
-                if (!CryptoManager.verify(signature, unsignedJson.toByteArray(), pubKey)) {
-                    return@launch
-                }
+                if (!CryptoManager.verify(signature, unsignedJson.toByteArray(), pubKey)) return@launch
 
                 nodeDao.updateNetworkInfo(fromHash, fromIp, PORT, pubKey, System.currentTimeMillis())
                 swarmPeers[fromHash] = fromIp
                 CryptoManager.savePeerPublicKey(fromHash, pubKey)
 
-                if (type == "CHAT" || type == "CHAT_FILE") {
+                if (type == "CHAT" || type == "CHAT_FILE" || type == "WEBRTC_SIGNAL") {
                     messageRepository.handleIncoming(type, json.getString("data"), fromHash)
                 }
                 listeners.forEach { it(type, json.getString("data"), fromIp, fromHash) }
@@ -321,7 +310,6 @@ class IdentityRepository(private val context: Context) {
                 put("pubkey", CryptoManager.getMyPublicKeyStr())
                 put("timestamp", System.currentTimeMillis())
             }
-
             val sig = CryptoManager.sign(json.toString().toByteArray())
             json.put("signature", Base64.encodeToString(sig, Base64.NO_WRAP))
 
@@ -334,13 +322,15 @@ class IdentityRepository(private val context: Context) {
         } catch (e: Exception) { false }
     }
 
-    // NSD Logic remains same...
+    /* ======================= NSD & SMS ======================= */
+
     private val registrationListener = object : NsdManager.RegistrationListener {
         override fun onServiceRegistered(s: NsdServiceInfo) {}
         override fun onRegistrationFailed(s: NsdServiceInfo, e: Int) {}
         override fun onServiceUnregistered(s: NsdServiceInfo) {}
         override fun onUnregistrationFailed(s: NsdServiceInfo, e: Int) {}
     }
+    
     private val discoveryListener = object : NsdManager.DiscoveryListener {
         override fun onServiceFound(s: NsdServiceInfo) {
             if (s.serviceType != SERVICE_TYPE || s.serviceName.contains(getMyId().take(8))) return
@@ -359,6 +349,7 @@ class IdentityRepository(private val context: Context) {
         override fun onStartDiscoveryFailed(t: String, e: Int) {}
         override fun onStopDiscoveryFailed(t: String, e: Int) {}
     }
+
     private fun registerInWifi() {
         try {
             val safeName = "KakDela-${getMyId().take(8)}-${UUID.randomUUID().toString().take(4)}"
@@ -366,6 +357,7 @@ class IdentityRepository(private val context: Context) {
             nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, registrationListener)
         } catch (_: Exception) {}
     }
+
     private fun discoverInWifi() {
         try { nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener) } catch (_: Exception) {}
     }
@@ -376,12 +368,4 @@ class IdentityRepository(private val context: Context) {
             sms.sendTextMessage(phone, null, "[P2P] $message", null, null)
         } catch (_: Exception) {}
     }
-
-    fun generatePhoneDiscoveryHash(phone: String): String {
-        val digits = phone.replace(Regex("[^0-9]"), "")
-        val normalized = if (digits.length == 11 && digits.startsWith("8")) "7${digits.substring(1)}" else digits
-        return sha256(normalized + PEPPER)
-    }
-
-    private fun sha256(s: String): String = MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
 }
