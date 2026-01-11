@@ -21,7 +21,10 @@ import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -30,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import coil.compose.AsyncImage
 import com.kakdela.p2p.data.IdentityRepository
@@ -60,10 +64,11 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     var textState by remember { mutableStateOf("") }
 
+    // 1. Отображение имени контакта
     val contactName by rememberContactName(chatPartnerId)
+    val displayName = if (contactName == chatPartnerId.take(10)) "ID: ${chatPartnerId.take(8)}" else contactName
     val contactAvatar by rememberContactAvatar(chatPartnerId)
 
-    // Автоматическая прокрутка к последнему сообщению
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
@@ -92,19 +97,26 @@ fun ChatScreen(
                         AnimatedAvatar(contactAvatar)
                         Spacer(Modifier.width(12.dp))
                         Column {
-                            Text(contactName, color = NeonCyan, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Text(
+                                text = displayName,
+                                color = NeonCyan,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             Text("P2P E2EE Connection", fontSize = 10.sp, color = Color.Gray)
                         }
                     }
                 },
                 actions = {
-                    IconButton(onClick = {
-                        val intent = Intent(context, CallActivity::class.java).apply {
-                            putExtra("chatId", chatPartnerId)
-                        }
-                        context.startActivity(intent)
-                    }) {
+                    // 2. Обычный звонок
+                    IconButton(onClick = { startCall(context, chatPartnerId, isVideo = false) }) {
                         Icon(Icons.Default.Call, "Call", tint = NeonCyan)
+                    }
+                    // 3. Видео звонок
+                    IconButton(onClick = { startCall(context, chatPartnerId, isVideo = true) }) {
+                        Icon(Icons.Outlined.Videocam, "Video Call", tint = NeonCyan)
                     }
                 }
             )
@@ -139,6 +151,14 @@ fun ChatScreen(
     }
 }
 
+fun startCall(context: Context, id: String, isVideo: Boolean) {
+    val intent = Intent(context, CallActivity::class.java).apply {
+        putExtra("chatId", id)
+        putExtra("isVideo", isVideo)
+    }
+    context.startActivity(intent)
+}
+
 @Composable
 fun ChatInputArea(
     text: String,
@@ -166,7 +186,6 @@ fun ChatInputArea(
         }
     }
 
-    // Освобождение ресурсов рекордера при выходе с экрана
     DisposableEffect(Unit) {
         onDispose {
             recorder?.release()
@@ -316,8 +335,22 @@ fun ChatBubble(message: MessageEntity) {
             modifier = Modifier.widthIn(max = 300.dp)
         ) {
             Column(Modifier.padding(12.dp)) {
-                if (!message.text.isNullOrBlank()) {
-                    Text(text = message.text!!, color = Color.White, fontSize = 15.sp)
+                val content = message.text ?: ""
+                when {
+                    // 4. Плеер аудиосообщения
+                    content.startsWith("AUDIO:") -> {
+                        AudioPlayerBubble(content)
+                    }
+                    content.startsWith("FILE:") -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.FilePresent, null, tint = NeonCyan, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(content.removePrefix("FILE: "), color = Color.White, fontSize = 14.sp)
+                        }
+                    }
+                    else -> {
+                        Text(text = content, color = Color.White, fontSize = 15.sp)
+                    }
                 }
                 
                 if (message.scheduledTime != null) {
@@ -343,6 +376,43 @@ fun ChatBubble(message: MessageEntity) {
 }
 
 @Composable
+fun AudioPlayerBubble(audioData: String) {
+    var isPlaying by remember { mutableStateOf(false) }
+    val duration = audioData.substringAfter("AUDIO: ").substringBefore(" s")
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth()
+    ) {
+        IconButton(
+            onClick = { isPlaying = !isPlaying },
+            modifier = Modifier.size(36.dp).background(NeonCyan, CircleShape)
+        ) {
+            Icon(
+                imageVector = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                contentDescription = null,
+                tint = Color.Black,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        
+        Spacer(Modifier.width(12.dp))
+        
+        Column(Modifier.weight(1f)) {
+            // Визуализация прогресса
+            LinearProgressIndicator(
+                progress = if (isPlaying) 0.5f else 0f,
+                modifier = Modifier.fillMaxWidth().height(3.dp).clip(CircleShape),
+                color = NeonCyan,
+                trackColor = Color.Gray.copy(alpha = 0.3f)
+            )
+            Spacer(Modifier.height(4.dp))
+            Text("$duration сек", fontSize = 11.sp, color = NeonCyan.copy(alpha = 0.8f))
+        }
+    }
+}
+
+@Composable
 fun AnimatedAvatar(avatarUri: Uri?) {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val scale by infiniteTransition.animateFloat(
@@ -352,11 +422,8 @@ fun AnimatedAvatar(avatarUri: Uri?) {
     )
 
     Box(contentAlignment = Alignment.Center) {
-        // Пульсирующий фон
         Box(Modifier.size(42.dp).scale(scale).background(NeonCyan.copy(alpha = 0.1f), CircleShape))
         
-        // ИСПРАВЛЕНО: AsyncImage не принимает ImageVector. 
-        // Если URI пустой, используем стандартный компонент Icon.
         if (avatarUri != null) {
             AsyncImage(
                 model = avatarUri,
