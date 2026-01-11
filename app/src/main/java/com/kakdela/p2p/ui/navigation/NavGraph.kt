@@ -38,7 +38,6 @@ import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
-import com.kakdela.p2p.ui.ChatViewModel 
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
 @Composable
@@ -105,7 +104,6 @@ fun NavGraph(
 
             // --- Main Screens ---
             composable(Routes.CHATS) {
-                // ИСПРАВЛЕНО: Убраны лишние аргументы для соответствия сигнатуре ChatsListScreen(navController)
                 ChatsListScreen(navController = navController)
             }
 
@@ -123,24 +121,34 @@ fun NavGraph(
                 val chatId = entry.arguments?.getString("chatId") ?: ""
                 val app = context.applicationContext as Application
 
+                // Использование фабрики для создания ViewModel с зависимостями
                 val vm: ChatViewModel = viewModel(
                     factory = ChatViewModelFactory(identityRepository, app)
                 )
 
-                LaunchedEffect(chatId) { vm.initChat(chatId) }
+                // Инициализация чата при входе
+                LaunchedEffect(chatId) { 
+                    vm.initChat(chatId) 
+                }
 
-                // Работаем напрямую с MessageEntity, так как ChatScreen был обновлен под этот тип
                 val messages by vm.messages.collectAsState()
 
                 ChatScreen(
                     chatPartnerId = chatId,
-                    messages = messages, // Исправлен маппинг типов (List<MessageEntity>)
+                    messages = messages,
                     identityRepository = identityRepository,
-                    onSendMessage = { vm.sendMessage(it) },
-                    onSendFile = { uri, name -> vm.sendFile(uri, name) },
-                    onSendAudio = { uri, dur -> onSendAudio(uri, dur) }, // Логика обработки URI
+                    onSendMessage = { text -> vm.sendMessage(text) },
+                    onSendFile = { uri, name -> 
+                        // Конвертируем Uri в String для соответствия методу vm.sendFile(String, String)
+                        vm.sendFile(uri.toString(), name) 
+                    },
+                    onSendAudio = { uri, dur -> 
+                        // Конвертируем Uri в String для соответствия методу vm.sendAudio(String, Int)
+                        vm.sendAudio(uri.toString(), dur) 
+                    },
                     onScheduleMessage = { text, time -> 
-                        vm.scheduleMessage(text, time) 
+                        // Конвертируем Long время в String для соответствия методу vm.scheduleMessage(String, String)
+                        vm.scheduleMessage(text, time.toString()) 
                     },
                     onBack = { navController.popBackStack() }
                 )
