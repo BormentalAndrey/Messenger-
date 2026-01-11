@@ -1,10 +1,15 @@
 package com.kakdela.p2p.ui.chat
 
+import android.annotation.SuppressLint
+import android.content.ContentResolver
+import android.content.Context
 import android.content.Intent
 import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
+import android.provider.ContactsContract
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColor
@@ -59,6 +64,9 @@ fun ChatScreen(
     var textState by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val context = LocalContext.current
+    
+    // Получаем имя из контактов
+    val displayName by rememberContactName(chatPartnerId)
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
@@ -66,8 +74,14 @@ fun ChatScreen(
         }
     }
 
-    val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let { onSendFile(it, "DOCUMENT") }
+    // Лаунчер для выбора любого файла
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val fileName = getFileName(context, it)
+            onSendFile(it, fileName)
+        }
     }
 
     Scaffold(
@@ -75,7 +89,12 @@ fun ChatScreen(
             CenterAlignedTopAppBar(
                 title = {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Узел: ${chatPartnerId.take(8)}...", color = NeonCyan, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = displayName, 
+                            color = NeonCyan, 
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
                         Text("P2P E2EE Protected", fontSize = 10.sp, color = Color.Gray)
                     }
                 },
@@ -83,6 +102,11 @@ fun ChatScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = null, tint = NeonCyan)
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { /* Инфо о контакте */ }) {
+                        Icon(Icons.Default.Info, contentDescription = null, tint = NeonCyan)
                     }
                 }
             )
@@ -213,7 +237,7 @@ fun ChatInputArea(
         TextField(
             value = text,
             onValueChange = onTextChange,
-            placeholder = { Text("Введите сообщение...", color = Color.Gray) },
+            placeholder = { Text("Введите...", color = Color.Gray) },
             modifier = Modifier
                 .weight(1f)
                 .border(1.dp, glowColor, RoundedCornerShape(24.dp)),
@@ -260,17 +284,13 @@ fun ChatInputArea(
             )
         }
 
-        // Кнопка отправки с поддержкой долгого нажатия
         Box(
             modifier = Modifier
                 .size(48.dp)
                 .clip(CircleShape)
                 .combinedClickable(
                     onClick = onSend,
-                    onLongClick = { 
-                        // Пример: планируем через 1 час
-                        onScheduleMessage(System.currentTimeMillis() + 3600000) 
-                    }
+                    onLongClick = { onScheduleMessage(System.currentTimeMillis() + 3600000) }
                 ),
             contentAlignment = Alignment.Center
         ) {
@@ -283,12 +303,56 @@ fun ChatInputArea(
     }
 }
 
+// Вспомогательные функции
+
+@SuppressLint("Range")
+@Composable
+fun rememberContactName(identifier: String): State<String> {
+    val context = LocalContext.current
+    val contactName = remember { mutableStateOf("Узел: ${identifier.take(8)}...") }
+
+    LaunchedEffect(identifier) {
+        val contentResolver: ContentResolver = context.contentResolver
+        val uri = Uri.withAppendedPath(
+            ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+            Uri.encode(identifier)
+        )
+        val cursor = contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)
+        
+        cursor?.use {
+            if (it.moveToFirst()) {
+                contactName.value = it.getString(it.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME))
+            }
+        }
+    }
+    return contactName
+}
+
+fun getFileName(context: Context, uri: Uri): String {
+    var result: String? = null
+    if (uri.scheme == "content") {
+        val cursor = context.contentResolver.query(uri, null, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val index = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index != -1) result = it.getString(index)
+            }
+        }
+    }
+    if (result == null) {
+        result = uri.path
+        val cut = result?.lastIndexOf('/') ?: -1
+        if (cut != -1) result = result?.substring(cut + 1)
+    }
+    return result ?: "file_${System.currentTimeMillis()}"
+}
+
 @Composable
 fun FileP2PView(fileName: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Default.FileDownload, null, tint = NeonCyan, modifier = Modifier.size(18.dp))
+        Icon(Icons.Default.FilePresent, null, tint = NeonCyan, modifier = Modifier.size(24.dp))
         Spacer(Modifier.width(8.dp))
-        Text(fileName, color = Color.White, fontSize = 14.sp)
+        Text(fileName, color = Color.White, fontSize = 14.sp, maxLines = 1)
     }
 }
 
