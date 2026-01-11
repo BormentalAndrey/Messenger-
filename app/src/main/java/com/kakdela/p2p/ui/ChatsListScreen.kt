@@ -1,5 +1,9 @@
 package com.kakdela.p2p.ui
 
+import android.annotation.SuppressLint
+import android.content.ContentResolver
+import android.net.Uri
+import android.provider.ContactsContract
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
@@ -12,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
@@ -21,17 +26,49 @@ import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.ui.navigation.Routes
 
 /**
- * Элемент списка чата.
- * Использует стандартный ripple-эффект Material 3 для обратной связи при нажатии.
+ * Вспомогательная функция для получения имени из телефонной книги.
  */
+@SuppressLint("Range")
+@Composable
+fun rememberContactName(phoneNumber: String): String {
+    val context = LocalContext.current
+    // По умолчанию показываем номер, если имя не найдено
+    var displayName by remember(phoneNumber) { mutableStateOf(phoneNumber) }
+
+    LaunchedEffect(phoneNumber) {
+        try {
+            val contentResolver: ContentResolver = context.contentResolver
+            val uri = Uri.withAppendedPath(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI, 
+                Uri.encode(phoneNumber)
+            )
+            val cursor = contentResolver.query(
+                uri, 
+                arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), 
+                null, null, null
+            )
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    displayName = it.getString(it.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME))
+                }
+            }
+        } catch (e: Exception) {
+            // Если нет разрешений или контакт не найден, остается номер
+        }
+    }
+    return displayName
+}
+
 @Composable
 fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
+    // ПОЛУЧАЕМ ИМЯ ИЗ ТЕЛЕФОННОЙ КНИГИ
+    val contactName = rememberContactName(chat.title)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(
                 onClick = onClick,
-                // Используем стандартную индикацию нажатия
                 interactionSource = remember { MutableInteractionSource() },
                 indication = LocalIndication.current 
             )
@@ -43,13 +80,14 @@ fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
             Modifier
                 .size(52.dp)
                 .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
+                .background(Color(0xFF00FFFF).copy(alpha = 0.2f)) // Неоновый стиль
+                .border(1.dp, Color(0xFF00FFFF).copy(alpha = 0.5f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = chat.title.firstOrNull()?.uppercase() ?: "?",
+                text = contactName.firstOrNull()?.uppercase() ?: "?",
                 style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
+                color = Color(0xFF00FFFF)
             )
         }
 
@@ -63,7 +101,7 @@ fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = chat.title,
+                    text = contactName, // Отображаем имя контакта
                     style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
                     color = Color.White,
                     maxLines = 1,
@@ -106,7 +144,8 @@ fun ChatsListScreen(
                     Text(
                         "Как дела?",
                         fontWeight = FontWeight.ExtraBold,
-                        style = MaterialTheme.typography.headlineMedium
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = Color(0xFF00FFFF) // Неоновый голубой
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -118,7 +157,7 @@ fun ChatsListScreen(
         floatingActionButton = {
             FloatingActionButton(
                 onClick = { navController.navigate(Routes.CONTACTS) },
-                containerColor = MaterialTheme.colorScheme.primary,
+                containerColor = Color(0xFF00FFFF),
                 contentColor = Color.Black
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Начать новый чат")
@@ -126,7 +165,6 @@ fun ChatsListScreen(
         },
         containerColor = Color.Black
     ) { padding ->
-        // Анимированное появление списка
         Box(modifier = Modifier.padding(padding)) {
             if (chats.isEmpty()) {
                 EmptyChatsView(onFindContacts = { navController.navigate(Routes.CONTACTS) })
@@ -134,7 +172,7 @@ fun ChatsListScreen(
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(
                         items = chats,
-                        key = { it.id } // chatId для оптимизации рекомпозиции
+                        key = { it.id }
                     ) { chat ->
                         ChatListItem(chat) {
                             navController.navigate("chat/${chat.id}")
@@ -159,11 +197,13 @@ fun EmptyChatsView(onFindContacts: () -> Unit) {
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Пока нет активных чатов", color = Color.Gray)
-            Spacer(modifier = Modifier.height(8.dp))
-            TextButton(onClick = onFindContacts) {
-                Text("Найти контакты", color = MaterialTheme.colorScheme.primary)
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = onFindContacts,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A1A1A))
+            ) {
+                Text("Найти контакты", color = Color(0xFF00FFFF))
             }
         }
     }
 }
-
