@@ -6,67 +6,113 @@ import androidx.room.PrimaryKey
 
 /**
  * Сущность сообщения для P2P-мессенджера.
- * Соответствует пункту 6 и 7 Технического Задания.
+ * Реализует хранение текстовых данных, метаданных файлов и параметров планирования.
+ * Соответствует требованиям Технического Задания по защищенному хранению и статусам доставки.
  */
 @Entity(
     tableName = "messages",
     indices = [
         Index(value = ["chatId"]), 
         Index(value = ["timestamp"]),
-        Index(value = ["status"])
+        Index(value = ["status"]),
+        Index(value = ["scheduledTime"]) // Индекс оптимизирован для выборки отложенных задач WorkManager-ом
     ]
 )
 data class MessageEntity(
+    /**
+     * Уникальный идентификатор сообщения.
+     * Генерируется как UUID для исходящих или берется из протокола для входящих.
+     */
     @PrimaryKey
-    val messageId: String,   // UUID или SHA-256 контента сообщения
+    val messageId: String,
 
     /**
-     * ID чата. В P2P это user_id собеседника (SHA-256 его публичного ключа).
-     * Именно по этому ID происходит lookup в таблице пиров.
+     * Идентификатор чата (SHA-256 публичного ключа собеседника).
      */
     val chatId: String,      
 
-    val senderId: String,    // user_id отправителя
-    val receiverId: String,  // user_id получателя
+    /**
+     * Идентификатор отправителя (User ID).
+     */
+    val senderId: String,    
+
+    /**
+     * Идентификатор получателя (User ID).
+     */
+    val receiverId: String,  
     
     /**
-     * Зашифрованный текст или путь к локальному файлу.
-     * Согласно ТЗ (п. 4), данные здесь должны быть уже зашифрованы E2EE.
+     * Содержимое сообщения.
+     * Для текстовых сообщений — зашифрованная строка (E2EE).
+     * Для файлов — текстовое описание или локальный путь.
      */
     val text: String,        
 
-    val timestamp: Long,     // System.currentTimeMillis()
-    val isMe: Boolean,       // true - исходящее, false - входящее
+    /**
+     * Время создания/получения сообщения в миллисекундах.
+     */
+    val timestamp: Long,     
+
+    /**
+     * Флаг направления сообщения: true — исходящее, false — входящее.
+     */
+    val isMe: Boolean,       
+
+    /**
+     * Статус прочтения сообщения пользователем на данном устройстве.
+     */
     val isRead: Boolean = false,
     
     /**
-     * Статусы согласно ТЗ (п. 3.3):
-     * PENDING - ожидание отправки
-     * SENT_WIFI - доставлено через NSD/Direct
-     * SENT_SWARM - доставлено через DHT/Swarm
-     * SENT_SERVER - доставлено через fallback сервер
-     * SENT_SMS - доставлено через SMS резерв
-     * READ - прочитано собеседником
+     * Текущий статус жизненного цикла сообщения:
+     * PENDING - ожидает первичной обработки
+     * SCHEDULED - запланировано на будущее время
+     * SENT - успешно отправлено в P2P сеть
+     * DELIVERED - получено подтверждение доставки
+     * FAILED - ошибка после всех попыток ретрая
      */
     val status: String = "PENDING",
 
-    // --- Медиа-данные (п. 3.3 ТЗ) ---
-    val messageType: String = "TEXT", // "TEXT", "IMAGE", "FILE", "VOICE"
+    /**
+     * Время в ms (Unix Epoch), когда сообщение должно быть отправлено.
+     * null для мгновенных сообщений.
+     */
+    val scheduledTime: Long? = null,
+
+    /**
+     * Тип контента: "TEXT", "IMAGE", "FILE", "AUDIO".
+     */
+    val messageType: String = "TEXT", 
+
+    /**
+     * Оригинальное имя файла (только для медиа-сообщений).
+     */
     val fileName: String? = null,
+
+    /**
+     * MIME-тип файла (например, "image/jpeg" или "audio/m4a").
+     */
     val fileMime: String? = null,
     
     /**
-     * Внимание: Для файлов > 1MB рекомендуется хранить здесь URI (путь к файлу),
-     * а не сами байты, чтобы не переполнять курсор SQLite.
+     * Байтовое содержимое для мелких файлов (до 512КБ).
+     * Для крупных файлов рекомендуется хранить путь в [text] или [fileName].
      */
     val fileBytes: ByteArray? = null,
     
-    // Дополнительное поле для привязки к телефонному номеру из Discovery (п. 2.2 ТЗ)
+    /**
+     * Номер телефона из Discovery, если сообщение связано с контактом.
+     */
     val contactPhone: String? = null 
 ) {
-    // Вспомогательные методы для логики UI
+    /**
+     * Проверяет, является ли сообщение медиа-файлом.
+     */
     fun isMedia(): Boolean = messageType != "TEXT"
     
+    /**
+     * Кастомная реализация equals для корректного сравнения Room-сущностей по ID.
+     */
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (javaClass != other?.javaClass) return false
@@ -74,5 +120,8 @@ data class MessageEntity(
         return messageId == other.messageId
     }
 
+    /**
+     * Хэш-код на основе messageId для стабильности в коллекциях.
+     */
     override fun hashCode(): Int = messageId.hashCode()
 }
