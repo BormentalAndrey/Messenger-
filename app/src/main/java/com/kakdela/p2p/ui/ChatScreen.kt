@@ -122,9 +122,6 @@ fun ChatScreen(
                     IconButton(onClick = { startCall(context, chatPartnerId, isVideo = false) }) {
                         Icon(Icons.Default.Call, "Call", tint = NeonCyan)
                     }
-                    IconButton(onClick = { startCall(context, chatPartnerId, isVideo = true) }) {
-                        Icon(Icons.Outlined.Videocam, "Video Call", tint = NeonCyan)
-                    }
                 }
             )
         },
