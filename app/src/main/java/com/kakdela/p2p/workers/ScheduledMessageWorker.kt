@@ -1,67 +1,144 @@
-package com.kakdela.p2p.workers
+package com.kakdela.p2p.data
 
 import android.content.Context
-import android.util.Log
-import androidx.work.CoroutineWorker
-import androidx.work.WorkerParameters
-import com.kakdela.p2p.data.MessageRepository
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
+import android.net.Uri
+import android.util.Base64
+import com.kakdela.p2p.data.local.MessageDao
+import com.kakdela.p2p.data.local.MessageEntity
+import com.kakdela.p2p.security.CryptoManager
+import com.kakdela.p2p.workers.scheduleMessageWork
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.UUID
 
-/**
- * Воркер для отправки отложенных сообщений.
- * Вызывается WorkManager-ом в заданное пользователем время.
- * Реализует интерфейс KoinComponent для получения доступа к синглтону MessageRepository.
- */
-class ScheduledMessageWorker(
-    context: Context,
-    params: WorkerParameters
-) : CoroutineWorker(context, params), KoinComponent {
+class MessageRepository(
+    private val context: Context,
+    private val dao: MessageDao,
+    private val identityRepo: IdentityRepository
+) {
 
-    // Инъекция репозитория через Koin
-    private val messageRepository: MessageRepository by inject()
+    private val scope = CoroutineScope(Dispatchers.IO)
 
-    override suspend fun doWork(): Result {
-        val messageId = inputData.getString(KEY_MESSAGE_ID) 
-            ?: return Result.failure().also { Log.e(TAG, "Missing Message ID") }
-        
-        val chatId = inputData.getString(KEY_CHAT_ID) 
-            ?: return Result.failure().also { Log.e(TAG, "Missing Chat ID") }
-        
-        val text = inputData.getString(KEY_TEXT) 
-            ?: return Result.failure().also { Log.e(TAG, "Missing Message Text") }
+    /**
+     * Отправка текста. Если задано scheduledTime, ставим в очередь WorkManager.
+     */
+    fun sendText(toHash: String, text: String, scheduledTime: Long? = null) {
+        scope.launch {
+            val myId = identityRepo.getMyId()
+            val msgId = UUID.randomUUID().toString()
 
-        Log.d(TAG, "Starting scheduled send task for message: $messageId")
+            val msgEntity = MessageEntity(
+                messageId = msgId,
+                chatId = toHash,
+                senderId = myId,
+                receiverId = toHash,
+                text = text,
+                timestamp = System.currentTimeMillis(),
+                scheduledTime = scheduledTime,
+                isMe = true,
+                status = if (scheduledTime != null) "SCHEDULED" else "PENDING",
+                messageType = "TEXT"
+            )
 
-        return try {
-            /**
-             * Вызываем метод сетевой отправки из репозитория.
-             * Внутри performNetworkSend происходит шифрование E2EE и передача в P2P сеть.
-             */
-            val isDelivered = messageRepository.performNetworkSend(chatId, messageId, text)
+            dao.insert(msgEntity)
 
-            if (isDelivered) {
-                Log.i(TAG, "Scheduled message $messageId successfully sent.")
-                Result.success()
+            if (scheduledTime != null) {
+                scheduleMessageWork(context, msgId, toHash, text, scheduledTime)
             } else {
-                // Если сеть недоступна, WorkManager перезапустит задачу позже согласно политике бэкоффа
-                Log.w(TAG, "Delivery failed for $messageId, retrying...")
-                if (runAttemptCount < MAX_RETRIES) Result.retry() else Result.failure()
+                performNetworkSend(toHash, msgId, text)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Critical error in ScheduledMessageWorker for $messageId: ${e.message}")
-            if (runAttemptCount < MAX_RETRIES) Result.retry() else Result.failure()
         }
     }
 
-    companion object {
-        private const val TAG = "ScheduledWorker"
-        private const val MAX_RETRIES = 3
+    /**
+     * Фактическая отправка по сети. 
+     * Имя метода синхронизировано с ScheduledMessageWorker.
+     */
+    suspend fun performNetworkSend(chatId: String, msgId: String, text: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val peerPubKey = identityRepo.getPeerPublicKey(chatId)
+                val encrypted = if (!peerPubKey.isNullOrBlank()) {
+                    CryptoManager.encryptMessage(text, peerPubKey)
+                } else text
 
-        // Константы для ключей Input Data (должны совпадать с функцией scheduleMessageWork)
-        const val KEY_MESSAGE_ID = "KEY_MESSAGE_ID"
-        const val KEY_CHAT_ID = "KEY_CHAT_ID"
-        const val KEY_TEXT = "KEY_TEXT"
-        const val KEY_TIMESTAMP = "KEY_TIMESTAMP"
+                val delivered = identityRepo.sendMessageSmart(chatId, null, encrypted)
+                
+                // Обновляем статус в БД на основе результата отправки
+                dao.updateStatus(msgId, if (delivered) "SENT" else "FAILED")
+                delivered
+            } catch (e: Exception) {
+                dao.updateStatus(msgId, "FAILED")
+                false
+            }
+        }
     }
+
+    fun sendFile(toHash: String, uri: Uri, type: String, fileName: String) {
+        scope.launch {
+            val bytes = readBytes(uri) ?: return@launch
+            val base64Data = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            val msgId = UUID.randomUUID().toString()
+
+            val msgEntity = MessageEntity(
+                messageId = msgId,
+                chatId = toHash,
+                senderId = identityRepo.getMyId(),
+                receiverId = toHash,
+                text = "[Файл: $fileName]",
+                timestamp = System.currentTimeMillis(),
+                isMe = true,
+                status = "PENDING",
+                messageType = type,
+                fileName = fileName,
+                fileBytes = if (bytes.size <= 512 * 1024) bytes else null
+            )
+            dao.insert(msgEntity)
+
+            val peerPubKey = identityRepo.getPeerPublicKey(toHash)
+            val encryptedFile = if (!peerPubKey.isNullOrBlank()) {
+                CryptoManager.encryptMessage(base64Data, peerPubKey)
+            } else base64Data
+
+            val delivered = identityRepo.sendMessageSmart(toHash, null, encryptedFile)
+            dao.updateStatus(msgId, if (delivered) "SENT" else "FAILED")
+        }
+    }
+
+    fun handleIncoming(type: String, data: String, fromHash: String) {
+        scope.launch {
+            val decrypted = try {
+                CryptoManager.decryptMessage(data)
+            } catch (e: Exception) {
+                data 
+            }
+
+            val msgEntity = MessageEntity(
+                messageId = UUID.randomUUID().toString(),
+                chatId = fromHash,
+                senderId = fromHash,
+                receiverId = identityRepo.getMyId(),
+                text = decrypted,
+                timestamp = System.currentTimeMillis(),
+                isMe = false,
+                status = "DELIVERED",
+                messageType = if (type == "CHAT_FILE") "FILE" else "TEXT"
+            )
+            dao.insert(msgEntity)
+        }
+    }
+
+    private fun readBytes(uri: Uri): ByteArray? {
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    suspend fun markAsRead(chatId: String) = dao.markChatAsRead(chatId)
+    
+    suspend fun updateStatus(messageId: String, status: String) = dao.updateStatus(messageId, status)
 }
