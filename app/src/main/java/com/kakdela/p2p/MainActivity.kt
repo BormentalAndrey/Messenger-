@@ -19,15 +19,15 @@ import com.kakdela.p2p.security.CryptoManager
 import com.kakdela.p2p.services.P2PService
 import com.kakdela.p2p.ui.navigation.NavGraph
 import com.kakdela.p2p.ui.navigation.Routes
-import com.kakdela.p2p.ui.theme.KakdelaTheme
 import com.kakdela.p2p.ui.player.MusicManager
+import com.kakdela.p2p.ui.theme.KakdelaTheme
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var identityRepository: IdentityRepository
     private val TAG = "MainActivity"
 
-    // Расширенный список разрешений для функционала чата, звонков и медиа
+    // Expanded permission list for Chat, Calls, and Media
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -36,7 +36,7 @@ class MainActivity : ComponentActivity() {
         } else {
             permissions[Manifest.permission.READ_EXTERNAL_STORAGE] ?: false
         }
-        
+
         val contactsGranted = permissions[Manifest.permission.READ_CONTACTS] ?: false
         val micGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
         val notificationGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -46,36 +46,36 @@ class MainActivity : ComponentActivity() {
         if (audioGranted) {
             MusicManager.loadTracks(this)
         }
-        
-        if (!contactsGranted) Log.w(TAG, "Доступ к контактам отклонен")
-        if (!micGranted) Log.w(TAG, "Доступ к микрофону отклонен (голосовые сообщения не будут работать)")
-        if (!notificationGranted) Log.w(TAG, "Уведомления отключены")
+
+        if (!contactsGranted) Log.w(TAG, "Contacts permission denied")
+        if (!micGranted) Log.w(TAG, "Mic permission denied (Voice notes won't work)")
+        if (!notificationGranted) Log.w(TAG, "Notifications disabled")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Включение отображения "от края до края" для корректной работы инсетов клавиатуры
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
-        // 1. Инициализация безопасности
+        // 1. Security Initialization
         initSecurity()
 
-        // 2. Запуск фонового P2P-сервиса (необходим для входящих сообщений/звонков)
+        // 2. Start Background P2P Service
         startP2PService()
 
-        // 3. Проверка и запрос критических разрешений
+        // 3. Check Permissions
         checkAndRequestPermissions()
 
-        // 4. Логика авторизации
+        // 4. Auth Logic
         val prefs = getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
         val isLoggedIn = prefs.getBoolean("is_logged_in", false)
 
         setContent {
             KakdelaTheme {
                 val navController = rememberNavController()
+                // Remember repo to avoid recreating it on recomposition
                 val repo = remember { identityRepository }
 
-                // Маршрут: если залогинен — сразу в чаты, иначе — сплэш/авторизация
+                // Route logic
                 val startRoute = if (isLoggedIn) Routes.CHATS else Routes.SPLASH
 
                 NavGraph(
@@ -91,9 +91,10 @@ class MainActivity : ComponentActivity() {
         try {
             CryptoManager.init(applicationContext)
             identityRepository = IdentityRepository(applicationContext)
+            // Ensure ID exists
+            identityRepository.getMyId()
         } catch (e: Exception) {
-            Log.e(TAG, "Критическая ошибка инициализации: ${e.message}")
-            // В реальном приложении здесь стоит показать диалог фатальной ошибки
+            Log.e(TAG, "Critical Init Error: ${e.message}")
         }
     }
 
@@ -106,26 +107,25 @@ class MainActivity : ComponentActivity() {
                 startService(serviceIntent)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Ошибка запуска сервиса: ${e.message}")
+            Log.e(TAG, "Service Start Error: ${e.message}")
         }
     }
 
     private fun checkAndRequestPermissions() {
         val permissionsToRequest = mutableListOf<String>()
 
-        // Список необходимых разрешений
         val essentialPermissions = mutableListOf(
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.RECORD_AUDIO,
             Manifest.permission.CAMERA
         )
 
-        // Уведомления для Android 13+
+        // Notifications for Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             essentialPermissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
 
-        // Медиа/Аудио в зависимости от версии
+        // Media permissions logic
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             essentialPermissions.add(Manifest.permission.READ_MEDIA_AUDIO)
             essentialPermissions.add(Manifest.permission.READ_MEDIA_IMAGES)
@@ -133,14 +133,14 @@ class MainActivity : ComponentActivity() {
             essentialPermissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
 
-        // Фильтруем только те, что еще не даны
+        // Filter already granted permissions
         essentialPermissions.forEach { permission ->
             if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
                 permissionsToRequest.add(permission)
             }
         }
 
-        // Если есть доступ к музыке, загружаем треки сразу
+        // Load music if permission already granted
         val hasMusicAccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
         } else {
@@ -154,15 +154,5 @@ class MainActivity : ComponentActivity() {
         if (permissionsToRequest.isNotEmpty()) {
             requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // При возврате в приложение можно обновить статус P2P узла, если нужно
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        // Мы не останавливаем P2PService здесь, так как он должен работать в фоне
     }
 }
