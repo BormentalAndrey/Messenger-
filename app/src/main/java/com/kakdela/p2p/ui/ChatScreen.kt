@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -65,7 +66,6 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val context = LocalContext.current
     
-    // Получаем имя из контактов
     val displayName by rememberContactName(chatPartnerId)
 
     LaunchedEffect(messages.size) {
@@ -74,7 +74,6 @@ fun ChatScreen(
         }
     }
 
-    // Лаунчер для выбора любого файла
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -105,8 +104,14 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { /* Инфо о контакте */ }) {
-                        Icon(Icons.Default.Info, contentDescription = null, tint = NeonCyan)
+                    // Звонок перенесен в верхнюю панель
+                    IconButton(onClick = {
+                        val intent = Intent(context, CallActivity::class.java).apply {
+                            putExtra("chatId", chatPartnerId)
+                        }
+                        context.startActivity(intent)
+                    }) {
+                        Icon(Icons.Default.Call, contentDescription = "Call", tint = NeonCyan)
                     }
                 }
             )
@@ -128,12 +133,6 @@ fun ChatScreen(
                         onScheduleMessage(textState, scheduledTime)
                         textState = ""
                     }
-                },
-                onStartCall = {
-                    val intent = Intent(context, CallActivity::class.java).apply {
-                        putExtra("chatId", chatPartnerId)
-                    }
-                    context.startActivity(intent)
                 }
             )
         },
@@ -208,8 +207,7 @@ fun ChatInputArea(
     onSend: () -> Unit,
     onAttachFile: () -> Unit,
     onSendAudio: (Uri, Int) -> Unit,
-    onScheduleMessage: (Long) -> Unit,
-    onStartCall: () -> Unit
+    onScheduleMessage: (Long) -> Unit
 ) {
     val context = LocalContext.current
     var recording by remember { mutableStateOf(false) }
@@ -227,17 +225,26 @@ fun ChatInputArea(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
+            .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        // Прикрепить файл
         IconButton(onClick = onAttachFile) { 
             Icon(Icons.Default.AttachFile, contentDescription = null, tint = NeonCyan) 
+        }
+
+        // Кнопка отложенного сообщения (новое)
+        IconButton(onClick = { 
+            // По умолчанию +1 час, можно вызвать TimePicker
+            onScheduleMessage(System.currentTimeMillis() + 3600000) 
+        }) { 
+            Icon(Icons.Outlined.Schedule, contentDescription = "Schedule", tint = NeonCyan) 
         }
 
         TextField(
             value = text,
             onValueChange = onTextChange,
-            placeholder = { Text("Введите...", color = Color.Gray) },
+            placeholder = { Text("Сообщение...", color = Color.Gray, fontSize = 14.sp) },
             modifier = Modifier
                 .weight(1f)
                 .border(1.dp, glowColor, RoundedCornerShape(24.dp)),
@@ -253,8 +260,9 @@ fun ChatInputArea(
             )
         )
 
-        Spacer(Modifier.width(8.dp))
+        Spacer(Modifier.width(4.dp))
 
+        // Голосовое
         IconButton(onClick = {
             if (!recording) {
                 val file = File(context.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
@@ -284,10 +292,12 @@ fun ChatInputArea(
             )
         }
 
+        // Кнопка отправки
         Box(
             modifier = Modifier
-                .size(48.dp)
+                .size(44.dp)
                 .clip(CircleShape)
+                .background(if(text.isNotBlank()) NeonCyan.copy(alpha = 0.1f) else Color.Transparent)
                 .combinedClickable(
                     onClick = onSend,
                     onLongClick = { onScheduleMessage(System.currentTimeMillis() + 3600000) }
@@ -296,33 +306,31 @@ fun ChatInputArea(
         ) {
             Icon(Icons.Default.Send, contentDescription = null, tint = NeonCyan)
         }
-
-        IconButton(onClick = onStartCall) { 
-            Icon(Icons.Default.Call, contentDescription = null, tint = NeonCyan) 
-        }
     }
 }
-
-// Вспомогательные функции
 
 @SuppressLint("Range")
 @Composable
 fun rememberContactName(identifier: String): State<String> {
     val context = LocalContext.current
-    val contactName = remember { mutableStateOf("Узел: ${identifier.take(8)}...") }
+    val contactName = remember { mutableStateOf("ID: ${identifier.take(8)}") }
 
     LaunchedEffect(identifier) {
-        val contentResolver: ContentResolver = context.contentResolver
-        val uri = Uri.withAppendedPath(
-            ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
-            Uri.encode(identifier)
-        )
-        val cursor = contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)
-        
-        cursor?.use {
-            if (it.moveToFirst()) {
-                contactName.value = it.getString(it.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME))
+        try {
+            val contentResolver: ContentResolver = context.contentResolver
+            val uri = Uri.withAppendedPath(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                Uri.encode(identifier)
+            )
+            val cursor = contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)
+            
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    contactName.value = it.getString(it.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME))
+                }
             }
+        } catch (e: Exception) {
+            // Если нет разрешений или ошибка, оставляем ID
         }
     }
     return contactName
@@ -349,10 +357,13 @@ fun getFileName(context: Context, uri: Uri): String {
 
 @Composable
 fun FileP2PView(fileName: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(4.dp)
+    ) {
         Icon(Icons.Default.FilePresent, null, tint = NeonCyan, modifier = Modifier.size(24.dp))
         Spacer(Modifier.width(8.dp))
-        Text(fileName, color = Color.White, fontSize = 14.sp, maxLines = 1)
+        Text(fileName, color = Color.White, fontSize = 13.sp, maxLines = 1)
     }
 }
 
@@ -364,21 +375,23 @@ fun AudioPlayerView(url: String, duration: Int) {
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = {
-            if (isPlaying) {
-                mediaPlayer?.pause()
-                isPlaying = false
-            } else {
-                mediaPlayer = MediaPlayer().apply {
-                    setDataSource(context, Uri.parse(url))
-                    prepare()
-                    start()
-                    setOnCompletionListener { isPlaying = false }
+            try {
+                if (isPlaying) {
+                    mediaPlayer?.pause()
+                    isPlaying = false
+                } else {
+                    mediaPlayer = MediaPlayer().apply {
+                        setDataSource(context, Uri.parse(url))
+                        prepare()
+                        start()
+                        setOnCompletionListener { isPlaying = false }
+                    }
+                    isPlaying = true
                 }
-                isPlaying = true
-            }
+            } catch (e: Exception) { e.printStackTrace() }
         }) {
             Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = NeonCyan)
         }
-        Text("Голосовое сообщение", color = Color.White, fontSize = 12.sp)
+        Text("Voice Note", color = Color.White, fontSize = 12.sp)
     }
 }
