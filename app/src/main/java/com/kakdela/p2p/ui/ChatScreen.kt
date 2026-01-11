@@ -66,8 +66,15 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     var textState by remember { mutableStateOf("") }
 
+    // 3. Логика отображения имени контакта
     val contactName by rememberContactName(chatPartnerId)
-    val displayName = if (contactName == chatPartnerId.take(10)) "ID: ${chatPartnerId.take(8)}" else contactName
+    val displayName = remember(contactName, chatPartnerId) {
+        if (contactName.isBlank() || contactName == chatPartnerId) {
+            "ID: ${chatPartnerId.take(8)}"
+        } else {
+            contactName
+        }
+    }
     val contactAvatar by rememberContactAvatar(chatPartnerId)
 
     LaunchedEffect(messages.size) {
@@ -140,8 +147,8 @@ fun ChatScreen(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(messages, key = { it.messageId }) { message ->
                 ChatBubble(message)
@@ -209,11 +216,12 @@ fun ChatInputArea(
 
     Column(Modifier.navigationBarsPadding()) {
         Row(
-            Modifier.fillMaxWidth().padding(8.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 1. Исправленный Плюс (без поворота на 45 градусов)
             IconButton(onClick = onAttachFile) {
-                Icon(Icons.Default.Add, "Attach", tint = NeonPurple, modifier = Modifier.rotate(45f))
+                Icon(Icons.Default.Add, "Attach", tint = NeonPurple)
             }
 
             Box(modifier = Modifier.weight(1f)) {
@@ -221,8 +229,8 @@ fun ChatInputArea(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(56.dp)
-                            .background(SurfaceGray, RoundedCornerShape(28.dp))
+                            .height(50.dp)
+                            .background(SurfaceGray, RoundedCornerShape(25.dp))
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -237,24 +245,23 @@ fun ChatInputArea(
                         Text("Запись...", color = Color.Gray, fontSize = 14.sp)
                     }
                 } else {
-                    // Поле ввода с неоновым свечением (Glow Effect)
                     TextField(
                         value = text,
                         onValueChange = onTextChange,
                         placeholder = { Text("Сообщение...", color = Color.Gray, fontSize = 14.sp) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .shadow(8.dp, RoundedCornerShape(28.dp), ambientColor = NeonGreen, spotColor = NeonGreen)
-                            .border(1.5.dp, NeonGreen, RoundedCornerShape(28.dp)),
+                            .heightIn(min = 48.dp)
+                            .border(1.dp, NeonGreen.copy(alpha = 0.5f), RoundedCornerShape(24.dp)),
                         colors = TextFieldDefaults.colors(
-                            focusedContainerColor = DarkBackground,
-                            unfocusedContainerColor = DarkBackground,
+                            focusedContainerColor = SurfaceGray.copy(alpha = 0.5f),
+                            unfocusedContainerColor = SurfaceGray.copy(alpha = 0.5f),
                             focusedIndicatorColor = Color.Transparent,
                             unfocusedIndicatorColor = Color.Transparent,
                             focusedTextColor = Color.White,
                             unfocusedTextColor = Color.White
                         ),
-                        shape = RoundedCornerShape(28.dp),
+                        shape = RoundedCornerShape(24.dp),
                         trailingIcon = {
                             if (text.isNotBlank()) {
                                 IconButton(onClick = { openSchedulePicker() }) {
@@ -323,58 +330,61 @@ fun ChatInputArea(
 @Composable
 fun ChatBubble(message: MessageEntity) {
     val isMe = message.isMe
-    val bubbleColor = if (isMe) Color(0xFF003D3D) else Color(0xFF2D1442)
-    val borderColor = if (isMe) NeonCyan.copy(alpha = 0.6f) else NeonPurple.copy(alpha = 0.6f)
+    // 2. Красивые и компактные пузырьки
+    val bubbleColor = if (isMe) Color(0xFF003D3D).copy(alpha = 0.9f) else Color(0xFF2D1442).copy(alpha = 0.9f)
+    val borderColor = if (isMe) NeonCyan.copy(alpha = 0.4f) else NeonPurple.copy(alpha = 0.4f)
     val alignment = if (isMe) Alignment.End else Alignment.Start
+    val shape = RoundedCornerShape(
+        topStart = 16.dp, topEnd = 16.dp,
+        bottomStart = if (isMe) 16.dp else 2.dp,
+        bottomEnd = if (isMe) 2.dp else 16.dp
+    )
     
     Column(Modifier.fillMaxWidth(), horizontalAlignment = alignment) {
         Surface(
             color = bubbleColor,
-            shape = RoundedCornerShape(18.dp),
+            shape = shape,
             border = BorderStroke(1.dp, borderColor),
             modifier = Modifier
-                .widthIn(max = 300.dp)
+                .widthIn(max = 260.dp) // Уменьшена максимальная ширина
                 .padding(horizontal = 4.dp)
-                .shadow(
-                    elevation = 6.dp, 
-                    shape = RoundedCornerShape(18.dp), 
-                    ambientColor = borderColor, 
-                    spotColor = borderColor
-                )
         ) {
-            Column(Modifier.padding(14.dp)) {
+            Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
                 val content = message.text ?: ""
                 when {
                     content.startsWith("AUDIO:") -> AudioPlayerBubble(content)
                     content.startsWith("FILE:") -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.FilePresent, null, tint = NeonCyan, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(content.removePrefix("FILE: "), color = Color.White, fontSize = 14.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
+                            Icon(Icons.Default.FilePresent, null, tint = NeonCyan, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = content.removePrefix("FILE: "),
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                     else -> {
-                        Text(text = content, color = Color.White, fontSize = 15.sp, lineHeight = 20.sp)
+                        Text(text = content, color = Color.White, fontSize = 14.sp, lineHeight = 18.sp)
                     }
                 }
                 
-                if (message.scheduledTime != null) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                        Icon(Icons.Outlined.Schedule, null, tint = NeonCyan, modifier = Modifier.size(12.dp))
+                Row(
+                    modifier = Modifier.align(Alignment.End).padding(top = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (message.scheduledTime != null) {
+                        Icon(Icons.Outlined.Schedule, null, tint = NeonCyan.copy(alpha = 0.7f), modifier = Modifier.size(10.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text(
-                            "Запланировано: ${SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.scheduledTime!!))}",
-                            fontSize = 10.sp, color = NeonCyan
-                        )
                     }
+                    Text(
+                        text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp)),
+                        fontSize = 9.sp,
+                        color = Color.Gray.copy(alpha = 0.7f)
+                    )
                 }
-
-                Text(
-                    text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp)),
-                    fontSize = 10.sp,
-                    color = Color.Gray.copy(alpha = 0.8f),
-                    modifier = Modifier.align(Alignment.End).padding(top = 4.dp)
-                )
             }
         }
     }
@@ -383,53 +393,43 @@ fun ChatBubble(message: MessageEntity) {
 @Composable
 fun AudioPlayerBubble(audioData: String) {
     var isPlaying by remember { mutableStateOf(false) }
-    val duration = audioData.substringAfter("AUDIO: ").substringBefore(" s")
+    val duration = audioData.substringAfter("AUDIO: ").substringBefore(" s", "0")
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth()
+        modifier = Modifier.padding(vertical = 2.dp).width(180.dp)
     ) {
         IconButton(
             onClick = { isPlaying = !isPlaying },
-            modifier = Modifier.size(36.dp).background(NeonCyan, CircleShape)
+            modifier = Modifier.size(30.dp).background(NeonCyan, CircleShape)
         ) {
             Icon(
                 imageVector = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
                 contentDescription = null,
                 tint = Color.Black,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(18.dp)
             )
         }
         
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(8.dp))
         
         Column(Modifier.weight(1f)) {
             LinearProgressIndicator(
-                progress = if (isPlaying) 0.5f else 0f,
-                modifier = Modifier.fillMaxWidth().height(3.dp).clip(CircleShape),
+                progress = { if (isPlaying) 0.5f else 0f },
+                modifier = Modifier.fillMaxWidth().height(2.dp).clip(CircleShape),
                 color = NeonCyan,
-                trackColor = Color.Gray.copy(alpha = 0.3f)
+                trackColor = Color.Gray.copy(alpha = 0.2f)
             )
-            Spacer(Modifier.height(4.dp))
-            Text("$duration сек", fontSize = 11.sp, color = NeonCyan.copy(alpha = 0.8f))
+            Text("$duration сек", fontSize = 10.sp, color = NeonCyan.copy(alpha = 0.7f))
         }
     }
 }
 
 @Composable
 fun AnimatedAvatar(avatarUri: Uri?) {
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val scale by infiniteTransition.animateFloat(
-        initialValue = 1f, targetValue = 1.05f,
-        animationSpec = infiniteRepeatable(tween(1200, easing = LinearEasing), RepeatMode.Reverse),
-        label = "scale"
-    )
-
     Box(contentAlignment = Alignment.Center) {
-        Box(Modifier.size(42.dp).scale(scale).background(NeonCyan.copy(alpha = 0.1f), CircleShape))
-        
         Surface(
-            modifier = Modifier.size(36.dp),
+            modifier = Modifier.size(34.dp),
             shape = CircleShape,
             color = SurfaceGray,
             border = BorderStroke(1.dp, NeonCyan.copy(alpha = 0.4f))
@@ -457,14 +457,16 @@ fun AnimatedAvatar(avatarUri: Uri?) {
 @Composable
 fun rememberContactName(id: String): State<String> {
     val context = LocalContext.current
-    val state = remember { mutableStateOf(id.take(10)) }
+    val state = remember { mutableStateOf("") }
     LaunchedEffect(id) {
         try {
             val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(id))
             context.contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)?.use {
-                if (it.moveToFirst()) state.value = it.getString(0)
+                if (it.moveToFirst()) state.value = it.getString(0) ?: ""
             }
-        } catch (e: Exception) {}
+        } catch (e: Exception) {
+            state.value = ""
+        }
     }
     return state
 }
