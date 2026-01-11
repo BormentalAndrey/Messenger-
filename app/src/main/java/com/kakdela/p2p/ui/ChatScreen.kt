@@ -241,7 +241,7 @@ fun ChatInputArea(
                     TextField(
                         value = text,
                         onValueChange = onTextChange,
-                        placeholder = { Text("Запрос в нейросеть...", color = Color.Gray, fontSize = 14.sp) },
+                        placeholder = { Text("Сообщение...", color = Color.Gray, fontSize = 14.sp) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .shadow(8.dp, RoundedCornerShape(28.dp), ambientColor = NeonGreen, spotColor = NeonGreen)
