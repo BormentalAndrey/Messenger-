@@ -183,7 +183,7 @@ fun ChatsListScreen(
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        "KONTUR P2P",
+                        "Как дела?",
                         fontWeight = FontWeight.ExtraBold,
                         letterSpacing = 2.sp,
                         color = Color(0xFF00FFFF)
