@@ -56,7 +56,7 @@ class IdentityRepository(private val context: Context) {
 
     private val SERVICE_TYPE = "_kakdela_p2p._udp."
     private val PORT = 8888
-    private val PEPPER = "7fb8a1d2c3e4f5a6"
+    private val PEPPER = "7fb8a1d2c3e4f5a6b7c8d9e0f1a2b3c4"
     // Интервал 5 минут, так как бесплатные хостинги быстро забывают клиентов
     private val SYNC_INTERVAL = 300_000L 
 
