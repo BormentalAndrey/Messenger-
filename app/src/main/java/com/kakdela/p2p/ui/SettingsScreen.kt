@@ -1,5 +1,6 @@
 package com.kakdela.p2p.ui
 
+import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import android.widget.Toast
@@ -12,10 +13,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -54,24 +57,22 @@ fun SettingsScreen(
     val user = FirebaseAuth.getInstance().currentUser
     val clipboardManager = LocalClipboardManager.current
     
-    // Получаем ID синхронно, так как это SharedPreferences
     val myP2PId = remember { identityRepository.getMyId() }
     
     var photoUrl by remember { mutableStateOf(user?.photoUrl?.toString()) }
     var isUploading by remember { mutableStateOf(false) }
     
-    // Загрузка списка узлов для отладки P2P (исправление ошибки с take)
+    // UI state for adding new node
+    var manualHashInput by remember { mutableStateOf("") }
+    var isAddingNode by remember { mutableStateOf(false) }
+
     val db = remember { ChatDatabase.getDatabase(context) }
     var nodes by remember { mutableStateOf<List<NodeEntity>>(emptyList()) }
     
-    // Функция обновления списка узлов
     fun refreshNodes() {
         scope.launch(Dispatchers.IO) {
-            // Берем последние 50 узлов
             val nodeList = db.nodeDao().getAllNodes().take(50)
-            withContext(Dispatchers.Main) {
-                nodes = nodeList
-            }
+            withContext(Dispatchers.Main) { nodes = nodeList }
         }
     }
 
@@ -95,8 +96,7 @@ fun SettingsScreen(
                 }
                 .addOnFailureListener { e ->
                     isUploading = false
-                    Log.e("Settings", "Upload failed: ${e.message}")
-                    Toast.makeText(context, "Ошибка загрузки фото", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Upload failed", Toast.LENGTH_SHORT).show()
                 }
         }
     }
@@ -104,11 +104,11 @@ fun SettingsScreen(
     Scaffold(
         topBar = { 
             TopAppBar(
-                title = { Text("Настройки P2P", color = Color.Cyan, fontWeight = FontWeight.Bold) },
+                title = { Text("Настройки", color = Color.Cyan, fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black),
                 actions = {
                     IconButton(onClick = { refreshNodes() }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.Cyan)
+                        Icon(Icons.Default.Refresh, "Refresh", tint = Color.Cyan)
                     }
                 }
             ) 
@@ -119,175 +119,178 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 24.dp),
+                .padding(horizontal = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(24.dp))
             
-            // --- СЕКЦИЯ АВАТАРА ---
+            // --- AVATAR & INFO ---
+            Spacer(Modifier.height(16.dp))
             Box(contentAlignment = Alignment.BottomEnd) {
-                if (photoUrl != null) {
-                    AsyncImage(
-                        model = photoUrl,
-                        contentDescription = "Avatar",
-                        modifier = Modifier
-                            .size(120.dp)
-                            .clip(CircleShape)
-                            .background(Color.DarkGray),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = null,
-                        tint = Color.Gray,
-                        modifier = Modifier
-                            .size(120.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF1A1A1A))
-                            .padding(24.dp)
-                    )
-                }
-                
-                if (isUploading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(120.dp),
-                        color = Color.Cyan,
-                        strokeWidth = 3.dp
-                    )
-                }
-
+                AsyncImage(
+                    model = photoUrl ?: R.drawable.ic_launcher_foreground, // Ensure a placeholder exists
+                    contentDescription = "Avatar",
+                    modifier = Modifier
+                        .size(100.dp)
+                        .clip(CircleShape)
+                        .background(Color.DarkGray),
+                    contentScale = ContentScale.Crop
+                )
                 SmallFloatingActionButton(
                     onClick = { photoPicker.launch("image/*") },
                     containerColor = Color.Cyan,
-                    contentColor = Color.Black,
-                    modifier = Modifier.offset(x = (-4).dp, y = (-4).dp),
-                    shape = CircleShape
+                    modifier = Modifier.size(32.dp)
                 ) {
-                    Text("+", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("+")
                 }
             }
-            
-            Spacer(Modifier.height(16.dp))
-            
             Text(
-                text = user?.email ?: user?.phoneNumber ?: "Анонимный узел",
+                text = user?.email ?: "Анонимный P2P Узел",
                 color = Color.White,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Medium
+                fontSize = 16.sp,
+                modifier = Modifier.padding(top = 8.dp)
             )
             
             Spacer(Modifier.height(24.dp))
-            
-            // --- P2P IDENTITY CARD ---
+
+            // --- MY ID CARD ---
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF111111)),
-                shape = RoundedCornerShape(12.dp)
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF161616)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Ваш Security Hash (ID):", color = Color.Gray, fontSize = 12.sp)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 4.dp)
-                    ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Ваш P2P ID:", color = Color.Gray, fontSize = 12.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = if (myP2PId.isNotBlank()) myP2PId else "Не сгенерирован",
+                            text = myP2PId,
                             color = Color.Cyan,
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 14.sp,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f)
                         )
-                        IconButton(onClick = { 
-                            if(myP2PId.isNotBlank()) {
-                                clipboardManager.setText(AnnotatedString(myP2PId))
-                                Toast.makeText(context, "ID скопирован", Toast.LENGTH_SHORT).show()
+                        IconButton(onClick = {
+                            val sendIntent = Intent().apply {
+                                action = Intent.ACTION_SEND
+                                putExtra(Intent.EXTRA_TEXT, myP2PId)
+                                type = "text/plain"
                             }
+                            context.startActivity(Intent.createChooser(sendIntent, "Отправить ID"))
                         }) {
-                            Icon(Icons.Default.ContentCopy, "Copy", tint = Color.Gray, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Share, "Share", tint = Color.White)
+                        }
+                        IconButton(onClick = {
+                            clipboardManager.setText(AnnotatedString(myP2PId))
+                            Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(Icons.Default.ContentCopy, "Copy", tint = Color.White)
                         }
                     }
                 }
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
+
+            // --- ADD NODE MANUALLY ---
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF161616)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("Добавить друга по ID:", color = Color.White, fontSize = 14.sp)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = manualHashInput,
+                        onValueChange = { manualHashInput = it },
+                        placeholder = { Text("Вставьте хеш...", color = Color.Gray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color.Cyan,
+                            unfocusedBorderColor = Color.DarkGray
+                        ),
+                        singleLine = true
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            if (manualHashInput.isBlank()) return@Button
+                            isAddingNode = true
+                            scope.launch {
+                                val success = identityRepository.addNodeByHash(manualHashInput.trim())
+                                isAddingNode = false
+                                if (success) {
+                                    Toast.makeText(context, "Узел добавлен!", Toast.LENGTH_SHORT).show()
+                                    manualHashInput = ""
+                                    refreshNodes()
+                                } else {
+                                    Toast.makeText(context, "Узел не найден на сервере", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan),
+                        enabled = !isAddingNode
+                    ) {
+                        if (isAddingNode) {
+                            CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(20.dp))
+                        } else {
+                            Text("Найти и добавить", color = Color.Black)
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
             
-            // --- СЕТЕВАЯ ОТЛАДКА ---
-            Text(
-                "Известные узлы (Кэш DHT): ${nodes.size}",
-                color = Color.Gray,
-                fontSize = 14.sp,
-                modifier = Modifier.align(Alignment.Start)
-            )
-            
+            // --- NETWORK DEBUG LIST ---
+            Text("Активные узлы в кэше:", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.align(Alignment.Start))
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    .padding(top = 8.dp)
                     .background(Color(0xFF0A0A0A), RoundedCornerShape(8.dp))
             ) {
                 items(nodes) { node ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "Hash: ${node.userHash.take(8)}...",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-                            Text(
-                                "IP: ${node.ip}:${node.port}",
-                                color = Color.DarkGray,
-                                fontSize = 10.sp
-                            )
+                            Text(node.userHash.take(12) + "...", color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                            Text("${node.ip}:${node.port}", color = Color.Gray, fontSize = 10.sp)
                         }
-                        Text(
-                            text = if((System.currentTimeMillis() - node.lastSeen) < 60000) "ONLINE" else "OFFLINE",
-                            color = if((System.currentTimeMillis() - node.lastSeen) < 60000) Color.Green else Color.Red,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                        // Status indicator
+                        val isOnline = (System.currentTimeMillis() - node.lastSeen) < 300_000 // 5 mins
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(if(isOnline) Color.Green else Color.Red, CircleShape)
                         )
                     }
-                    HorizontalDivider(color = Color(0xFF222222))
+                    Divider(color = Color(0xFF222222))
                 }
             }
 
             Spacer(Modifier.height(16.dp))
-            
-            // --- КНОПКА ВЫХОДА ---
+
+            // --- LOGOUT ---
             Button(
                 onClick = {
                     identityRepository.stopNetwork()
                     FirebaseAuth.getInstance().signOut()
-                    navController.navigate("choice") {
-                        popUpTo(0) { inclusive = true }
-                    }
+                    navController.navigate("choice") { popUpTo(0) }
                 },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF220000)),
-                shape = RoundedCornerShape(12.dp)
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF330000))
             ) {
-                Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color.Red)
+                Icon(Icons.Default.ExitToApp, null, tint = Color.Red)
                 Spacer(Modifier.width(8.dp))
-                Text("Отключиться и выйти", color = Color.Red, fontWeight = FontWeight.Bold)
+                Text("Выйти", color = Color.Red)
             }
-            
-            Text(
-                text = "KakDela P2P v1.0.5-release",
-                color = Color.DarkGray,
-                fontSize = 10.sp,
-                modifier = Modifier.padding(vertical = 16.dp),
-                textAlign = TextAlign.Center
-            )
         }
     }
 }
