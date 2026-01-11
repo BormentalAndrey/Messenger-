@@ -26,7 +26,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Репозиторий идентификации и сетевого взаимодействия.
- * Реализует гибридную схему: NSD (Wi-Fi), Центральный сервер (DHT) и UDP P2P.
+ * Реализует гибридную схему: NSD (Wi-Fi), Центральный сервер и UDP P2P.
  */
 class IdentityRepository(private val context: Context) {
 
@@ -41,7 +41,6 @@ class IdentityRepository(private val context: Context) {
     private val nodeDao = db.nodeDao()
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
 
-    // Ленивая инициализация для избежания круговой зависимости
     private val messageRepository by lazy { 
         MessageRepository(context, db.messageDao(), this) 
     }
@@ -77,9 +76,7 @@ class IdentityRepository(private val context: Context) {
                 if (myId.isNotEmpty()) {
                     performServerSync(myId)
                 }
-
                 startSyncLoop()
-                
             } catch (e: Exception) {
                 Log.e(TAG, "Сбой запуска сети", e)
                 isRunning = false
@@ -112,8 +109,25 @@ class IdentityRepository(private val context: Context) {
     }
 
     /**
+     * Возвращает публичный ключ пира из локальной базы данных.
+     * Исправляет ошибку: Unresolved reference: getPeerPublicKey в MessageRepository
+     */
+    fun getPeerPublicKey(hash: String): String? {
+        return runBlocking { nodeDao.getNodeByHash(hash)?.publicKey }
+    }
+
+    /**
+     * Генерирует хеш телефона для поиска контактов.
+     * Исправляет ошибку: Unresolved reference: generatePhoneDiscoveryHash в SmsReceiver/ContactManager
+     */
+    fun generatePhoneDiscoveryHash(phone: String): String {
+        val digits = phone.replace(Regex("[^0-9]"), "")
+        val normalized = if (digits.length == 11 && digits.startsWith("8")) "7${digits.substring(1)}" else digits
+        return sha256(normalized + PEPPER)
+    }
+
+    /**
      * Отправка сигнальных данных (WebRTC / Передача файлов).
-     * Этот метод КРИТИЧЕСКИ ВАЖЕН для исправления ошибок компиляции.
      */
     fun sendSignaling(targetIp: String, type: String, data: String) {
         scope.launch {
@@ -122,10 +136,9 @@ class IdentityRepository(private val context: Context) {
                     put("subtype", type)
                     put("payload", data)
                 }
-                // Инкапсулируем сигнальные данные в UDP пакет типа WEBRTC_SIGNAL
                 sendUdp(targetIp, "WEBRTC_SIGNAL", json.toString())
             } catch (e: Exception) {
-                Log.e(TAG, "Ошибка отправки сигнала на $targetIp: ${e.message}")
+                Log.e(TAG, "Ошибка сигналинга на $targetIp: ${e.message}")
             }
         }
     }
@@ -143,7 +156,7 @@ class IdentityRepository(private val context: Context) {
                     userHash = foundNode.hash,
                     phone_hash = foundNode.phone_hash ?: "",
                     ip = foundNode.ip ?: "0.0.0.0",
-                    port = foundNode.port,
+                    port = foundNode.port, // Исправлено: передаем Int
                     publicKey = foundNode.publicKey,
                     phone = foundNode.phone ?: "",
                     lastSeen = System.currentTimeMillis()
@@ -152,7 +165,7 @@ class IdentityRepository(private val context: Context) {
             }
             false
         } catch (e: Exception) {
-            Log.e(TAG, "Ошибка ручного добавления: ${e.message}")
+            Log.e(TAG, "Ошибка добавления: ${e.message}")
             false
         }
     }
@@ -166,7 +179,7 @@ class IdentityRepository(private val context: Context) {
                     val myId = getMyId()
                     if (myId.isNotEmpty()) performServerSync(myId)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Ошибка цикла синхронизации: ${e.message}")
+                    Log.e(TAG, "Ошибка синхронизации: ${e.message}")
                 }
                 delay(SYNC_INTERVAL)
             }
@@ -188,7 +201,7 @@ class IdentityRepository(private val context: Context) {
             announceMyself(myPayload)
             fetchAllNodesFromServer()
         } catch (e: Exception) {
-            Log.e(TAG, "Ошибка синхронизации: ${e.message}")
+            Log.e(TAG, "Server sync error: ${e.message}")
         }
     }
 
@@ -198,12 +211,20 @@ class IdentityRepository(private val context: Context) {
             val users = response.users.orEmpty()
             if (users.isNotEmpty()) {
                 nodeDao.updateCache(users.map {
-                    NodeEntity(it.hash, it.phone_hash ?: "", it.ip ?: "0.0.0.0", it.port, it.publicKey, it.phone ?: "", it.lastSeen ?: System.currentTimeMillis())
+                    NodeEntity(
+                        userHash = it.hash,
+                        phone_hash = it.phone_hash ?: "",
+                        ip = it.ip ?: "0.0.0.0",
+                        port = it.port, // Исправлен Type Mismatch
+                        publicKey = it.publicKey,
+                        phone = it.phone ?: "",
+                        lastSeen = it.lastSeen ?: System.currentTimeMillis() // Исправлен Type Mismatch
+                    )
                 })
             }
             users
         } catch (e: Exception) {
-            Log.e(TAG, "Ошибка загрузки узлов: ${e.message}")
+            Log.e(TAG, "Fetch failed: ${e.message}")
             nodeDao.getAllNodes().map {
                 UserPayload(it.userHash, it.phone_hash, it.ip, it.port, it.publicKey, it.phone, null, it.lastSeen)
             }
@@ -219,7 +240,7 @@ class IdentityRepository(private val context: Context) {
                     wifiPeers.values.forEach { ip -> sendUdp(ip, "PRESENCE", "ONLINE") }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Ошибка анонса: ${e.message}")
+                Log.e(TAG, "Announce Error: ${e.message}")
             }
         }
     }
@@ -267,11 +288,11 @@ class IdentityRepository(private val context: Context) {
                             socket.receive(packet)
                             handleIncoming(String(packet.data, 0, packet.length), packet.address.hostAddress ?: "")
                         } catch (e: Exception) {
-                            if (isRunning) Log.e(TAG, "Ошибка приема пакета: ${e.message}")
+                            if (isRunning) Log.e(TAG, "UDP receive error: ${e.message}")
                         }
                     }
                 }
-            } catch (e: Exception) { Log.e(TAG, "UDP ошибка: ${e.message}") }
+            } catch (e: Exception) { Log.e(TAG, "UDP Bind failed: ${e.message}") }
         }
     }
 
@@ -322,7 +343,7 @@ class IdentityRepository(private val context: Context) {
         } catch (e: Exception) { false }
     }
 
-    /* ======================= NSD & SMS ======================= */
+    /* ======================= NSD & SMS & UTILS ======================= */
 
     private val registrationListener = object : NsdManager.RegistrationListener {
         override fun onServiceRegistered(s: NsdServiceInfo) {}
@@ -353,7 +374,11 @@ class IdentityRepository(private val context: Context) {
     private fun registerInWifi() {
         try {
             val safeName = "KakDela-${getMyId().take(8)}-${UUID.randomUUID().toString().take(4)}"
-            val serviceInfo = NsdServiceInfo().apply { serviceName = safeName; serviceType = SERVICE_TYPE; port = PORT }
+            val serviceInfo = NsdServiceInfo().apply { 
+                serviceName = safeName
+                serviceType = SERVICE_TYPE
+                port = PORT 
+            }
             nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, registrationListener)
         } catch (_: Exception) {}
     }
@@ -364,8 +389,14 @@ class IdentityRepository(private val context: Context) {
 
     private fun sendAsSms(phone: String, message: String) {
         try {
-            val sms = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) context.getSystemService(SmsManager::class.java) else @Suppress("DEPRECATION") SmsManager.getDefault()
+            val sms = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) 
+                context.getSystemService(SmsManager::class.java) 
+                else @Suppress("DEPRECATION") SmsManager.getDefault()
             sms.sendTextMessage(phone, null, "[P2P] $message", null, null)
         } catch (_: Exception) {}
     }
+
+    private fun sha256(s: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(s.toByteArray())
+        .joinToString("") { "%02x".format(it) }
 }
