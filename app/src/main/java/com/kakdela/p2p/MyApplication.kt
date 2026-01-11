@@ -3,34 +3,52 @@ package com.kakdela.p2p
 import android.app.Application
 import android.util.Log
 import com.kakdela.p2p.data.IdentityRepository
+import com.kakdela.p2p.network.CookieStore
 import com.kakdela.p2p.security.CryptoManager
 
 /**
  * Основной класс приложения.
- * Здесь происходит базовая инициализация криптографии и сетевого репозитория.
+ * Отвечает за предварительную загрузку ключей, инициализацию сетевых кук 
+ * и подготовку репозитория.
  */
 class MyApplication : Application() {
 
-    // Репозиторий инициализируется лениво при первом обращении, 
-    // чтобы гарантировать, что Context уже доступен.
+    // Ленивая инициализация репозитория. 
+    // Использует applicationContext для предотвращения утечек памяти.
     val identityRepository: IdentityRepository by lazy {
-        IdentityRepository(applicationContext)
+        IdentityRepository(this)
     }
 
     override fun onCreate() {
         super.onCreate()
         
         try {
-            // 1. Инициализируем CryptoManager (загружаем или генерируем RSA/ECC ключи)
-            // Это критически важно сделать до любого обращения к identityRepository
+            // 1. Инициализация хранилища кук.
+            // Загружает сохраненную куку __test (InfinityFree) из SharedPreferences.
+            // Без этого Retrofit будет отправлять пустые запросы при первом запуске.
+            CookieStore.init(this)
+            
+            // 2. Инициализация криптографии.
+            // Генерация или извлечение ключей из Android KeyStore.
             CryptoManager.init(this)
             
-            // 2. Логируем успешный запуск (полезно для отладки в Logcat)
+            // 3. Диагностика.
+            // Проверяем наличие идентификатора и готовность системы.
             val myId = identityRepository.getMyId()
-            Log.i("MyApplication", "Приложение запущено. ID узла: $myId")
+            
+            if (myId.isNotEmpty()) {
+                Log.i(TAG, "Инициализация успешна. Local Node ID: $myId")
+            } else {
+                Log.w(TAG, "Внимание: Node ID пуст. Возможно, ключи еще не созданы.")
+            }
             
         } catch (e: Exception) {
-            Log.e("MyApplication", "Ошибка при инициализации компонентов: ${e.message}")
+            // В продакшне здесь можно добавить отправку лога в Firebase Crashlytics
+            Log.e(TAG, "Критическая ошибка инициализации: ${e.stackTraceToString()}")
         }
+    }
+
+    companion object {
+        private const val TAG = "MyApplication"
     }
 }
