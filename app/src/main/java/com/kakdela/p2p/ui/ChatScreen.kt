@@ -33,7 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import coil.compose.AsyncImage
 import com.kakdela.p2p.data.IdentityRepository
-import com.kakdela.p2p.data.Message
+import com.kakdela.p2p.data.local.MessageEntity
 import com.kakdela.p2p.ui.call.CallActivity
 import kotlinx.coroutines.delay
 import java.io.File
@@ -48,7 +48,7 @@ private val SurfaceGray = Color(0xFF1E1E1E)
 @Composable
 fun ChatScreen(
     chatPartnerId: String,
-    messages: List<Message>,
+    messages: List<MessageEntity>,
     identityRepository: IdentityRepository,
     onSendMessage: (String) -> Unit,
     onSendFile: (Uri, String) -> Unit,
@@ -63,6 +63,7 @@ fun ChatScreen(
     val contactName by rememberContactName(chatPartnerId)
     val contactAvatar by rememberContactAvatar(chatPartnerId)
 
+    // Автоматическая прокрутка к последнему сообщению
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
@@ -79,11 +80,11 @@ fun ChatScreen(
         containerColor = DarkBackground,
         modifier = Modifier.fillMaxSize().imePadding(),
         topBar = {
-            CenterAlignedTopAppBar(
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = DarkBackground),
+            TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBackground),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, null, tint = NeonCyan)
+                        Icon(Icons.Default.ArrowBack, "Back", tint = NeonCyan)
                     }
                 },
                 title = {
@@ -103,7 +104,7 @@ fun ChatScreen(
                         }
                         context.startActivity(intent)
                     }) {
-                        Icon(Icons.Default.Call, null, tint = NeonCyan)
+                        Icon(Icons.Default.Call, "Call", tint = NeonCyan)
                     }
                 }
             )
@@ -131,7 +132,7 @@ fun ChatScreen(
             contentPadding = PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(messages, key = { it.id }) { message ->
+            items(messages, key = { it.messageId }) { message ->
                 ChatBubble(message)
             }
         }
@@ -165,6 +166,14 @@ fun ChatInputArea(
         }
     }
 
+    // Освобождение ресурсов рекордера при выходе с экрана
+    DisposableEffect(Unit) {
+        onDispose {
+            recorder?.release()
+            recorder = null
+        }
+    }
+
     fun openSchedulePicker() {
         DatePickerDialog(context, { _, y, m, d ->
             calendar.set(y, m, d)
@@ -186,7 +195,7 @@ fun ChatInputArea(
             verticalAlignment = Alignment.Bottom
         ) {
             IconButton(onClick = onAttachFile, modifier = Modifier.padding(bottom = 4.dp)) {
-                Icon(Icons.Default.Add, null, tint = NeonCyan)
+                Icon(Icons.Default.Add, "Attach", tint = NeonCyan)
             }
 
             Box(modifier = Modifier.weight(1f)) {
@@ -226,7 +235,7 @@ fun ChatInputArea(
                         trailingIcon = {
                             if (text.isNotBlank()) {
                                 IconButton(onClick = { openSchedulePicker() }) {
-                                    Icon(Icons.Outlined.Schedule, null, tint = Color.Gray)
+                                    Icon(Icons.Outlined.Schedule, "Schedule", tint = Color.Gray)
                                 }
                             }
                         }
@@ -253,12 +262,16 @@ fun ChatInputArea(
                                     prepare()
                                     start()
                                     isRecording = true
-                                } catch (e: Exception) { e.printStackTrace() }
+                                } catch (e: Exception) { 
+                                    e.printStackTrace()
+                                    Toast.makeText(context, "Ошибка микрофона", Toast.LENGTH_SHORT).show()
+                                }
                             }
                         } else {
                             try {
                                 recorder?.stop()
                                 recorder?.release()
+                                recorder = null
                                 isRecording = false
                                 audioFile?.let { onSendAudio(Uri.fromFile(it), recordingTime.toInt()) }
                             } catch (e: Exception) { 
@@ -287,7 +300,7 @@ fun ChatInputArea(
 }
 
 @Composable
-fun ChatBubble(message: Message) {
+fun ChatBubble(message: MessageEntity) {
     val isMe = message.isMe
     val bubbleColor = if (isMe) Color(0xFF003D3D) else Color(0xFF262626)
     val alignment = if (isMe) Alignment.End else Alignment.Start
@@ -303,8 +316,8 @@ fun ChatBubble(message: Message) {
             modifier = Modifier.widthIn(max = 300.dp)
         ) {
             Column(Modifier.padding(12.dp)) {
-                if (message.text.isNotBlank()) {
-                    Text(text = message.text, color = Color.White, fontSize = 15.sp)
+                if (!message.text.isNullOrBlank()) {
+                    Text(text = message.text!!, color = Color.White, fontSize = 15.sp)
                 }
                 
                 if (message.scheduledTime != null) {
@@ -312,7 +325,7 @@ fun ChatBubble(message: Message) {
                         Icon(Icons.Outlined.Schedule, null, tint = NeonCyan, modifier = Modifier.size(12.dp))
                         Spacer(Modifier.width(4.dp))
                         Text(
-                            "Запланировано на ${SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.scheduledTime))}",
+                            "Запланировано: ${SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.scheduledTime!!))}",
                             fontSize = 10.sp, color = NeonCyan
                         )
                     }
@@ -339,13 +352,31 @@ fun AnimatedAvatar(avatarUri: Uri?) {
     )
 
     Box(contentAlignment = Alignment.Center) {
+        // Пульсирующий фон
         Box(Modifier.size(42.dp).scale(scale).background(NeonCyan.copy(alpha = 0.1f), CircleShape))
-        AsyncImage(
-            model = avatarUri ?: Icons.Default.Person,
-            contentDescription = null,
-            modifier = Modifier.size(36.dp).clip(CircleShape).border(1.dp, NeonCyan.copy(alpha = 0.3f), CircleShape),
-            contentScale = ContentScale.Crop
-        )
+        
+        // ИСПРАВЛЕНО: AsyncImage не принимает ImageVector. 
+        // Если URI пустой, используем стандартный компонент Icon.
+        if (avatarUri != null) {
+            AsyncImage(
+                model = avatarUri,
+                contentDescription = "Avatar",
+                modifier = Modifier.size(36.dp).clip(CircleShape).border(1.dp, NeonCyan.copy(alpha = 0.3f), CircleShape),
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            Surface(
+                modifier = Modifier.size(36.dp).clip(CircleShape).border(1.dp, NeonCyan.copy(alpha = 0.3f), CircleShape),
+                color = SurfaceGray
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Person,
+                    contentDescription = "Default Avatar",
+                    tint = Color.Gray,
+                    modifier = Modifier.padding(4.dp)
+                )
+            }
+        }
     }
 }
 
