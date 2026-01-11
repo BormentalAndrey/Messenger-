@@ -4,10 +4,13 @@ import android.annotation.SuppressLint
 import android.content.ContentResolver
 import android.net.Uri
 import android.provider.ContactsContract
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -16,84 +19,121 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
-import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.ui.navigation.Routes
+import java.util.*
 
 /**
- * Вспомогательная функция для получения имени из телефонной книги.
+ * Оптимизированный поиск имени контакта
  */
 @SuppressLint("Range")
 @Composable
 fun rememberContactName(phoneNumber: String): String {
     val context = LocalContext.current
-    // По умолчанию показываем номер, если имя не найдено
     var displayName by remember(phoneNumber) { mutableStateOf(phoneNumber) }
 
     LaunchedEffect(phoneNumber) {
+        // Запускаем в фоновом потоке, чтобы не блокировать UI
         try {
-            val contentResolver: ContentResolver = context.contentResolver
             val uri = Uri.withAppendedPath(
-                ContactsContract.PhoneLookup.CONTENT_FILTER_URI, 
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
                 Uri.encode(phoneNumber)
             )
-            val cursor = contentResolver.query(
-                uri, 
-                arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), 
+            context.contentResolver.query(
+                uri,
+                arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
                 null, null, null
-            )
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    displayName = it.getString(it.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME))
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    displayName = cursor.getString(cursor.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME))
                 }
             }
-        } catch (e: Exception) {
-            // Если нет разрешений или контакт не найден, остается номер
-        }
+        } catch (_: Exception) {}
     }
     return displayName
 }
 
 @Composable
-fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
-    // ПОЛУЧАЕМ ИМЯ ИЗ ТЕЛЕФОННОЙ КНИГИ
+fun AnimatedAvatar(
+    letter: String,
+    isActive: Boolean,
+    size: Dp = 52.dp
+) {
+    val transition = rememberInfiniteTransition(label = "avatar")
+
+    val glowAlpha by transition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = if (isActive) 0.7f else 0.25f,
+        animationSpec = infiniteRepeatable(
+            tween(1600, easing = FastOutSlowInEasing),
+            RepeatMode.Reverse
+        ),
+        label = "glowAlpha"
+    )
+
+    val scale by transition.animateFloat(
+        initialValue = 1f,
+        targetValue = if (isActive) 1.06f else 1f,
+        animationSpec = infiniteRepeatable(
+            tween(1600, easing = FastOutSlowInEasing),
+            RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+
+    Box(
+        modifier = Modifier
+            .size(size)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        // Фоновое свечение
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(CircleShape)
+                .background(Color(0xFF00FFFF).copy(alpha = glowAlpha))
+                .border(1.2.dp, Color(0xFF00FFFF).copy(alpha = 0.6f), CircleShape)
+        )
+        Text(
+            text = letter,
+            fontWeight = FontWeight.ExtraBold,
+            color = Color.Black,
+            style = MaterialTheme.typography.titleMedium
+        )
+    }
+}
+
+@Composable
+fun ChatListItem(
+    chat: ChatDisplay,
+    onClick: () -> Unit
+) {
     val contactName = rememberContactName(chat.title)
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(
-                onClick = onClick,
-                interactionSource = remember { MutableInteractionSource() },
-                indication = LocalIndication.current 
-            )
+            .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Аватарка собеседника
-        Box(
-            Modifier
-                .size(52.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF00FFFF).copy(alpha = 0.2f)) // Неоновый стиль
-                .border(1.dp, Color(0xFF00FFFF).copy(alpha = 0.5f), CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = contactName.firstOrNull()?.uppercase() ?: "?",
-                style = MaterialTheme.typography.titleMedium,
-                color = Color(0xFF00FFFF)
-            )
-        }
+        AnimatedAvatar(
+            letter = contactName.firstOrNull()?.uppercase() ?: "?",
+            isActive = chat.lastMessage.isNotBlank()
+        )
 
         Spacer(Modifier.width(16.dp))
 
-        // Блок текста
         Column(Modifier.weight(1f)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -101,17 +141,18 @@ fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = contactName, // Отображаем имя контакта
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold),
+                    text = contactName,
+                    fontWeight = FontWeight.Bold,
                     color = Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+                    style = MaterialTheme.typography.bodyLarge
                 )
+
                 Text(
                     text = chat.time,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.Gray
+                    color = Color.Gray,
+                    style = MaterialTheme.typography.labelSmall
                 )
             }
 
@@ -119,10 +160,10 @@ fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
 
             Text(
                 text = chat.lastMessage,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.LightGray,
+                color = Color.LightGray.copy(alpha = 0.7f),
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyMedium
             )
         }
     }
@@ -131,56 +172,58 @@ fun ChatListItem(chat: ChatDisplay, onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatsListScreen(
-    navController: NavHostController,
-    identityRepository: IdentityRepository
+    navController: NavHostController
 ) {
+    // Внимание: ChatsListViewModel должен быть реализован в вашем проекте
     val vm: ChatsListViewModel = viewModel()
     val chats by vm.chats.collectAsState()
 
     Scaffold(
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        "Как дела?",
+                        "KONTUR P2P",
                         fontWeight = FontWeight.ExtraBold,
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = Color(0xFF00FFFF) // Неоновый голубой
+                        letterSpacing = 2.sp,
+                        color = Color(0xFF00FFFF)
                     )
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Black,
-                    titleContentColor = Color.White
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = Color.Black
                 )
             )
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { navController.navigate(Routes.CONTACTS) },
                 containerColor = Color(0xFF00FFFF),
-                contentColor = Color.Black
+                contentColor = Color.Black,
+                shape = CircleShape,
+                onClick = { navController.navigate(Routes.CONTACTS) }
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Начать новый чат")
+                Icon(Icons.Default.Add, contentDescription = "Новый чат")
             }
         },
         containerColor = Color.Black
     ) { padding ->
-        Box(modifier = Modifier.padding(padding)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .background(Color.Black)
+        ) {
             if (chats.isEmpty()) {
-                EmptyChatsView(onFindContacts = { navController.navigate(Routes.CONTACTS) })
+                EmptyStateView()
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(
-                        items = chats,
-                        key = { it.id }
-                    ) { chat ->
+                    items(chats, key = { it.id }) { chat ->
                         ChatListItem(chat) {
                             navController.navigate("chat/${chat.id}")
                         }
                         HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 72.dp),
+                            modifier = Modifier.padding(start = 84.dp, end = 16.dp),
                             thickness = 0.5.dp,
-                            color = Color.DarkGray
+                            color = Color.White.copy(alpha = 0.1f)
                         )
                     }
                 }
@@ -190,20 +233,14 @@ fun ChatsListScreen(
 }
 
 @Composable
-fun EmptyChatsView(onFindContacts: () -> Unit) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+fun EmptyStateView() {
+    Column(
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Пока нет активных чатов", color = Color.Gray)
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = onFindContacts,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A1A1A))
-            ) {
-                Text("Найти контакты", color = Color(0xFF00FFFF))
-            }
-        }
+        Text("Сеть пуста", color = Color(0xFF00FFFF).copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
+        Text("Пока нет активных соединений", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
     }
 }
