@@ -32,14 +32,21 @@ class IdentityRepository(private val context: Context) {
         context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
 
     private val api = MyServerApiFactory.instance
-    private val nodeDao = ChatDatabase.getDatabase(context).nodeDao()
+    private val db = ChatDatabase.getDatabase(context)
+    private val nodeDao = db.nodeDao()
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
 
-    private val listeners = CopyOnWriteArrayList<(String, String, String, String) -> Unit>()
-    private val wifiPeers = ConcurrentHashMap<String, String>()
-    private val swarmPeers = ConcurrentHashMap<String, String>()
+    // Инъекция MessageRepository для обработки входящих сообщений
+    // Используем lazy, чтобы избежать круговой зависимости при инициализации
+    private val messageRepository by lazy { 
+        MessageRepository(context, db.messageDao(), this) 
+    }
 
-    private val SERVICE_TYPE = "_kakdela_p2p._udp"
+    private val listeners = CopyOnWriteArrayList<(String, String, String, String) -> Unit>()
+    val wifiPeers = ConcurrentHashMap<String, String>()
+    val swarmPeers = ConcurrentHashMap<String, String>()
+
+    private val SERVICE_TYPE = "_kakdela_p2p._udp."
     private val PORT = 8888
     private val PEPPER = "7fb8a1d2c3e4f5a6"
     private val SYNC_INTERVAL = 600_000L // 10 минут
@@ -58,10 +65,7 @@ class IdentityRepository(private val context: Context) {
                 startUdpListener()
                 registerInWifi()
                 discoverInWifi()
-                
-                // Запуск бесконечного цикла Heartbeat и синхронизации
                 startSyncLoop()
-                
                 Log.i(TAG, "P2P network stack started")
             } catch (e: Exception) {
                 Log.e(TAG, "Network start failed", e)
@@ -86,16 +90,12 @@ class IdentityRepository(private val context: Context) {
 
     /* ======================= SERVER & SYNC ======================= */
 
-    /**
-     * Фоновый цикл обновления статуса на сервере и подгрузки новых пиров.
-     */
     private fun startSyncLoop() {
         scope.launch {
             while (isRunning) {
                 try {
                     val myId = getMyId()
                     if (myId.isNotEmpty()) {
-                        // 1. Обновляем себя на сервере
                         val myPayload = UserPayload(
                             hash = myId,
                             phone_hash = prefs.getString("my_phone_hash", ""),
@@ -107,8 +107,6 @@ class IdentityRepository(private val context: Context) {
                             lastSeen = System.currentTimeMillis()
                         )
                         announceMyself(myPayload)
-                        
-                        // 2. Синхронизируем список всех узлов в локальную БД
                         fetchAllNodesFromServer()
                     }
                 } catch (e: Exception) {
@@ -124,7 +122,6 @@ class IdentityRepository(private val context: Context) {
             val response = api.getAllNodes()
             val users = response.users.orEmpty()
             
-            // Сохранение в Room (автоматическое пополнение локальной базы)
             nodeDao.updateCache(users.map {
                 NodeEntity(
                     userHash = it.hash,
@@ -138,7 +135,7 @@ class IdentityRepository(private val context: Context) {
             })
             users
         } catch (e: Exception) {
-            Log.e(TAG, "Fetch failed, returning local cache: ${e.message}")
+            Log.e(TAG, "Fetch failed, using local cache: ${e.message}")
             nodeDao.getAllNodes().map {
                 UserPayload(it.userHash, it.phone_hash, it.ip, it.port, it.publicKey, it.phone, null, it.lastSeen)
             }
@@ -149,10 +146,9 @@ class IdentityRepository(private val context: Context) {
         scope.launch {
             try {
                 val wrapper = UserRegistrationWrapper(hash = userPayload.hash, data = userPayload)
-                val response = api.announceSelf(payload = wrapper)
+                api.announceSelf(payload = wrapper)
                 
-                if (response.success) Log.i(TAG, "Announce successful")
-
+                // Рассылаем Presence пакет всем знакомым в Wi-Fi
                 wifiPeers.values.forEach { ip ->
                     sendUdp(ip, "PRESENCE", "ONLINE")
                 }
@@ -164,9 +160,6 @@ class IdentityRepository(private val context: Context) {
 
     /* ======================= ROUTING & SIGNALING ======================= */
 
-    /**
-     * Метод для WebRTC сигналинга (необходим для звонков и файлов)
-     */
     fun sendSignaling(targetIp: String, type: String, data: String) {
         scope.launch {
             try {
@@ -181,25 +174,39 @@ class IdentityRepository(private val context: Context) {
         }
     }
 
-    fun sendMessageSmart(targetHash: String, phone: String?, message: String) =
-        scope.launch {
-            val ip = wifiPeers[targetHash]
-                ?: swarmPeers[targetHash]
+    /**
+     * Умная отправка сообщения. 
+     * Пытается доставить через Wi-Fi -> Swarm -> SMS.
+     */
+    fun sendMessageSmart(targetHash: String, phone: String?, message: String): Boolean {
+        var delivered = false
+        runBlocking { // Используем runBlocking внутри scope.launch для последовательной проверки
+            val ip = wifiPeers[targetHash] 
+                ?: swarmPeers[targetHash] 
                 ?: findPeerOnServer(targetHash)?.ip
 
-            val delivered = !ip.isNullOrBlank() && ip != "0.0.0.0" && sendUdp(ip, "CHAT", message)
+            if (!ip.isNullOrBlank() && ip != "0.0.0.0") {
+                delivered = sendUdp(ip, "CHAT", message)
+            }
 
             if (!delivered && !phone.isNullOrBlank()) {
                 sendAsSms(phone, message)
+                delivered = true // Считаем доставленным, если ушло по SMS
             }
         }
+        return delivered
+    }
 
     private suspend fun findPeerOnServer(hash: String): UserPayload? {
         val cached = nodeDao.getNodeByHash(hash)
-        if (cached != null && System.currentTimeMillis() - cached.lastSeen < 180_000) {
+        if (cached != null && System.currentTimeMillis() - cached.lastSeen < 300_000) {
             return UserPayload(cached.userHash, cached.phone_hash, cached.ip, cached.port, cached.publicKey, cached.phone, null, cached.lastSeen)
         }
         return fetchAllNodesFromServer().find { it.hash == hash }
+    }
+
+    fun getPeerPublicKey(hash: String): String? {
+        return runBlocking { nodeDao.getNodeByHash(hash)?.publicKey }
     }
 
     /* ======================= UDP CORE ======================= */
@@ -209,42 +216,58 @@ class IdentityRepository(private val context: Context) {
             try {
                 DatagramSocket(PORT).use { socket ->
                     socket.reuseAddress = true
-                    val buffer = ByteArray(16_384)
-                    while (isRunning && !socket.isClosed) {
+                    val buffer = ByteArray(65507) // Максимальный размер UDP пакета
+                    while (isRunning) {
                         val packet = DatagramPacket(buffer, buffer.size)
                         socket.receive(packet)
                         val ip = packet.address.hostAddress ?: continue
                         val data = String(packet.data, 0, packet.length)
-                        launch(Dispatchers.Default) { handleIncoming(data, ip) }
+                        handleIncoming(data, ip)
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "UDP listener failure", e)
+                Log.e(TAG, "UDP listener stopped", e)
             }
         }
     }
 
-    private suspend fun handleIncoming(raw: String, fromIp: String) {
-        try {
-            val json = JSONObject(raw)
-            val type = json.getString("type")
-            val fromHash = json.getString("from")
-            val pubKey = json.getString("pubkey")
-            val sigBase64 = json.getString("signature")
-            
-            val signature = Base64.decode(sigBase64, Base64.NO_WRAP)
-            val unsignedJson = JSONObject(raw).apply { remove("signature") }.toString()
+    private fun handleIncoming(raw: String, fromIp: String) {
+        scope.launch(Dispatchers.Default) {
+            try {
+                val json = JSONObject(raw)
+                val type = json.getString("type")
+                val fromHash = json.getString("from")
+                val pubKey = json.getString("pubkey")
+                val sigBase64 = json.getString("signature")
+                
+                // Проверка подписи отправителя
+                val signature = Base64.decode(sigBase64, Base64.NO_WRAP)
+                val unsignedJson = JSONObject(raw).apply { remove("signature") }.toString()
 
-            if (!CryptoManager.verify(signature, unsignedJson.toByteArray(), pubKey)) return
+                if (!CryptoManager.verify(signature, unsignedJson.toByteArray(), pubKey)) {
+                    Log.w(TAG, "Invalid signature from $fromHash")
+                    return@launch
+                }
 
-            CryptoManager.savePeerPublicKey(fromHash, pubKey)
-            nodeDao.updateNetworkInfo(fromHash, fromIp, PORT, pubKey, System.currentTimeMillis())
+                // Обновляем информацию об узле в БД
+                nodeDao.updateNetworkInfo(fromHash, fromIp, PORT, pubKey, System.currentTimeMillis())
+                swarmPeers[fromHash] = fromIp
 
-            listeners.forEach { it(type, json.getString("data"), fromIp, fromHash) }
-        } catch (_: Exception) {}
+                // Если это сообщение чата — передаем в MessageRepository для расшифровки и сохранения
+                if (type == "CHAT" || type == "CHAT_FILE") {
+                    messageRepository.handleIncoming(type, json.getString("data"), fromHash)
+                }
+
+                // Уведомляем других слушателей (UI, CallService и т.д.)
+                listeners.forEach { it(type, json.getString("data"), fromIp, fromHash) }
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling incoming UDP: ${e.message}")
+            }
+        }
     }
 
-    private suspend fun sendUdp(ip: String, type: String, data: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun sendUdp(ip: String, type: String, data: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val json = JSONObject().apply {
                 put("type", type)
@@ -254,20 +277,27 @@ class IdentityRepository(private val context: Context) {
                 put("timestamp", System.currentTimeMillis())
             }
 
+            // Подписываем пакет нашим приватным ключом
             val sig = CryptoManager.sign(json.toString().toByteArray())
             json.put("signature", Base64.encodeToString(sig, Base64.NO_WRAP))
 
             val bytes = json.toString().toByteArray()
             val addr = InetAddress.getByName(ip)
-            DatagramSocket().use { it.send(DatagramPacket(bytes, bytes.size, addr, PORT)) }
+            DatagramSocket().use { 
+                it.soTimeout = 2000
+                it.send(DatagramPacket(bytes, bytes.size, addr, PORT)) 
+            }
             true
-        } catch (e: Exception) { false }
+        } catch (e: Exception) {
+            Log.e(TAG, "UDP send failed to $ip: ${e.message}")
+            false
+        }
     }
 
     /* ======================= NSD & WI-FI ======================= */
 
     private val registrationListener = object : NsdManager.RegistrationListener {
-        override fun onServiceRegistered(s: NsdServiceInfo) {}
+        override fun onServiceRegistered(s: NsdServiceInfo) { Log.d(TAG, "NSD Registered") }
         override fun onRegistrationFailed(s: NsdServiceInfo, e: Int) {}
         override fun onServiceUnregistered(s: NsdServiceInfo) {}
         override fun onUnregistrationFailed(s: NsdServiceInfo, e: Int) {}
@@ -276,12 +306,19 @@ class IdentityRepository(private val context: Context) {
     private val discoveryListener = object : NsdManager.DiscoveryListener {
         override fun onServiceFound(s: NsdServiceInfo) {
             if (s.serviceType != SERVICE_TYPE) return
-            if (s.serviceName.contains(getMyId().take(6))) return
+            // Не резолвим самих себя
+            if (s.serviceName.contains(getMyId().take(8))) return
+            
             nsdManager.resolveService(s, object : NsdManager.ResolveListener {
                 override fun onServiceResolved(r: NsdServiceInfo) {
                     val host = r.host?.hostAddress ?: return
+                    // Извлекаем hash из имени сервиса "KakDela-HASH-RAND"
                     val parts = r.serviceName.split("-")
-                    if (parts.size >= 2) wifiPeers[parts[1]] = host
+                    if (parts.size >= 2) {
+                        val peerHash = parts[1]
+                        wifiPeers[peerHash] = host
+                        Log.d(TAG, "Resolved Wi-Fi peer: $peerHash at $host")
+                    }
                 }
                 override fun onResolveFailed(s: NsdServiceInfo, e: Int) {}
             })
@@ -303,13 +340,17 @@ class IdentityRepository(private val context: Context) {
                 port = PORT
             }
             nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, registrationListener)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.e(TAG, "NSD Register failed: ${e.message}")
+        }
     }
 
     private fun discoverInWifi() {
         try {
             nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.e(TAG, "NSD Discovery failed: ${e.message}")
+        }
     }
 
     /* ======================= UTILS ======================= */
@@ -320,7 +361,10 @@ class IdentityRepository(private val context: Context) {
                 context.getSystemService(SmsManager::class.java)
             else @Suppress("DEPRECATION") SmsManager.getDefault()
             sms.sendTextMessage(phone, null, "[P2P] $message", null, null)
-        } catch (_: Exception) {}
+            Log.i(TAG, "SMS Sent to $phone")
+        } catch (e: Exception) {
+            Log.e(TAG, "SMS failed: ${e.message}")
+        }
     }
 
     fun generatePhoneDiscoveryHash(phone: String): String {
