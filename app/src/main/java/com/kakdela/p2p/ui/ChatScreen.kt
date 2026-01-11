@@ -24,7 +24,6 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
-import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -110,14 +109,10 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = { startCall(context, chatPartnerId, false) }
-                    ) {
+                    IconButton(onClick = { startCall(context, chatPartnerId, false) }) {
                         Icon(Icons.Default.Call, null, tint = NeonCyan)
                     }
-                    IconButton(
-                        onClick = { startCall(context, chatPartnerId, true) }
-                    ) {
+                    IconButton(onClick = { startCall(context, chatPartnerId, true) }) {
                         Icon(Icons.Outlined.Videocam, null, tint = NeonCyan)
                     }
                 }
@@ -142,9 +137,7 @@ fun ChatScreen(
     ) { padding ->
         LazyColumn(
             state = listState,
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
+            modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
@@ -212,44 +205,35 @@ fun ChatInputArea(
     }
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(8.dp),
+        modifier = Modifier.fillMaxWidth().padding(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onAttachFile) {
             Icon(Icons.Default.Add, null, tint = NeonPurple)
         }
 
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Glass)
-                .border(1.dp, NeonGreen.copy(alpha = 0.25f), RoundedCornerShape(24.dp))
-                .padding(horizontal = 12.dp)
-        ) {
-            TextField(
-                value = text,
-                onValueChange = onTextChange,
-                placeholder = { Text("Message…", color = Color.Gray) },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White
-                ),
-                trailingIcon = {
-                    if (text.isNotBlank()) {
-                        IconButton(onClick = openSchedule) {
-                            Icon(Icons.Outlined.Schedule, null, tint = Color.Gray)
-                        }
+        TextField(
+            value = text,
+            onValueChange = onTextChange,
+            modifier = Modifier.weight(1f),
+            placeholder = { Text("Message…", color = Color.Gray) },
+            trailingIcon = {
+                if (text.isNotBlank()) {
+                    IconButton(onClick = { openSchedule() }) {
+                        Icon(Icons.Outlined.Schedule, null, tint = Color.Gray)
                     }
                 }
-            )
-        }
+            },
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Glass,
+                unfocusedContainerColor = Glass,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent,
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White
+            ),
+            shape = RoundedCornerShape(24.dp)
+        )
 
         Spacer(Modifier.width(8.dp))
 
@@ -258,25 +242,27 @@ fun ChatInputArea(
                 when {
                     text.isNotBlank() -> onSend()
                     !recording -> {
-                        val file = File(context.cacheDir, "rec_${System.currentTimeMillis()}.m4a")
-                        audioFile = file
-                        recorder = MediaRecorder(context).apply {
-                            setAudioSource(MediaRecorder.AudioSource.MIC)
-                            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                            setOutputFile(file.absolutePath)
-                            prepare()
-                            start()
+                        try {
+                            val file = File(context.cacheDir, "rec_${System.currentTimeMillis()}.m4a")
+                            audioFile = file
+                            recorder = MediaRecorder().apply {
+                                setAudioSource(MediaRecorder.AudioSource.MIC)
+                                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                                setOutputFile(file.absolutePath)
+                                prepare()
+                                start()
+                            }
+                            recording = true
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Ошибка записи", Toast.LENGTH_SHORT).show()
                         }
-                        recording = true
                     }
                     else -> {
                         recorder?.stop()
                         recorder?.release()
                         recorder = null
-                        audioFile?.let {
-                            onSendAudio(Uri.fromFile(it), seconds)
-                        }
+                        audioFile?.let { onSendAudio(Uri.fromFile(it), seconds) }
                         recording = false
                     }
                 }
@@ -285,12 +271,12 @@ fun ChatInputArea(
             modifier = Modifier.size(48.dp)
         ) {
             Icon(
-                imageVector = when {
+                when {
                     text.isNotBlank() -> Icons.Default.Send
                     recording -> Icons.Default.Stop
                     else -> Icons.Default.Mic
                 },
-                contentDescription = null,
+                null,
                 tint = Color.Black
             )
         }
@@ -345,25 +331,25 @@ fun AudioBubble(path: String) {
     val player = remember { MediaPlayer() }
 
     DisposableEffect(Unit) {
-        onDispose {
-            player.release()
-        }
+        onDispose { player.release() }
     }
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(
             onClick = {
-                if (!playing) {
-                    player.reset()
-                    player.setDataSource(context, Uri.parse(path))
-                    player.prepare()
-                    player.start()
-                    playing = true
-                    player.setOnCompletionListener { playing = false }
-                } else {
-                    player.pause()
-                    playing = false
-                }
+                try {
+                    if (!playing) {
+                        player.reset()
+                        player.setDataSource(context, Uri.parse(path))
+                        player.prepare()
+                        player.start()
+                        playing = true
+                        player.setOnCompletionListener { playing = false }
+                    } else {
+                        player.pause()
+                        playing = false
+                    }
+                } catch (_: Exception) {}
             }
         ) {
             Icon(
