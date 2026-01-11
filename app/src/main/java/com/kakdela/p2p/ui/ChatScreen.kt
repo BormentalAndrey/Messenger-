@@ -1,5 +1,6 @@
 package com.kakdela.p2p.ui.chat
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import android.annotation.SuppressLint
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
@@ -51,7 +52,7 @@ private val NeonPurple = Color(0xFFB042FF)
 private val DarkBackground = Color(0xFF0A0A0A)
 private val SurfaceGray = Color(0xFF1E1E1E)
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatScreen(
     chatPartnerId: String,
