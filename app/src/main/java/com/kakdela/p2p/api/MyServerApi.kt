@@ -4,7 +4,9 @@ import android.util.Log
 import com.google.gson.annotations.SerializedName
 import com.kakdela.p2p.network.CookieStore
 import com.kakdela.p2p.network.NetworkEvents
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -58,41 +60,51 @@ interface MyServerApi {
 
 object MyServerApiFactory {
     private const val BASE_URL = "http://kakdela.infinityfree.me/"
+    private const val TAG = "MyServerApi"
+
+    // Создаем логгер как отдельную переменную для чистоты кода
+    private val loggingInterceptor = HttpLoggingInterceptor().apply {
+        level = HttpLoggingInterceptor.Level.BODY // BODY для отладки, HEADERS для продакшна
+    }
 
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(45, TimeUnit.SECONDS)
-        .readTimeout(45, TimeUnit.SECONDS)
-        .writeTimeout(45, TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(30, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
-        .addInterceptor(HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.HEADERS
-        })
-        .addInterceptor { chain ->
-            val requestBuilder = chain.request().newBuilder()
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        .addInterceptor(loggingInterceptor)
+        .addInterceptor { chain: Interceptor.Chain ->
+            val originalRequest = chain.request()
+            val requestBuilder = originalRequest.newBuilder()
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
                 .header("Accept", "application/json")
 
-            // Подставляем куку, если она есть
+            // Подставляем куку __test из хранилища
             CookieStore.testCookie?.let {
                 requestBuilder.header("Cookie", it)
             }
 
             val request = requestBuilder.build()
-            val response = chain.proceed(request)
+            val response: Response = chain.proceed(request)
 
-            // ПРОВЕРКА НА АНТИБОТ
-            if (response.isSuccessful) {
-                val contentType = response.body?.contentType()?.toString()
-                if (contentType?.contains("text/html") == true) {
-                    Log.w("MyServerApi", "Обнаружена защита! Сигнал на открытие WebView.")
-                    NetworkEvents.triggerAuth()
-                }
+            // ПРОВЕРКА НА АНТИБОТ (InfinityFree AES Challenge)
+            // Если сервер вернул HTML вместо JSON — значит кука протухла или неверна
+            val contentType = response.body?.contentType()?.toString()
+            if (contentType != null && contentType.contains("text/html", ignoreCase = true)) {
+                Log.w(TAG, "Обнаружена страница-заглушка! Требуется авторизация через WebView.")
+                
+                // Генерируем событие для UI, чтобы открылось WebView
+                NetworkEvents.triggerAuth()
             }
 
             response
         }
         .build()
 
+    /**
+     * Экземпляр API. 
+     * Используем конвертер Gson для автоматического парсинга JSON в объекты.
+     */
     val instance: MyServerApi by lazy {
         Retrofit.Builder()
             .baseUrl(BASE_URL)
