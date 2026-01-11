@@ -6,11 +6,17 @@ import android.util.Base64
 import com.kakdela.p2p.data.local.MessageDao
 import com.kakdela.p2p.data.local.MessageEntity
 import com.kakdela.p2p.security.CryptoManager
+import com.kakdela.p2p.workers.scheduleMessageWork
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
+/**
+ * Репозиторий для управления сообщениями (текст, файлы, отложенная отправка).
+ * Реализует E2EE шифрование перед передачей в P2P сеть.
+ */
 class MessageRepository(
     private val context: Context,
     private val dao: MessageDao,
@@ -20,147 +26,157 @@ class MessageRepository(
     private val scope = CoroutineScope(Dispatchers.IO)
 
     /* ============================================================
-       ОТПРАВКА ТЕКСТА (МГНОВЕННАЯ)
+       ОТПРАВКА ТЕКСТА (МГНОВЕННАЯ И ОТЛОЖЕННАЯ)
        ============================================================ */
 
-    fun sendText(toHash: String, text: String) {
+    fun sendText(toHash: String, text: String, scheduledTime: Long? = null) {
         scope.launch {
-            val messageId = UUID.randomUUID().toString()
+            val msgId = UUID.randomUUID().toString()
             val myId = identityRepo.getMyId()
 
-            val entity = MessageEntity(
-                messageId = messageId,
+            val msgEntity = MessageEntity(
+                messageId = msgId,
                 chatId = toHash,
                 senderId = myId,
                 receiverId = toHash,
                 text = text,
                 timestamp = System.currentTimeMillis(),
+                scheduledTime = scheduledTime,
                 isMe = true,
-                status = "PENDING",
+                status = if (scheduledTime != null) "SCHEDULED" else "PENDING",
                 messageType = "TEXT"
             )
 
-            dao.insert(entity)
+            // 1. Сохраняем в локальную БД
+            dao.insert(msgEntity)
 
-            val encrypted = encryptForPeer(toHash, text)
-            val delivered = identityRepo.sendMessageSmart(toHash, null, encrypted)
+            // 2. Логика отправки
+            if (scheduledTime != null) {
+                // Если время в будущем — планируем задачу в WorkManager
+                scheduleMessageWork(context, msgId, toHash, text, scheduledTime)
+            } else {
+                // Иначе отправляем немедленно по сети
+                performNetworkSend(toHash, msgId, text)
+            }
+        }
+    }
 
-            dao.updateStatus(messageId, if (delivered) "SENT" else "FAILED")
+    /**
+     * Выполняет фактическую сетевую отправку с E2EE шифрованием.
+     * Используется как для мгновенных сообщений, так и воркером для отложенных.
+     */
+    suspend fun performNetworkSend(toHash: String, msgId: String, text: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val encrypted = encryptForPeer(toHash, text)
+                val delivered = identityRepo.sendMessageSmart(toHash, null, encrypted)
+                
+                dao.updateStatus(msgId, if (delivered) "SENT" else "FAILED")
+                delivered
+            } catch (e: Exception) {
+                dao.updateStatus(msgId, "FAILED")
+                false
+            }
         }
     }
 
     /* ============================================================
-       ОТПРАВКА ФАЙЛОВ
+       ОТПРАВКА МЕДИА-ФАЙЛОВ
        ============================================================ */
 
     fun sendFile(toHash: String, uri: Uri, type: String, fileName: String) {
         scope.launch {
             val bytes = readBytes(uri) ?: return@launch
-            val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
-            val messageId = UUID.randomUUID().toString()
+            val base64Data = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            val msgId = UUID.randomUUID().toString()
+            val myId = identityRepo.getMyId()
 
-            val entity = MessageEntity(
-                messageId = messageId,
+            val msgEntity = MessageEntity(
+                messageId = msgId,
                 chatId = toHash,
-                senderId = identityRepo.getMyId(),
+                senderId = myId,
                 receiverId = toHash,
                 text = "[Файл: $fileName]",
                 timestamp = System.currentTimeMillis(),
+                scheduledTime = null,
                 isMe = true,
                 status = "PENDING",
                 messageType = type,
                 fileName = fileName,
-                fileBytes = if (bytes.size <= 512 * 1024) bytes else null
+                fileBytes = if (bytes.size <= 1024 * 512) bytes else null // Храним в БД только превью/мелкие файлы
             )
 
-            dao.insert(entity)
+            dao.insert(msgEntity)
 
-            val encrypted = encryptForPeer(toHash, base64)
-            val delivered = identityRepo.sendMessageSmart(toHash, null, encrypted)
+            val encryptedFile = encryptForPeer(toHash, base64Data)
+            val delivered = identityRepo.sendMessageSmart(toHash, null, encryptedFile)
 
-            dao.updateStatus(messageId, if (delivered) "SENT" else "FAILED")
+            dao.updateStatus(msgId, if (delivered) "SENT" else "FAILED")
         }
     }
 
     /* ============================================================
-       ОТЛОЖЕННЫЕ СООБЩЕНИЯ (ДЛЯ WORKMANAGER)
-       ============================================================ */
-
-    suspend fun insertOutgoing(message: Message) {
-        dao.insert(
-            MessageEntity(
-                messageId = message.id,
-                chatId = message.senderId.takeIf { message.isMe } ?: message.senderId,
-                senderId = message.senderId,
-                receiverId = message.senderId,
-                text = message.text,
-                timestamp = message.timestamp,
-                isMe = true,
-                status = message.status,
-                messageType = message.type.name,
-                scheduledTime = message.scheduledTime
-            )
-        )
-    }
-
-    suspend fun sendMessageNow(chatId: String, message: Message): Boolean {
-        val encrypted = encryptForPeer(chatId, message.text)
-        return identityRepo.sendMessageSmart(chatId, null, encrypted)
-    }
-
-    suspend fun updateStatus(messageId: String, status: String) {
-        dao.updateStatus(messageId, status)
-    }
-
-    /* ============================================================
-       ВХОДЯЩИЕ СООБЩЕНИЯ (UDP)
+       ВХОДЯЩИЕ СООБЩЕНИЯ (UDP/Network)
        ============================================================ */
 
     fun handleIncoming(type: String, data: String, fromHash: String) {
         scope.launch {
+            // Расшифровка приватным ключом (CryptoManager знает наш ключ)
             val decrypted = try {
                 CryptoManager.decryptMessage(data)
-            } catch (_: Exception) {
-                data
+            } catch (e: Exception) {
+                data // Если расшифровка не удалась, сохраняем как есть
             }
 
-            val entity = MessageEntity(
+            val msgEntity = MessageEntity(
                 messageId = UUID.randomUUID().toString(),
                 chatId = fromHash,
                 senderId = fromHash,
                 receiverId = identityRepo.getMyId(),
                 text = decrypted,
                 timestamp = System.currentTimeMillis(),
+                scheduledTime = null,
                 isMe = false,
                 status = "DELIVERED",
-                messageType = when (type) {
-                    "CHAT_FILE" -> "FILE"
-                    else -> "TEXT"
-                }
+                messageType = if (type == "CHAT_FILE") "FILE" else "TEXT"
             )
-
-            dao.insert(entity)
+            
+            dao.insert(msgEntity)
         }
     }
 
     /* ============================================================
-       УТИЛИТЫ
+       ВНУТРЕННИЕ УТИЛИТЫ
        ============================================================ */
 
-    private fun encryptForPeer(peerHash: String, plain: String): String {
-        val pubKey = identityRepo.getPeerPublicKey(peerHash)
-        return if (!pubKey.isNullOrBlank()) {
-            CryptoManager.encryptMessage(plain, pubKey)
+    /**
+     * Шифрует данные публичным ключом получателя.
+     */
+    private suspend fun encryptForPeer(peerHash: String, plainText: String): String {
+        val peerPubKey = identityRepo.getPeerPublicKey(peerHash)
+        return if (!peerPubKey.isNullOrBlank()) {
+            CryptoManager.encryptMessage(plainText, peerPubKey)
         } else {
-            plain
+            plainText // Fallback (не рекомендуется для продакшна без ключа)
         }
     }
 
+    /**
+     * Безопасное чтение байтов из URI (ContentResolver).
+     */
     private fun readBytes(uri: Uri): ByteArray? {
         return try {
             context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            e.printStackTrace()
             null
         }
+    }
+
+    /**
+     * Пометка сообщений прочитанными (вызывается из UI при открытии чата).
+     */
+    suspend fun markAsRead(chatId: String) {
+        dao.markChatAsRead(chatId)
     }
 }
