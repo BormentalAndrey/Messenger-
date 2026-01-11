@@ -38,7 +38,6 @@ import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
-// ИСПРАВЛЕННЫЕ ИМПОРТЫ:
 import com.kakdela.p2p.ui.ChatViewModel 
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
@@ -123,23 +122,26 @@ fun NavGraph(
                 val chatId = entry.arguments?.getString("chatId") ?: ""
                 val app = context.applicationContext as Application
 
-                // Использование правильной фабрики и класса из com.kakdela.p2p.ui
                 val vm: ChatViewModel = viewModel(
                     factory = ChatViewModelFactory(identityRepository, app)
                 )
 
                 LaunchedEffect(chatId) { vm.initChat(chatId) }
 
+                // ПЕРЕРАБОТАННЫЙ МАППИНГ: Из MessageEntity (Room) в Message (UI)
                 val messagesEntities by vm.messages.collectAsState()
                 val uiMessages = remember(messagesEntities) {
                     messagesEntities.map { entity ->
                         Message(
-                            id = entity.messageId,
+                            id = entity.messageId, // Синхронизируем ID для корректной работы key в LazyColumn
                             text = entity.text,
                             senderId = entity.senderId,
                             timestamp = entity.timestamp,
                             isMe = entity.isMe,
-                            status = entity.status
+                            status = entity.status,
+                            // Переносим типы, если они есть в entity
+                            type = try { com.kakdela.p2p.data.MessageType.valueOf(entity.messageType) } 
+                                   catch(e: Exception) { com.kakdela.p2p.data.MessageType.TEXT }
                         )
                     }
                 }
@@ -150,8 +152,11 @@ fun NavGraph(
                     identityRepository = identityRepository,
                     onSendMessage = { vm.sendMessage(it) },
                     onSendFile = { uri, name -> vm.sendFile(uri.toString(), name) },
-                    onSendAudio = { uri, dur -> vm.sendAudio(uri.toString(), dur.toInt()) },
-                    onScheduleMessage = { text, time -> vm.scheduleMessage(text, time.toString()) },
+                    onSendAudio = { uri, dur -> vm.sendAudio(uri.toString(), dur) },
+                    // ОБНОВЛЕННЫЙ ПАРАМЕТР: Обработка отложенной отправки
+                    onScheduleMessage = { text, time -> 
+                        vm.scheduleMessage(text, time.toString()) 
+                    },
                     onBack = { navController.popBackStack() }
                 )
             }
