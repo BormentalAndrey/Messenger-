@@ -123,9 +123,9 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.appcompat:appcompat:1.7.0")
     // Koin для Android
-    implementation "io.insert-koin:koin-android:3.5.0"
+    implementation("io.insert-koin:koin-android:3.5.0")
     // Koin для WorkManager (обязательно для ScheduledMessageWorker)
-    implementation "io.insert-koin:koin-androidx-workmanager:3.5.0"
+    implementation("io.insert-koin:koin-androidx-workmanager:3.5.0")
     // UI Components
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
