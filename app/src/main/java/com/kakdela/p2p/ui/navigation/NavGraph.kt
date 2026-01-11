@@ -32,7 +32,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.kakdela.p2p.data.IdentityRepository
-import com.kakdela.p2p.data.Message
+import com.kakdela.p2p.data.local.MessageEntity
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
@@ -105,7 +105,8 @@ fun NavGraph(
 
             // --- Main Screens ---
             composable(Routes.CHATS) {
-                ChatsListScreen(navController, identityRepository)
+                // ИСПРАВЛЕНО: Убраны лишние аргументы для соответствия сигнатуре ChatsListScreen(navController)
+                ChatsListScreen(navController = navController)
             }
 
             composable(Routes.CONTACTS) {
@@ -128,34 +129,18 @@ fun NavGraph(
 
                 LaunchedEffect(chatId) { vm.initChat(chatId) }
 
-                // ПЕРЕРАБОТАННЫЙ МАППИНГ: Из MessageEntity (Room) в Message (UI)
-                val messagesEntities by vm.messages.collectAsState()
-                val uiMessages = remember(messagesEntities) {
-                    messagesEntities.map { entity ->
-                        Message(
-                            id = entity.messageId, // Синхронизируем ID для корректной работы key в LazyColumn
-                            text = entity.text,
-                            senderId = entity.senderId,
-                            timestamp = entity.timestamp,
-                            isMe = entity.isMe,
-                            status = entity.status,
-                            // Переносим типы, если они есть в entity
-                            type = try { com.kakdela.p2p.data.MessageType.valueOf(entity.messageType) } 
-                                   catch(e: Exception) { com.kakdela.p2p.data.MessageType.TEXT }
-                        )
-                    }
-                }
+                // Работаем напрямую с MessageEntity, так как ChatScreen был обновлен под этот тип
+                val messages by vm.messages.collectAsState()
 
                 ChatScreen(
                     chatPartnerId = chatId,
-                    messages = uiMessages,
+                    messages = messages, // Исправлен маппинг типов (List<MessageEntity>)
                     identityRepository = identityRepository,
                     onSendMessage = { vm.sendMessage(it) },
-                    onSendFile = { uri, name -> vm.sendFile(uri.toString(), name) },
-                    onSendAudio = { uri, dur -> vm.sendAudio(uri.toString(), dur) },
-                    // ОБНОВЛЕННЫЙ ПАРАМЕТР: Обработка отложенной отправки
+                    onSendFile = { uri, name -> vm.sendFile(uri, name) },
+                    onSendAudio = { uri, dur -> onSendAudio(uri, dur) }, // Логика обработки URI
                     onScheduleMessage = { text, time -> 
-                        vm.scheduleMessage(text, time.toString()) 
+                        vm.scheduleMessage(text, time) 
                     },
                     onBack = { navController.popBackStack() }
                 )
