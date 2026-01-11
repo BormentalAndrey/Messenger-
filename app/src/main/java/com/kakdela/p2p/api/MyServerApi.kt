@@ -1,7 +1,9 @@
 package com.kakdela.p2p.api
 
 import com.google.gson.annotations.SerializedName
+import com.kakdela.p2p.network.CookieStore
 import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
@@ -12,19 +14,15 @@ import java.util.concurrent.TimeUnit
 
 // ================= MODELS =================
 
-/**
- * Модель данных пользователя для обмена с сервером.
- * Имена полей в @SerializedName СТРОГО соответствуют колонкам в MySQL (см. скриншот).
- */
 data class UserPayload(
-    @SerializedName("hash") val hash: String,              // Security ID
-    @SerializedName("phone_hash") val phone_hash: String?, // Discovery ID
-    @SerializedName("ip") val ip: String?,
+    @SerializedName("hash") val hash: String,
+    @SerializedName("phone_hash") val phone_hash: String?,
+    @SerializedName("ip") val ip: String? = null,
     @SerializedName("port") val port: Int = 8888,
     @SerializedName("publicKey") val publicKey: String,
-    @SerializedName("phone") val phone: String?,
-    @SerializedName("email") val email: String?,
-    @SerializedName("lastSeen") val lastSeen: Long?
+    @SerializedName("phone") val phone: String? = null,
+    @SerializedName("email") val email: String? = null,
+    @SerializedName("lastSeen") val lastSeen: Long? = System.currentTimeMillis()
 )
 
 data class ServerResponse(
@@ -59,17 +57,37 @@ interface MyServerApi {
 object MyServerApiFactory {
     private const val BASE_URL = "http://kakdela.infinityfree.me/"
 
+    private val loggingInterceptor = HttpLoggingInterceptor().apply {
+        level = HttpLoggingInterceptor.Level.BODY
+    }
+
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(45, TimeUnit.SECONDS)
+        .readTimeout(45, TimeUnit.SECONDS)
+        .writeTimeout(45, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
+        .addInterceptor(loggingInterceptor) // Для отладки JSON в Logcat
         .addInterceptor { chain ->
-            val request = chain.request().newBuilder()
-                .header("User-Agent", "KakDela-P2P/1.0 (Android)")
+            val requestBuilder = chain.request().newBuilder()
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                 .header("Accept", "application/json")
-                .build()
-            chain.proceed(request)
+
+            // ПЫТАЕМСЯ ПОДСТАВИТЬ КУКУ, ЕСЛИ ОНА БЫЛА ПЕРЕХВАЧЕНА В WEBVIEW
+            CookieStore.testCookie?.let { cookie ->
+                requestBuilder.header("Cookie", cookie)
+            }
+
+            val request = requestBuilder.build()
+            val response = chain.proceed(request)
+            
+            // Если сервер всё равно вернул HTML (защита не пройдена), логируем это
+            val contentType = response.body?.contentType()?.toString()
+            if (contentType?.contains("text/html") == true) {
+                // Здесь можно отправить событие в EventBus или ViewModel, 
+                // чтобы приложение открыло WebView для переавторизации
+            }
+
+            response
         }
         .build()
 
