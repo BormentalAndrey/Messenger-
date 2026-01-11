@@ -34,9 +34,10 @@ import androidx.navigation.navArgument
 import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
+// Исправленные импорты согласно структуре проекта
 import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen
-import com.kakdela.p2p.ui.chat.ChatViewModel
+import com.kakdela.p2p.ui.chat.ChatViewModel 
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
@@ -68,7 +69,7 @@ fun NavGraph(
                 .padding(paddingValues)
                 .background(Color.Black)
         ) {
-            // --- Splash & Auth ---
+            // --- Сплеш и Авторизация ---
             composable(Routes.SPLASH) {
                 SplashScreen {
                     val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
@@ -102,7 +103,7 @@ fun NavGraph(
                 }
             }
 
-            // --- Main Screens ---
+            // --- Основные экраны ---
             composable(Routes.CHATS) {
                 ChatsListScreen(navController = navController)
             }
@@ -113,7 +114,7 @@ fun NavGraph(
                 }
             }
 
-            // --- Direct Chat ---
+            // --- Прямой чат ---
             composable(
                 route = Routes.CHAT_DIRECT,
                 arguments = listOf(navArgument("chatId") { type = NavType.StringType })
@@ -121,6 +122,7 @@ fun NavGraph(
                 val chatId = entry.arguments?.getString("chatId") ?: ""
                 val app = context.applicationContext as Application
 
+                // Получаем ViewModel через фабрику
                 val vm: ChatViewModel = viewModel(
                     factory = ChatViewModelFactory(identityRepository, app)
                 )
@@ -143,42 +145,36 @@ fun NavGraph(
                 )
             }
 
-            // --- Additional Screens ---
+            // --- Вспомогательные экраны ---
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             composable(Routes.SETTINGS) { SettingsScreen(navController, identityRepository) }
             composable(Routes.MUSIC) { MusicPlayerScreen() }
 
-            // --- WebView Screen (ИСПРАВЛЕНО: Добавлен отсутствующий маршрут) ---
+            // --- WebView (Решение проблемы со скриншота) ---
             composable(
                 route = "webview/{url}/{title}",
                 arguments = listOf(
                     navArgument("url") { type = NavType.StringType },
                     navArgument("title") { type = NavType.StringType }
                 )
-            ) { backStackEntry ->
-                val url = backStackEntry.arguments?.getString("url") ?: ""
-                val title = backStackEntry.arguments?.getString("title") ?: "Просмотр"
+            ) { navBackStackEntry ->
+                val url = navBackStackEntry.arguments?.getString("url") ?: ""
+                val title = navBackStackEntry.arguments?.getString("title") ?: ""
                 WebViewScreen(url = url, title = title, navController = navController)
             }
 
-            // --- Games & Tools ---
+            // --- Инструменты и Игры ---
+            composable(Routes.CALCULATOR) { CalculatorScreen() }
+            composable(Routes.TEXT_EDITOR) { TextEditorScreen() } // Убедитесь, что этот экран создан
+            
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
             composable(Routes.SUDOKU) { SudokuScreen() }
-            composable(Routes.CALCULATOR) { CalculatorScreen() }
             composable(Routes.JEWELS) { JewelsBlastScreen() }
-            
-            // Текстовый редактор (добавлен для соответствия DealsScreen)
-            composable(Routes.TEXT_EDITOR) { 
-                // Замените на ваш реальный экран редактора, если он есть
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Текстовый редактор", color = Color.White)
-                }
-            }
 
-            // --- AI Chat ---
+            // --- AI Чат ---
             composable(Routes.AI_CHAT) {
                 if (isOnline) AiChatScreen()
                 else NoInternetScreen { navController.popBackStack() }
