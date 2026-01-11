@@ -14,8 +14,8 @@ import kotlinx.coroutines.withContext
 import java.util.UUID
 
 /**
- * Репозиторий для управления сообщениями (текст, файлы, отложенная отправка).
- * Реализует E2EE шифрование перед передачей в P2P сеть.
+ * Центральный репозиторий для управления сообщениями.
+ * Обрабатывает отправку текстов, файлов, отложенных сообщений и входящий трафик.
  */
 class MessageRepository(
     private val context: Context,
@@ -29,10 +29,14 @@ class MessageRepository(
        ОТПРАВКА ТЕКСТА (МГНОВЕННАЯ И ОТЛОЖЕННАЯ)
        ============================================================ */
 
+    /**
+     * Основной метод отправки текстовых сообщений.
+     * Если [scheduledTime] задан, сообщение планируется через WorkManager.
+     */
     fun sendText(toHash: String, text: String, scheduledTime: Long? = null) {
         scope.launch {
-            val msgId = UUID.randomUUID().toString()
             val myId = identityRepo.getMyId()
+            val msgId = UUID.randomUUID().toString()
 
             val msgEntity = MessageEntity(
                 messageId = msgId,
@@ -47,30 +51,40 @@ class MessageRepository(
                 messageType = "TEXT"
             )
 
-            // 1. Сохраняем в локальную БД
+            // Сохраняем черновик/сообщение в локальную БД
             dao.insert(msgEntity)
 
-            // 2. Логика отправки
             if (scheduledTime != null) {
-                // Если время в будущем — планируем задачу в WorkManager
+                // Регистрируем задачу в WorkManager
                 scheduleMessageWork(context, msgId, toHash, text, scheduledTime)
             } else {
-                // Иначе отправляем немедленно по сети
-                performNetworkSend(toHash, msgId, text)
+                // Прямая отправка
+                performDelayedSend(toHash, msgId, text)
             }
         }
     }
 
     /**
-     * Выполняет фактическую сетевую отправку с E2EE шифрованием.
-     * Используется как для мгновенных сообщений, так и воркером для отложенных.
+     * Метод фактической передачи данных в сеть.
+     * Используется как для немедленной отправки, так и вызывается из ScheduledMessageWorker.
      */
-    suspend fun performNetworkSend(toHash: String, msgId: String, text: String): Boolean {
+    suspend fun performDelayedSend(chatId: String, msgId: String, text: String): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                val encrypted = encryptForPeer(toHash, text)
-                val delivered = identityRepo.sendMessageSmart(toHash, null, encrypted)
+                // 1. Получаем публичный ключ пира для E2EE
+                val peerPubKey = identityRepo.getPeerPublicKey(chatId)
                 
+                // 2. Шифруем контент
+                val encrypted = if (!peerPubKey.isNullOrBlank()) {
+                    CryptoManager.encryptMessage(text, peerPubKey)
+                } else {
+                    text // Fallback на plain text, если ключ не найден (не рекомендуется)
+                }
+
+                // 3. Отправляем через P2P стек (NSD/DHT/Server)
+                val delivered = identityRepo.sendMessageSmart(chatId, null, encrypted)
+                
+                // 4. Обновляем статус в БД
                 dao.updateStatus(msgId, if (delivered) "SENT" else "FAILED")
                 delivered
             } catch (e: Exception) {
@@ -98,34 +112,37 @@ class MessageRepository(
                 receiverId = toHash,
                 text = "[Файл: $fileName]",
                 timestamp = System.currentTimeMillis(),
-                scheduledTime = null,
                 isMe = true,
                 status = "PENDING",
                 messageType = type,
                 fileName = fileName,
-                fileBytes = if (bytes.size <= 1024 * 512) bytes else null // Храним в БД только превью/мелкие файлы
+                fileBytes = if (bytes.size <= 512 * 1024) bytes else null // Храним байты только если файл < 512KB
             )
 
             dao.insert(msgEntity)
 
-            val encryptedFile = encryptForPeer(toHash, base64Data)
-            val delivered = identityRepo.sendMessageSmart(toHash, null, encryptedFile)
+            // Шифруем и отправляем
+            val peerPubKey = identityRepo.getPeerPublicKey(toHash)
+            val encryptedFile = if (!peerPubKey.isNullOrBlank()) {
+                CryptoManager.encryptMessage(base64Data, peerPubKey)
+            } else base64Data
 
+            val delivered = identityRepo.sendMessageSmart(toHash, null, encryptedFile)
             dao.updateStatus(msgId, if (delivered) "SENT" else "FAILED")
         }
     }
 
     /* ============================================================
-       ВХОДЯЩИЕ СООБЩЕНИЯ (UDP/Network)
+       ОБРАБОТКА ВХОДЯЩИХ
        ============================================================ */
 
     fun handleIncoming(type: String, data: String, fromHash: String) {
         scope.launch {
-            // Расшифровка приватным ключом (CryptoManager знает наш ключ)
+            // Попытка расшифровать сообщение нашим приватным ключом
             val decrypted = try {
                 CryptoManager.decryptMessage(data)
             } catch (e: Exception) {
-                data // Если расшифровка не удалась, сохраняем как есть
+                data 
             }
 
             val msgEntity = MessageEntity(
@@ -135,7 +152,6 @@ class MessageRepository(
                 receiverId = identityRepo.getMyId(),
                 text = decrypted,
                 timestamp = System.currentTimeMillis(),
-                scheduledTime = null,
                 isMe = false,
                 status = "DELIVERED",
                 messageType = if (type == "CHAT_FILE") "FILE" else "TEXT"
@@ -146,37 +162,22 @@ class MessageRepository(
     }
 
     /* ============================================================
-       ВНУТРЕННИЕ УТИЛИТЫ
+       ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
        ============================================================ */
 
-    /**
-     * Шифрует данные публичным ключом получателя.
-     */
-    private suspend fun encryptForPeer(peerHash: String, plainText: String): String {
-        val peerPubKey = identityRepo.getPeerPublicKey(peerHash)
-        return if (!peerPubKey.isNullOrBlank()) {
-            CryptoManager.encryptMessage(plainText, peerPubKey)
-        } else {
-            plainText // Fallback (не рекомендуется для продакшна без ключа)
-        }
-    }
-
-    /**
-     * Безопасное чтение байтов из URI (ContentResolver).
-     */
     private fun readBytes(uri: Uri): ByteArray? {
         return try {
             context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
         } catch (e: Exception) {
-            e.printStackTrace()
             null
         }
     }
 
-    /**
-     * Пометка сообщений прочитанными (вызывается из UI при открытии чата).
-     */
     suspend fun markAsRead(chatId: String) {
         dao.markChatAsRead(chatId)
+    }
+
+    suspend fun updateStatus(messageId: String, status: String) {
+        dao.updateStatus(messageId, status)
     }
 }
