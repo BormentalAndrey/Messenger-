@@ -30,7 +30,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
 import coil.compose.AsyncImage
 import com.kakdela.p2p.data.IdentityRepository
@@ -64,7 +63,6 @@ fun ChatScreen(
     val contactName by rememberContactName(chatPartnerId)
     val contactAvatar by rememberContactAvatar(chatPartnerId)
 
-    // Авто-скролл при новых сообщениях
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
@@ -157,7 +155,6 @@ fun ChatInputArea(
     var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var audioFile by remember { mutableStateOf<File?>(null) }
 
-    // Таймер записи
     LaunchedEffect(isRecording) {
         if (isRecording) {
             recordingTime = 0L
@@ -194,12 +191,15 @@ fun ChatInputArea(
 
             Box(modifier = Modifier.weight(1f)) {
                 if (isRecording) {
-                    // Виджет таймера вместо поля ввода
                     Row(
-                        modifier = Modifier.fillMaxWidth().height(56.dp).background(SurfaceGray, RoundedCornerShape(24.dp)).padding(horizontal = 16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .background(SurfaceGray, RoundedCornerShape(24.dp))
+                            .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(Modifier.size(8.dp).background(Color.Red, CircleShape)) // Индикатор записи
+                        Box(Modifier.size(8.dp).background(Color.Red, CircleShape))
                         Spacer(Modifier.width(8.dp))
                         Text(
                             text = String.format("%02d:%02d", recordingTime / 60, recordingTime % 60),
@@ -225,7 +225,7 @@ fun ChatInputArea(
                         ),
                         trailingIcon = {
                             if (text.isNotBlank()) {
-                                IconButton(onClick = openSchedulePicker) {
+                                IconButton(onClick = { openSchedulePicker() }) {
                                     Icon(Icons.Outlined.Schedule, null, tint = Color.Gray)
                                 }
                             }
@@ -249,7 +249,11 @@ fun ChatInputArea(
                                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
                                 setOutputFile(file.absolutePath)
-                                try { prepare(); start(); isRecording = true } catch (e: Exception) { e.printStackTrace() }
+                                try {
+                                    prepare()
+                                    start()
+                                    isRecording = true
+                                } catch (e: Exception) { e.printStackTrace() }
                             }
                         } else {
                             try {
@@ -257,7 +261,10 @@ fun ChatInputArea(
                                 recorder?.release()
                                 isRecording = false
                                 audioFile?.let { onSendAudio(Uri.fromFile(it), recordingTime.toInt()) }
-                            } catch (e: Exception) { e.printStackTrace(); isRecording = false }
+                            } catch (e: Exception) { 
+                                e.printStackTrace() 
+                                isRecording = false
+                            }
                         }
                     }
                 },
@@ -278,8 +285,6 @@ fun ChatInputArea(
         }
     }
 }
-
-
 
 @Composable
 fun ChatBubble(message: Message) {
