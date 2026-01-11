@@ -2,73 +2,66 @@ package com.kakdela.p2p.workers
 
 import android.content.Context
 import android.util.Log
-import androidx.work.*
-import com.kakdela.p2p.data.Message
-import com.kakdela.p2p.data.MessageType
-import com.kakdela.p2p.data.local.ChatDatabase
-import com.kakdela.p2p.data.IdentityRepository
+import androidx.work.CoroutineWorker
+import androidx.work.WorkerParameters
 import com.kakdela.p2p.data.MessageRepository
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.util.concurrent.TimeUnit
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
+/**
+ * Воркер для отправки отложенных сообщений.
+ * Вызывается WorkManager-ом в заданное пользователем время.
+ * Реализует интерфейс KoinComponent для получения доступа к синглтону MessageRepository.
+ */
 class ScheduledMessageWorker(
     context: Context,
     params: WorkerParameters
-) : CoroutineWorker(context, params) {
+) : CoroutineWorker(context, params), KoinComponent {
 
-    companion object {
-        const val TAG = "ScheduledMessageWorker"
+    // Инъекция репозитория через Koin
+    private val messageRepository: MessageRepository by inject()
 
-        const val KEY_MESSAGE_ID = "message_id"
-        const val KEY_CHAT_ID = "chat_id"
-        const val KEY_TEXT = "text"
-        const val KEY_TIMESTAMP = "timestamp"
+    override suspend fun doWork(): Result {
+        val messageId = inputData.getString(KEY_MESSAGE_ID) 
+            ?: return Result.failure().also { Log.e(TAG, "Missing Message ID") }
+        
+        val chatId = inputData.getString(KEY_CHAT_ID) 
+            ?: return Result.failure().also { Log.e(TAG, "Missing Chat ID") }
+        
+        val text = inputData.getString(KEY_TEXT) 
+            ?: return Result.failure().also { Log.e(TAG, "Missing Message Text") }
+
+        Log.d(TAG, "Starting scheduled send task for message: $messageId")
+
+        return try {
+            /**
+             * Вызываем метод сетевой отправки из репозитория.
+             * Внутри performNetworkSend происходит шифрование E2EE и передача в P2P сеть.
+             */
+            val isDelivered = messageRepository.performNetworkSend(chatId, messageId, text)
+
+            if (isDelivered) {
+                Log.i(TAG, "Scheduled message $messageId successfully sent.")
+                Result.success()
+            } else {
+                // Если сеть недоступна, WorkManager перезапустит задачу позже согласно политике бэкоффа
+                Log.w(TAG, "Delivery failed for $messageId, retrying...")
+                if (runAttemptCount < MAX_RETRIES) Result.retry() else Result.failure()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Critical error in ScheduledMessageWorker for $messageId: ${e.message}")
+            if (runAttemptCount < MAX_RETRIES) Result.retry() else Result.failure()
+        }
     }
 
-    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
-        try {
-            val messageId = inputData.getString(KEY_MESSAGE_ID) ?: return@withContext Result.failure()
-            val chatId = inputData.getString(KEY_CHAT_ID) ?: return@withContext Result.failure()
-            val text = inputData.getString(KEY_TEXT) ?: ""
-            val timestamp = inputData.getLong(KEY_TIMESTAMP, System.currentTimeMillis())
+    companion object {
+        private const val TAG = "ScheduledWorker"
+        private const val MAX_RETRIES = 3
 
-            val db = ChatDatabase.getDatabase(applicationContext)
-            val messageDao = db.messageDao()
-            val identityRepository = IdentityRepository(applicationContext)
-            val messageRepository = MessageRepository(
-                applicationContext,
-                messageDao,
-                identityRepository
-            )
-
-            val message = Message(
-                id = messageId,
-                text = text,
-                senderId = identityRepository.getMyId(),
-                timestamp = timestamp,
-                type = MessageType.TEXT,
-                isMe = true,
-                scheduledTime = null, // ВАЖНО: уже не запланированное
-                status = "SENT"
-            )
-
-            // 1. Сохраняем в БД как обычное сообщение
-            messageRepository.insertOutgoing(message)
-
-            // 2. Реально отправляем
-            val delivered = messageRepository.sendMessageNow(chatId, message)
-
-            if (!delivered) {
-                messageRepository.updateStatus(message.id, "FAILED")
-            }
-
-            Log.i(TAG, "Scheduled message sent: ${message.id}")
-            Result.success()
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Worker failed: ${e.message}", e)
-            Result.retry()
-        }
+        // Константы для ключей Input Data (должны совпадать с функцией scheduleMessageWork)
+        const val KEY_MESSAGE_ID = "KEY_MESSAGE_ID"
+        const val KEY_CHAT_ID = "KEY_CHAT_ID"
+        const val KEY_TEXT = "KEY_TEXT"
+        const val KEY_TIMESTAMP = "KEY_TIMESTAMP"
     }
 }
