@@ -5,23 +5,23 @@ import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColor
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -49,19 +49,13 @@ fun ChatScreen(
     messages: List<Message>,
     identityRepository: IdentityRepository,
     onSendMessage: (String) -> Unit,
-    onSendFile: (Uri, String) -> Unit, // Изменено на String для имени файла/типа
+    onSendFile: (Uri, String) -> Unit,
     onSendAudio: (Uri, Int) -> Unit,
-    onScheduleMessage: (String, String) -> Unit, // Изменено на String для времени
     onBack: () -> Unit
 ) {
     var textState by remember { mutableStateOf("") }
-    var showDatePicker by remember { mutableStateOf(false) }
-    var showTimePicker by remember { mutableStateOf(false) }
-
-    val datePickerState = rememberDatePickerState()
-    val timePickerState = rememberTimePickerState()
-    val context = LocalContext.current
     val listState = rememberLazyListState()
+    val context = LocalContext.current
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
@@ -69,28 +63,20 @@ fun ChatScreen(
         }
     }
 
-    fun scheduleAndSend() {
-        val date = datePickerState.selectedDateMillis ?: return
-        val cal = Calendar.getInstance().apply {
-            timeInMillis = date
-            set(Calendar.HOUR_OF_DAY, timePickerState.hour)
-            set(Calendar.MINUTE, timePickerState.minute)
-        }
-        val formattedTime = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(cal.time)
-        onScheduleMessage(textState, formattedTime)
-        textState = ""
+    val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let { onSendFile(it, "DOCUMENT") }
     }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { 
+                title = {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Узел: ${chatPartnerId.take(8)}...", color = NeonCyan, fontWeight = FontWeight.Bold)
                         Text("P2P E2EE Protected", fontSize = 10.sp, color = Color.Gray)
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black),
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = DarkBackground),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = null, tint = NeonCyan)
@@ -99,7 +85,7 @@ fun ChatScreen(
             )
         },
         bottomBar = {
-            ChatInputField(
+            ChatInputArea(
                 text = textState,
                 onTextChange = { textState = it },
                 onSend = {
@@ -108,8 +94,7 @@ fun ChatScreen(
                         textState = ""
                     }
                 },
-                onAttachFile = { uri -> onSendFile(uri, "DOCUMENT") },
-                onScheduleClick = { if (textState.isNotBlank()) showDatePicker = true },
+                onAttachFile = { filePickerLauncher.launch("*/*") },
                 onSendAudio = onSendAudio,
                 onStartCall = {
                     val intent = Intent(context, CallActivity::class.java).apply {
@@ -121,36 +106,17 @@ fun ChatScreen(
         },
         containerColor = DarkBackground
     ) { padding ->
-        // Логика Date/Time пикеров
-        if (showDatePicker) {
-            DatePickerDialog(
-                onDismissRequest = { showDatePicker = false },
-                confirmButton = {
-                    TextButton(onClick = { showDatePicker = false; showTimePicker = true }) {
-                        Text("ДАЛЕЕ", color = NeonCyan)
-                    }
-                }
-            ) { DatePicker(state = datePickerState) }
-        }
-
-        if (showTimePicker) {
-            AlertDialog(
-                onDismissRequest = { showTimePicker = false },
-                confirmButton = {
-                    TextButton(onClick = { showTimePicker = false; scheduleAndSend() }) {
-                        Text("ОК", color = NeonCyan)
-                    }
-                },
-                text = { TimeInput(state = timePickerState) }
-            )
-        }
-
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 12.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 12.dp),
             contentPadding = PaddingValues(vertical = 16.dp)
         ) {
-            items(messages) { message -> ChatBubble(message) }
+            items(messages, key = { it.messageId }) { message ->
+                ChatBubble(message)
+            }
         }
     }
 }
@@ -158,31 +124,39 @@ fun ChatScreen(
 @Composable
 fun ChatBubble(message: Message) {
     val isMe = message.isMe
-    val bubbleColor = if (isMe) Color(0xFF002B2B) else SurfaceGray
-    val neonEdge = if (isMe) NeonCyan else NeonMagenta
-    val alignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
+    val bubbleColor = if (isMe) NeonCyan.copy(alpha = 0.2f) else NeonMagenta.copy(alpha = 0.2f)
+    val borderColor = if (isMe) NeonCyan else NeonMagenta
+    val alignment = if (isMe) Alignment.End else Alignment.Start
 
-    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), contentAlignment = alignment) {
-        Surface(
-            color = bubbleColor,
-            shape = RoundedCornerShape(16.dp),
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalAlignment = if (isMe) Alignment.End else Alignment.Start
+    ) {
+        Box(
             modifier = Modifier
                 .widthIn(max = 280.dp)
-                .border(0.5.dp, neonEdge.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(18.dp))
+                .border(1.dp, borderColor.copy(alpha = 0.5f), RoundedCornerShape(18.dp))
+                .background(bubbleColor)
+                .padding(12.dp)
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
+            Column {
                 when (message.type) {
-                    MessageType.TEXT -> Text(message.text, color = Color.White)
+                    MessageType.TEXT -> Text(message.text, color = Color.White, fontSize = 14.sp)
                     MessageType.IMAGE -> AsyncImage(
                         model = message.fileUrl,
                         contentDescription = null,
-                        modifier = Modifier.size(200.dp).clip(RoundedCornerShape(8.dp))
+                        modifier = Modifier
+                            .size(200.dp)
+                            .clip(RoundedCornerShape(12.dp))
                     )
                     MessageType.AUDIO -> AudioPlayerView(message.fileUrl ?: "", message.durationSeconds)
                     MessageType.FILE -> FileP2PView(message.fileName ?: "Файл")
                     else -> Text(message.text, color = Color.White)
                 }
-                
+
                 Text(
                     text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp)),
                     fontSize = 10.sp,
@@ -195,12 +169,11 @@ fun ChatBubble(message: Message) {
 }
 
 @Composable
-fun ChatInputField(
+fun ChatInputArea(
     text: String,
     onTextChange: (String) -> Unit,
     onSend: () -> Unit,
-    onAttachFile: (Uri) -> Unit,
-    onScheduleClick: () -> Unit,
+    onAttachFile: () -> Unit,
     onSendAudio: (Uri, Int) -> Unit,
     onStartCall: () -> Unit
 ) {
@@ -208,25 +181,41 @@ fun ChatInputField(
     var recording by remember { mutableStateOf(false) }
     var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var audioFile by remember { mutableStateOf<File?>(null) }
-    
-    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { onAttachFile(it) }
-    }
 
-    Row(modifier = Modifier.padding(8.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { filePicker.launch("*/*") }) { Icon(Icons.Default.AttachFile, null, tint = NeonCyan) }
+    val infiniteTransition = rememberInfiniteTransition()
+    val glowColor by infiniteTransition.animateColor(
+        initialValue = NeonCyan.copy(alpha = 0.4f),
+        targetValue = NeonCyan,
+        animationSpec = infiniteRepeatable(tween(1500), RepeatMode.Reverse)
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onAttachFile) { Icon(Icons.Default.AttachFile, contentDescription = null, tint = NeonCyan) }
+
         TextField(
             value = text,
             onValueChange = onTextChange,
-            modifier = Modifier.weight(1f),
+            placeholder = { Text("Введите сообщение...", color = Color.Gray) },
+            modifier = Modifier
+                .weight(1f)
+                .border(1.dp, glowColor, RoundedCornerShape(24.dp)),
+            shape = RoundedCornerShape(24.dp),
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = SurfaceGray,
                 unfocusedContainerColor = SurfaceGray,
                 focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
                 cursorColor = NeonCyan
-            ),
-            shape = RoundedCornerShape(24.dp)
+            )
         )
+
+        Spacer(Modifier.width(8.dp))
+
         IconButton(onClick = {
             if (!recording) {
                 val file = File(context.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
@@ -246,8 +235,13 @@ fun ChatInputField(
                 recording = false
                 audioFile?.let { onSendAudio(Uri.fromFile(it), 0) }
             }
-        }) { Icon(if (recording) Icons.Default.Stop else Icons.Default.Mic, null, tint = if (recording) Color.Red else NeonCyan) }
+        }) {
+            Icon(if (recording) Icons.Default.Stop else Icons.Default.Mic, null, tint = if (recording) Color.Red else NeonCyan)
+        }
+
         IconButton(onClick = onSend) { Icon(Icons.Default.Send, null, tint = NeonCyan) }
+
+        IconButton(onClick = onStartCall) { Icon(Icons.Default.Call, null, tint = NeonCyan) }
     }
 }
 
@@ -267,9 +261,11 @@ fun AudioPlayerView(url: String, duration: Int) {
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
 
     Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { 
-            if (isPlaying) { mediaPlayer?.pause(); isPlaying = false }
-            else {
+        IconButton(onClick = {
+            if (isPlaying) {
+                mediaPlayer?.pause()
+                isPlaying = false
+            } else {
                 mediaPlayer = MediaPlayer().apply {
                     setDataSource(context, Uri.parse(url))
                     prepare()
@@ -278,7 +274,9 @@ fun AudioPlayerView(url: String, duration: Int) {
                 }
                 isPlaying = true
             }
-        }) { Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = NeonCyan) }
+        }) {
+            Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = NeonCyan)
+        }
         Text("Голосовое сообщение", color = Color.White, fontSize = 12.sp)
     }
 }
