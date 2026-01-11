@@ -7,9 +7,9 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.remember
 import androidx.core.content.ContextCompat
@@ -27,7 +27,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var identityRepository: IdentityRepository
     private val TAG = "MainActivity"
 
-    // Лаунчер для запроса разрешений: Музыка + Контакты
+    // Расширенный список разрешений для функционала чата, звонков и медиа
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -38,34 +38,35 @@ class MainActivity : ComponentActivity() {
         }
         
         val contactsGranted = permissions[Manifest.permission.READ_CONTACTS] ?: false
+        val micGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
+        val notificationGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions[Manifest.permission.POST_NOTIFICATIONS] ?: false
+        } else true
 
         if (audioGranted) {
             MusicManager.loadTracks(this)
         }
         
-        if (!contactsGranted) {
-            Log.w(TAG, "Доступ к контактам отклонен пользователем")
-        }
+        if (!contactsGranted) Log.w(TAG, "Доступ к контактам отклонен")
+        if (!micGranted) Log.w(TAG, "Доступ к микрофону отклонен (голосовые сообщения не будут работать)")
+        if (!notificationGranted) Log.w(TAG, "Уведомления отключены")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Включение отображения "от края до края" для корректной работы инсетов клавиатуры
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
-        // 1. Инициализация систем безопасности и данных
-        try {
-            CryptoManager.init(applicationContext)
-            identityRepository = IdentityRepository(applicationContext)
-        } catch (e: Exception) {
-            Log.e(TAG, "Критическая ошибка инициализации: ${e.message}")
-        }
+        // 1. Инициализация безопасности
+        initSecurity()
 
-        // 2. Запуск фонового P2P-сервиса
+        // 2. Запуск фонового P2P-сервиса (необходим для входящих сообщений/звонков)
         startP2PService()
 
-        // 3. Проверка разрешений при запуске
+        // 3. Проверка и запрос критических разрешений
         checkAndRequestPermissions()
 
-        // 4. Определение состояния авторизации
+        // 4. Логика авторизации
         val prefs = getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
         val isLoggedIn = prefs.getBoolean("is_logged_in", false)
 
@@ -74,9 +75,7 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
                 val repo = remember { identityRepository }
 
-                // ПРАВКА: Используем константы из Routes, чтобы избежать IllegalArgumentException.
-                // Если isLoggedIn == true, идем сразу в CHATS.
-                // Если false, идем в SPLASH, который покажет лого и перекинет на CHOICE.
+                // Маршрут: если залогинен — сразу в чаты, иначе — сплэш/авторизация
                 val startRoute = if (isLoggedIn) Routes.CHATS else Routes.SPLASH
 
                 NavGraph(
@@ -85,6 +84,16 @@ class MainActivity : ComponentActivity() {
                     startDestination = startRoute
                 )
             }
+        }
+    }
+
+    private fun initSecurity() {
+        try {
+            CryptoManager.init(applicationContext)
+            identityRepository = IdentityRepository(applicationContext)
+        } catch (e: Exception) {
+            Log.e(TAG, "Критическая ошибка инициализации: ${e.message}")
+            // В реальном приложении здесь стоит показать диалог фатальной ошибки
         }
     }
 
@@ -104,31 +113,56 @@ class MainActivity : ComponentActivity() {
     private fun checkAndRequestPermissions() {
         val permissionsToRequest = mutableListOf<String>()
 
-        // Контакты
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) 
-            != PackageManager.PERMISSION_GRANTED) {
-            permissionsToRequest.add(Manifest.permission.READ_CONTACTS)
+        // Список необходимых разрешений
+        val essentialPermissions = mutableListOf(
+            Manifest.permission.READ_CONTACTS,
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.CAMERA
+        )
+
+        // Уведомления для Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            essentialPermissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
 
-        // Музыка/Хранилище
+        // Медиа/Аудио в зависимости от версии
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) 
-                != PackageManager.PERMISSION_GRANTED) {
-                permissionsToRequest.add(Manifest.permission.READ_MEDIA_AUDIO)
-            } else {
-                MusicManager.loadTracks(this)
-            }
+            essentialPermissions.add(Manifest.permission.READ_MEDIA_AUDIO)
+            essentialPermissions.add(Manifest.permission.READ_MEDIA_IMAGES)
         } else {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) 
-                != PackageManager.PERMISSION_GRANTED) {
-                permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            } else {
-                MusicManager.loadTracks(this)
+            essentialPermissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+
+        // Фильтруем только те, что еще не даны
+        essentialPermissions.forEach { permission ->
+            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+                permissionsToRequest.add(permission)
             }
+        }
+
+        // Если есть доступ к музыке, загружаем треки сразу
+        val hasMusicAccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED
+        } else {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+
+        if (hasMusicAccess) {
+            MusicManager.loadTracks(this)
         }
 
         if (permissionsToRequest.isNotEmpty()) {
             requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // При возврате в приложение можно обновить статус P2P узла, если нужно
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Мы не останавливаем P2PService здесь, так как он должен работать в фоне
     }
 }
