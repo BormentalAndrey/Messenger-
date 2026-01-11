@@ -9,13 +9,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColor
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -51,6 +52,7 @@ fun ChatScreen(
     onSendMessage: (String) -> Unit,
     onSendFile: (Uri, String) -> Unit,
     onSendAudio: (Uri, Int) -> Unit,
+    onScheduleMessage: (String, Long) -> Unit, // Добавлено
     onBack: () -> Unit
 ) {
     var textState by remember { mutableStateOf("") }
@@ -96,6 +98,12 @@ fun ChatScreen(
                 },
                 onAttachFile = { filePickerLauncher.launch("*/*") },
                 onSendAudio = onSendAudio,
+                onScheduleMessage = { 
+                    if (textState.isNotBlank()) {
+                        onScheduleMessage(textState, it)
+                        textState = ""
+                    }
+                },
                 onStartCall = {
                     val intent = Intent(context, CallActivity::class.java).apply {
                         putExtra("chatId", chatPartnerId)
@@ -114,7 +122,7 @@ fun ChatScreen(
                 .padding(horizontal = 12.dp),
             contentPadding = PaddingValues(vertical = 16.dp)
         ) {
-            items(messages, key = { it.messageId }) { message ->
+            items(messages, key = { it.id }) { message -> // Исправлено на it.id
                 ChatBubble(message)
             }
         }
@@ -126,7 +134,6 @@ fun ChatBubble(message: Message) {
     val isMe = message.isMe
     val bubbleColor = if (isMe) NeonCyan.copy(alpha = 0.2f) else NeonMagenta.copy(alpha = 0.2f)
     val borderColor = if (isMe) NeonCyan else NeonMagenta
-    val alignment = if (isMe) Alignment.End else Alignment.Start
 
     Column(
         modifier = Modifier
@@ -168,6 +175,7 @@ fun ChatBubble(message: Message) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatInputArea(
     text: String,
@@ -175,6 +183,7 @@ fun ChatInputArea(
     onSend: () -> Unit,
     onAttachFile: () -> Unit,
     onSendAudio: (Uri, Int) -> Unit,
+    onScheduleMessage: (Long) -> Unit, // Для отложенной отправки
     onStartCall: () -> Unit
 ) {
     val context = LocalContext.current
@@ -182,11 +191,12 @@ fun ChatInputArea(
     var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var audioFile by remember { mutableStateOf<File?>(null) }
 
-    val infiniteTransition = rememberInfiniteTransition()
+    val infiniteTransition = rememberInfiniteTransition(label = "glow")
     val glowColor by infiniteTransition.animateColor(
         initialValue = NeonCyan.copy(alpha = 0.4f),
         targetValue = NeonCyan,
-        animationSpec = infiniteRepeatable(tween(1500), RepeatMode.Reverse)
+        animationSpec = infiniteRepeatable(tween(1500), RepeatMode.Reverse),
+        label = "color"
     )
 
     Row(
@@ -195,7 +205,9 @@ fun ChatInputArea(
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = onAttachFile) { Icon(Icons.Default.AttachFile, contentDescription = null, tint = NeonCyan) }
+        IconButton(onClick = onAttachFile) { 
+            Icon(Icons.Default.AttachFile, contentDescription = null, tint = NeonCyan) 
+        }
 
         TextField(
             value = text,
@@ -210,12 +222,15 @@ fun ChatInputArea(
                 unfocusedContainerColor = SurfaceGray,
                 focusedTextColor = Color.White,
                 unfocusedTextColor = Color.White,
-                cursorColor = NeonCyan
+                cursorColor = NeonCyan,
+                focusedIndicatorColor = Color.Transparent,
+                unfocusedIndicatorColor = Color.Transparent
             )
         )
 
         Spacer(Modifier.width(8.dp))
 
+        // Кнопка микрофона
         IconButton(onClick = {
             if (!recording) {
                 val file = File(context.cacheDir, "voice_${System.currentTimeMillis()}.m4a")
@@ -230,18 +245,40 @@ fun ChatInputArea(
                 }
                 recording = true
             } else {
-                recorder?.stop()
-                recorder?.release()
+                try {
+                    recorder?.stop()
+                    recorder?.release()
+                } catch (e: Exception) { e.printStackTrace() }
                 recording = false
                 audioFile?.let { onSendAudio(Uri.fromFile(it), 0) }
             }
         }) {
-            Icon(if (recording) Icons.Default.Stop else Icons.Default.Mic, null, tint = if (recording) Color.Red else NeonCyan)
+            Icon(
+                if (recording) Icons.Default.Stop else Icons.Default.Mic, 
+                contentDescription = null, 
+                tint = if (recording) Color.Red else NeonCyan
+            )
         }
 
-        IconButton(onClick = onSend) { Icon(Icons.Default.Send, null, tint = NeonCyan) }
+        // Кнопка отправки с поддержкой долгого нажатия для планировщика
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .combinedClickable(
+                    onClick = onSend,
+                    onLongClick = { 
+                        // Пример: планируем через 1 час при долгом нажатии
+                        onScheduleMessage(System.currentTimeMillis() + 3600000) 
+                    }
+                )
+                .padding(8.dp)
+        ) {
+            Icon(Icons.Default.Send, contentDescription = null, tint = NeonCyan)
+        }
 
-        IconButton(onClick = onStartCall) { Icon(Icons.Default.Call, null, tint = NeonCyan) }
+        IconButton(onClick = onStartCall) { 
+            Icon(Icons.Default.Call, contentDescription = null, tint = NeonCyan) 
+        }
     }
 }
 
