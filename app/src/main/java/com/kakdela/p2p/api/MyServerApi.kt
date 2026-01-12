@@ -8,6 +8,7 @@ import com.kakdela.p2p.network.NetworkEvents
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
+import okhttp3.MediaType.Companion.toMediaType
 import okio.Buffer
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -47,6 +48,7 @@ data class UserRegistrationWrapper(
 // ================= API INTERFACE =================
 
 interface MyServerApi {
+
     @POST("api.php")
     suspend fun announceSelf(
         @Query("action") action: String = "add_user",
@@ -62,6 +64,7 @@ interface MyServerApi {
 // ================= FACTORY =================
 
 object MyServerApiFactory {
+
     private const val BASE_URL = "http://kakdela.infinityfree.me/"
     private const val TAG = "P2P_NETWORK_DEBUG"
     private const val LOG_FILE_NAME = "p2p_log.txt"
@@ -72,7 +75,8 @@ object MyServerApiFactory {
             .readTimeout(45, TimeUnit.SECONDS)
             .writeTimeout(45, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
-            .addInterceptor { chain: Interceptor.Chain ->
+            .addInterceptor { chain ->
+
                 val originalRequest = chain.request()
 
                 // 1. Заголовки (эмуляция браузера)
@@ -104,26 +108,29 @@ object MyServerApiFactory {
 
                 val response: Response = chain.proceed(request)
 
-                // 5. Лог ответа
+                // 3. Лог ответа
                 val responseLog = "<<< [RESPONSE]: ${response.code}\n"
                 Log.e(TAG, responseLog)
                 writeLogToFile(responseLog)
 
-                // 6. Проверка на Anti-Bot (ФИНАЛЬНЫЙ КОМПИЛИРУЕМЫЙ ВАРИАНТ)
+                // 4. Проверка Anti-Bot (ФИНАЛЬНЫЙ ВАРИАНТ)
                 val responseBody = response.peekBody(Long.MAX_VALUE)
                 val content = responseBody.string()
                 val contentType = response.body?.contentType()?.toString()
 
-                if (contentType?.contains("text/html", ignoreCase = true) == true ||
+                if (
+                    contentType?.contains("text/html", ignoreCase = true) == true ||
                     content.contains("<html>")
                 ) {
                     val msg = "!!! ANTI-BOT BLOCK DETECTED !!!"
                     Log.e(TAG, msg)
                     writeLogToFile("\n$msg\n")
 
+                    // Сигнал UI (WebView / повтор)
                     NetworkEvents.triggerAuth()
 
-                    val jsonMediaType = okhttp3.MediaType.get("application/json")
+                    // Корректный JSON для Retrofit
+                    val jsonMediaType = "application/json".toMediaType()
                     val mockJson = "{ \"success\": false, \"error\": \"anti_bot_wait\" }"
 
                     return@addInterceptor response.newBuilder()
