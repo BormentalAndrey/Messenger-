@@ -1,5 +1,6 @@
 package com.kakdela.p2p.api
 
+import android.os.Environment
 import android.util.Log
 import com.google.gson.annotations.SerializedName
 import com.kakdela.p2p.network.CookieStore
@@ -14,9 +15,11 @@ import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Query
+import java.io.File
+import java.util.Date
 import java.util.concurrent.TimeUnit
 
-// ================= MODELS (Дата-классы для JSON) =================
+// ================= MODELS =================
 
 data class UserPayload(
     @SerializedName("hash") val hash: String,
@@ -44,81 +47,74 @@ data class UserRegistrationWrapper(
 // ================= API INTERFACE =================
 
 interface MyServerApi {
-    /**
-     * Регистрация/обновление узла в сети
-     */
     @POST("api.php")
     suspend fun announceSelf(
         @Query("action") action: String = "add_user",
         @Body payload: UserRegistrationWrapper
     ): ServerResponse
 
-    /**
-     * Получение списка всех активных пиров
-     */
     @GET("api.php")
     suspend fun getAllNodes(
         @Query("action") action: String = "list_users"
     ): ServerResponse
 }
 
-// ================= FACTORY (OkHttp + Retrofit) =================
+// ================= FACTORY =================
 
 object MyServerApiFactory {
     private const val BASE_URL = "http://kakdela.infinityfree.me/"
-    // Используем уровень ERROR для критических логов, чтобы они были видны в Termux без фильтров
     private const val TAG = "P2P_NETWORK_DEBUG"
+    private const val LOG_FILE_NAME = "p2p_log.txt"
 
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(45, TimeUnit.SECONDS) // Увеличил таймаут для медленного хостинга
+            .connectTimeout(45, TimeUnit.SECONDS)
             .readTimeout(45, TimeUnit.SECONDS)
             .writeTimeout(45, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .addInterceptor { chain: Interceptor.Chain ->
                 val originalRequest = chain.request()
                 
-                // Сборка запроса с имитацией реального браузера (защита от ботов)
+                // 1. Подготовка заголовков (Browser Emulator)
                 val requestBuilder = originalRequest.newBuilder()
                     .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36")
                     .header("Accept", "application/json, text/plain, */*")
-                    .header("Accept-Language", "en-US,en;q=0.9")
-                    .header("Cache-Control", "no-cache")
 
-                // Применяем куку обхода AES-защиты InfinityFree
                 CookieStore.testCookie?.let {
                     requestBuilder.header("Cookie", it)
-                    Log.e(TAG, ">>> [COOKIE]: $it")
                 }
 
                 val request = requestBuilder.build()
-
-                // ЛОГИРОВАНИЕ ПЕРЕД ОТПРАВКОЙ (Твой внутренний сниффер)
-                Log.e(TAG, ">>> [REQUEST]: ${request.method} ${request.url}")
+                
+                // 2. Сбор данных для логирования
+                val logEntry = StringBuilder()
+                logEntry.append("\n[${Date()}] ${request.method} ${request.url}\n")
                 
                 if (request.method == "POST") {
-                    try {
-                        val buffer = Buffer()
-                        request.body?.writeTo(buffer)
-                        Log.e(TAG, ">>> [PAYLOAD]: ${buffer.readUtf8()}")
-                    } catch (e: Exception) {
-                        Log.e(TAG, ">>> [ERROR] Не удалось прочитать Body: ${e.message}")
-                    }
+                    val buffer = Buffer()
+                    request.body?.writeTo(buffer)
+                    logEntry.append("PAYLOAD: ${buffer.readUtf8()}\n")
                 }
+
+                // 3. Запись в системный лог (Logcat)
+                Log.e(TAG, logEntry.toString())
+
+                // 4. Запись в файл (для Termux: /sdcard/Documents/p2p_log.txt)
+                writeLogToFile(logEntry.toString())
 
                 val response: Response = chain.proceed(request)
 
-                // АНАЛИЗ ОТВЕТА СЕРВЕРА
-                Log.e(TAG, "<<< [RESPONSE]: Code ${response.code}")
-                
-                val contentType = response.body?.contentType()?.toString()
+                // 5. Логирование ответа
+                val responseLog = "<<< [RESPONSE]: ${response.code}\n"
+                Log.e(TAG, responseLog)
+                writeLogToFile(responseLog)
 
-                /* КРИТИЧЕСКИЙ МОМЕНТ: 
-                   Если сервер прислал HTML вместо JSON — значит нас заблокировал антибот.
-                */
+                // 6. Проверка на Anti-Bot
+                val contentType = response.body?.contentType()?.toString()
                 if (contentType?.contains("text/html", ignoreCase = true) == true) {
-                    Log.e(TAG, "!!! [ALERT]: Обнаружена HTML-заглушка! Кука устарела.")
-                    NetworkEvents.triggerAuth() // Вызов WebView для получения новой куки
+                    Log.e(TAG, "!!! ANTI-BOT DETECTED !!!")
+                    writeLogToFile("!!! ANTI-BOT DETECTED (HTML received instead of JSON) !!!\n")
+                    NetworkEvents.triggerAuth()
                 }
 
                 response
@@ -127,8 +123,20 @@ object MyServerApiFactory {
     }
 
     /**
-     * Основная точка доступа к API
+     * Записывает строку лога в публичную папку Documents.
      */
+    private fun writeLogToFile(text: String) {
+        try {
+            val publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+            if (!publicDir.exists()) publicDir.mkdirs()
+            val file = File(publicDir, LOG_FILE_NAME)
+            file.appendText(text)
+        } catch (e: Exception) {
+            // Если нет прав на запись, хотя бы выведем ошибку в консоль
+            Log.e(TAG, "File Log Error: ${e.message}")
+        }
+    }
+
     val instance: MyServerApi by lazy {
         Retrofit.Builder()
             .baseUrl(BASE_URL)
