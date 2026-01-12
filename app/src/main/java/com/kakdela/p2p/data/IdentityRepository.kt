@@ -2,6 +2,7 @@ package com.kakdela.p2p.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.net.Uri
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.telephony.SmsManager
@@ -41,19 +42,19 @@ class IdentityRepository(private val context: Context) {
     private val nodeDao = db.nodeDao()
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
 
-    private val messageRepository by lazy { 
-        MessageRepository(context, db.messageDao(), this) 
+    private val messageRepository by lazy {
+        MessageRepository(context, db.messageDao(), this)
     }
 
     private val listeners = CopyOnWriteArrayList<(String, String, String, String) -> Unit>()
-    
+
     val wifiPeers = ConcurrentHashMap<String, String>()
     val swarmPeers = ConcurrentHashMap<String, String>()
 
     private val SERVICE_TYPE = "_kakdela_p2p._udp."
     private val PORT = 8888
     private val PEPPER = "7fb8a1d2c3e4f5a6b7c8d9e0f1a2b3c4"
-    private val SYNC_INTERVAL = 300_000L 
+    private val SYNC_INTERVAL = 300_000L
 
     @Volatile
     private var isRunning = false
@@ -72,7 +73,7 @@ class IdentityRepository(private val context: Context) {
                 launch { startUdpListener() }
                 launch { registerInWifi() }
                 launch { discoverInWifi() }
-                
+
                 if (myId.isNotEmpty()) {
                     performServerSync(myId)
                 }
@@ -108,27 +109,16 @@ class IdentityRepository(private val context: Context) {
         return id
     }
 
-    /**
-     * Возвращает публичный ключ пира из локальной базы данных.
-     * Исправляет ошибку: Unresolved reference: getPeerPublicKey в MessageRepository
-     */
     fun getPeerPublicKey(hash: String): String? {
         return runBlocking { nodeDao.getNodeByHash(hash)?.publicKey }
     }
 
-    /**
-     * Генерирует хеш телефона для поиска контактов.
-     * Исправляет ошибку: Unresolved reference: generatePhoneDiscoveryHash в SmsReceiver/ContactManager
-     */
     fun generatePhoneDiscoveryHash(phone: String): String {
         val digits = phone.replace(Regex("[^0-9]"), "")
         val normalized = if (digits.length == 11 && digits.startsWith("8")) "7${digits.substring(1)}" else digits
         return sha256(normalized + PEPPER)
     }
 
-    /**
-     * Отправка сигнальных данных (WebRTC / Передача файлов).
-     */
     fun sendSignaling(targetIp: String, type: String, data: String) {
         scope.launch {
             try {
@@ -143,9 +133,6 @@ class IdentityRepository(private val context: Context) {
         }
     }
 
-    /**
-     * Добавление узла вручную по хешу.
-     */
     suspend fun addNodeByHash(targetHash: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val allNodes = fetchAllNodesFromServer()
@@ -156,7 +143,7 @@ class IdentityRepository(private val context: Context) {
                     userHash = foundNode.hash,
                     phone_hash = foundNode.phone_hash ?: "",
                     ip = foundNode.ip ?: "0.0.0.0",
-                    port = foundNode.port, // Исправлено: передаем Int
+                    port = foundNode.port,
                     publicKey = foundNode.publicKey,
                     phone = foundNode.phone ?: "",
                     lastSeen = System.currentTimeMillis()
@@ -191,7 +178,7 @@ class IdentityRepository(private val context: Context) {
             val myPayload = UserPayload(
                 hash = myId,
                 phone_hash = prefs.getString("my_phone_hash", null),
-                ip = null, 
+                ip = null,
                 port = PORT,
                 publicKey = CryptoManager.getMyPublicKeyStr(),
                 phone = prefs.getString("my_phone", null),
@@ -215,10 +202,10 @@ class IdentityRepository(private val context: Context) {
                         userHash = it.hash,
                         phone_hash = it.phone_hash ?: "",
                         ip = it.ip ?: "0.0.0.0",
-                        port = it.port, // Исправлен Type Mismatch
+                        port = it.port,
                         publicKey = it.publicKey,
                         phone = it.phone ?: "",
-                        lastSeen = it.lastSeen ?: System.currentTimeMillis() // Исправлен Type Mismatch
+                        lastSeen = it.lastSeen ?: System.currentTimeMillis()
                     )
                 })
             }
@@ -249,7 +236,7 @@ class IdentityRepository(private val context: Context) {
 
     fun sendMessageSmart(targetHash: String, phone: String?, message: String): Boolean {
         var delivered = false
-        runBlocking(Dispatchers.IO) { 
+        runBlocking(Dispatchers.IO) {
             var ip = wifiPeers[targetHash] ?: swarmPeers[targetHash]
             if (ip == null) ip = findPeerOnServer(targetHash)?.ip
 
@@ -259,7 +246,7 @@ class IdentityRepository(private val context: Context) {
 
             if (!delivered && !phone.isNullOrBlank()) {
                 sendAsSms(phone, message)
-                delivered = true 
+                delivered = true
             }
         }
         return delivered
@@ -281,7 +268,7 @@ class IdentityRepository(private val context: Context) {
                 DatagramSocket(null).use { socket ->
                     socket.reuseAddress = true
                     socket.bind(InetSocketAddress(PORT))
-                    val buffer = ByteArray(65507) 
+                    val buffer = ByteArray(65507)
                     while (isRunning) {
                         try {
                             val packet = DatagramPacket(buffer, buffer.size)
@@ -292,7 +279,9 @@ class IdentityRepository(private val context: Context) {
                         }
                     }
                 }
-            } catch (e: Exception) { Log.e(TAG, "UDP Bind failed: ${e.message}") }
+            } catch (e: Exception) {
+                Log.e(TAG, "UDP Bind failed: ${e.message}")
+            }
         }
     }
 
@@ -304,7 +293,7 @@ class IdentityRepository(private val context: Context) {
                 val fromHash = json.getString("from")
                 val pubKey = json.getString("pubkey")
                 val sigBase64 = json.getString("signature")
-                
+
                 val signature = Base64.decode(sigBase64, Base64.NO_WRAP)
                 val unsignedJson = JSONObject(raw).apply { remove("signature") }.toString()
 
@@ -335,12 +324,14 @@ class IdentityRepository(private val context: Context) {
             json.put("signature", Base64.encodeToString(sig, Base64.NO_WRAP))
 
             val bytes = json.toString().toByteArray()
-            DatagramSocket().use { 
-                it.soTimeout = 2000 
-                it.send(DatagramPacket(bytes, bytes.size, InetAddress.getByName(ip), PORT)) 
+            DatagramSocket().use {
+                it.soTimeout = 2000
+                it.send(DatagramPacket(bytes, bytes.size, InetAddress.getByName(ip), PORT))
             }
             true
-        } catch (e: Exception) { false }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /* ======================= NSD & SMS & UTILS ======================= */
@@ -351,7 +342,7 @@ class IdentityRepository(private val context: Context) {
         override fun onServiceUnregistered(s: NsdServiceInfo) {}
         override fun onUnregistrationFailed(s: NsdServiceInfo, e: Int) {}
     }
-    
+
     private val discoveryListener = object : NsdManager.DiscoveryListener {
         override fun onServiceFound(s: NsdServiceInfo) {
             if (s.serviceType != SERVICE_TYPE || s.serviceName.contains(getMyId().take(8))) return
@@ -361,9 +352,11 @@ class IdentityRepository(private val context: Context) {
                     val parts = r.serviceName.split("-")
                     if (parts.size >= 2) wifiPeers[parts[1]] = host
                 }
+
                 override fun onResolveFailed(s: NsdServiceInfo, e: Int) {}
             })
         }
+
         override fun onServiceLost(s: NsdServiceInfo) { wifiPeers.entries.removeIf { it.value == s.host?.hostAddress } }
         override fun onDiscoveryStarted(t: String) {}
         override fun onDiscoveryStopped(t: String) {}
@@ -374,24 +367,26 @@ class IdentityRepository(private val context: Context) {
     private fun registerInWifi() {
         try {
             val safeName = "KakDela-${getMyId().take(8)}-${UUID.randomUUID().toString().take(4)}"
-            val serviceInfo = NsdServiceInfo().apply { 
+            val serviceInfo = NsdServiceInfo().apply {
                 serviceName = safeName
                 serviceType = SERVICE_TYPE
-                port = PORT 
+                port = PORT
             }
             nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, registrationListener)
         } catch (_: Exception) {}
     }
 
     private fun discoverInWifi() {
-        try { nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener) } catch (_: Exception) {}
+        try {
+            nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+        } catch (_: Exception) {}
     }
 
     private fun sendAsSms(phone: String, message: String) {
         try {
-            val sms = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) 
-                context.getSystemService(SmsManager::class.java) 
-                else @Suppress("DEPRECATION") SmsManager.getDefault()
+            val sms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                context.getSystemService(SmsManager::class.java)
+            else @Suppress("DEPRECATION") SmsManager.getDefault()
             sms.sendTextMessage(phone, null, "[P2P] $message", null, null)
         } catch (_: Exception) {}
     }
@@ -399,4 +394,33 @@ class IdentityRepository(private val context: Context) {
     private fun sha256(s: String): String = MessageDigest.getInstance("SHA-256")
         .digest(s.toByteArray())
         .joinToString("") { "%02x".format(it) }
+
+    /* ======================= LOCAL AVATAR ======================= */
+
+    /**
+     * Сохраняет выбранное изображение во внутреннюю папку приложения как аватар.
+     */
+    fun saveLocalAvatar(context: Context, uri: Uri) {
+        try {
+            val inputStream = context.contentResolver.openInputStream(uri)
+            val file = java.io.File(context.filesDir, "my_avatar.jpg")
+            val outputStream = java.io.FileOutputStream(file)
+            inputStream?.use { input ->
+                outputStream.use { output ->
+                    input.copyTo(output)
+                }
+            }
+            Log.d(TAG, "Аватар сохранен локально: ${file.absolutePath}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Ошибка сохранения аватара: ${e.message}")
+        }
+    }
+
+    /**
+     * Возвращает Uri локального аватара, если он существует.
+     */
+    fun getLocalAvatarUri(context: Context): Uri? {
+        val file = java.io.File(context.filesDir, "my_avatar.jpg")
+        return if (file.exists()) Uri.fromFile(file) else null
+    }
 }
