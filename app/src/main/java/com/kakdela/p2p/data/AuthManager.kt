@@ -30,20 +30,19 @@ class AuthManager(private val context: Context) {
 
         val normalizedPhone = normalizePhone(phone)
         val passwordHash = sha256(password)
-        
-        // Генерируем уникальный hash
+
+        // Уникальный hash пользователя
         val securityHash = sha256("$normalizedPhone|$email|$passwordHash")
-        
-        // Генерируем hash телефона для поиска другими пользователями
+
+        // Hash телефона (поиск)
         val phoneHash = sha256(normalizedPhone + PEPPER)
-        
+
         val publicKey = CryptoManager.getMyPublicKeyStr()
 
-        // Создаем payload для отправки на сервер
         val payload = UserPayload(
             hash = securityHash,
             phone_hash = phoneHash,
-            ip = "0.0.0.0", // Сервер заменит на REMOTE_ADDR
+            ip = "0.0.0.0",
             port = 8888,
             publicKey = publicKey,
             phone = normalizedPhone,
@@ -55,19 +54,40 @@ class AuthManager(private val context: Context) {
             Log.d(TAG, "Attempting server announce...")
             val wrapper = UserRegistrationWrapper(securityHash, payload)
             val response = api.announceSelf(payload = wrapper)
-            
+
+            // 🔴 АНТИБОТ: сервер вернул HTML, интерцептор подменил ответ
+            if (response.error == "anti_bot_wait") {
+                Log.w(
+                    TAG,
+                    "Anti-Bot challenge in progress. User must retry in a few seconds."
+                )
+                // ❗ НЕ создаем локальную сессию
+                // UI должен попросить пользователя нажать кнопку ещё раз
+                return@withContext false
+            }
+
             if (response.success) {
                 Log.d(TAG, "Server announce SUCCESS")
             } else {
                 Log.w(TAG, "Server announce FAILED: ${response.error}")
             }
+
         } catch (e: Exception) {
-            Log.w(TAG, "Offline mode activated: ${e.message}")
+            Log.e(TAG, "Connection Error: ${e.message}")
+
+            // 🔍 ХОЛОСТОЙ вызов — чтобы увидеть HTML/ошибку в Termux через интерцептор
+            try {
+                api.getAllNodes()
+            } catch (_: Exception) {
+                // игнор — нам нужен только лог
+            }
+
+            // ❗ Не говорим «Offline mode» — просим повторить попытку
+            return@withContext false
         }
 
-        // Локальное сохранение сессии (Источник истины для приложения)
+        // ✅ Только если не было anti_bot_wait и исключений
         createLocalSession(payload, email, passwordHash, securityHash)
-
         return@withContext true
     }
 
@@ -92,12 +112,13 @@ class AuthManager(private val context: Context) {
                 )
             )
 
-            context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE).edit()
+            context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
+                .edit()
                 .putBoolean("is_logged_in", true)
                 .putString("my_security_hash", securityHash)
                 .putString("my_phone", payload.phone)
                 .apply()
-            
+
             Log.d(TAG, "Local session created successfully")
 
         } catch (e: Exception) {
