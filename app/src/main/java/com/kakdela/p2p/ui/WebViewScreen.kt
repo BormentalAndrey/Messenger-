@@ -27,7 +27,7 @@ import java.nio.charset.StandardCharsets
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun WebViewScreen(url: String, title: String, navController: NavHostController) {
-    // 1. Декодируем URL для корректной обработки спецсимволов
+    // Декодируем URL для корректной работы с символами
     val decodedUrl = remember(url) {
         try {
             URLDecoder.decode(url, StandardCharsets.UTF_8.toString())
@@ -39,7 +39,7 @@ fun WebViewScreen(url: String, title: String, navController: NavHostController) 
     val isTikTok = decodedUrl.contains("tiktok.com", ignoreCase = true)
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
 
-    // 2. Системная кнопка "Назад" - управление историей браузера
+    // Системная кнопка "Назад"
     BackHandler(enabled = true) {
         if (webViewInstance?.canGoBack() == true) {
             webViewInstance?.goBack()
@@ -48,7 +48,6 @@ fun WebViewScreen(url: String, title: String, navController: NavHostController) 
         }
     }
 
-    // 
     AndroidView(
         modifier = Modifier.fillMaxSize(),
         factory = { context ->
@@ -58,7 +57,7 @@ fun WebViewScreen(url: String, title: String, navController: NavHostController) 
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
 
-                // Настройки безопасности и производительности
+                // Настройки WebView
                 settings.apply {
                     javaScriptEnabled = true
                     domStorageEnabled = true
@@ -68,22 +67,28 @@ fun WebViewScreen(url: String, title: String, navController: NavHostController) 
                     displayZoomControls = false
                     loadWithOverviewMode = true
                     useWideViewPort = true
-                    
-                    // Имитируем реальный браузер для обхода защиты
-                    userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+                    // Эмуляция реального браузера
+                    userAgentString =
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
                 }
 
-                // Включаем прием кук (важно для Android 5.0+)
+                // Включаем прием кук
                 CookieManager.getInstance().setAcceptCookie(true)
                 CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
 
                 webViewClient = object : WebViewClient() {
-                    
-                    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+
+                    override fun shouldOverrideUrlLoading(
+                        view: WebView?,
+                        request: WebResourceRequest?
+                    ): Boolean {
                         val targetUrl = request?.url.toString()
 
-                        // Обработка внешних протоколов (звонки, почта)
-                        if (targetUrl.startsWith("tel:") || targetUrl.startsWith("mailto:") || targetUrl.startsWith("geo:")) {
+                        // Обработка внешних протоколов
+                        if (targetUrl.startsWith("tel:") ||
+                            targetUrl.startsWith("mailto:") ||
+                            targetUrl.startsWith("geo:")
+                        ) {
                             try {
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl)))
                             } catch (e: Exception) {
@@ -92,36 +97,34 @@ fun WebViewScreen(url: String, title: String, navController: NavHostController) 
                             return true
                         }
 
-                        // Блокировка редиректов TikTok в Play Store
+                        // Блокировка TikTok редиректов в Play Store или рекламные ссылки
                         if (isTikTok && (targetUrl.contains("play.google.com") || targetUrl.contains("app-ad"))) {
                             return true
                         }
-                        
-                        return false 
+
+                        return false
                     }
 
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
-                        
-                        // ПЕРЕХВАТ КУКИ ДЛЯ ОБХОДА ЗАЩИТЫ ХОСТИНГА
+
+                        // Обновление кук для обхода защиты InfinityFree
                         if (url != null && url.contains("infinityfree.me")) {
-                            val cookies = CookieManager.getInstance().getCookie(url)
-                            if (cookies != null && cookies.contains("__test=")) {
-                                // Передаем context для сохранения в SharedPreferences
-                                CookieStore.updateCookie(context, cookies)
-                                Log.i("WebViewAuth", "Сессионный ключ успешно обновлен")
-                                
-                                // Если это был технический запрос к API - закрываем экран
-                                if (url.contains("api.php")) {
-                                    navController.popBackStack()
-                                }
+                            CookieStore.updateFromWebView(context, url)
+                            if (CookieStore.testCookie != null) {
+                                Log.i("WebViewAuth", "Сессионный ключ __test обновлен")
+                            }
+
+                            // Если был технический запрос к API, закрываем экран автоматически
+                            if (url.contains("api.php")) {
+                                navController.popBackStack()
                             }
                         }
 
-                        // Инъекция скрипта для подавления всплывающих окон в TikTok
+                        // Подавляем всплывающие окна в TikTok
                         if (isTikTok) {
                             view?.evaluateJavascript(
-                                "(function() { window.open = function() { return null; }; })();", 
+                                "(function() { window.open = function() { return null; }; })();",
                                 null
                             )
                         }
@@ -134,8 +137,9 @@ fun WebViewScreen(url: String, title: String, navController: NavHostController) 
             }
         },
         onRelease = {
-            // Очистка памяти при закрытии экрана
+            // Очистка WebView при выходе
             it.stopLoading()
+            it.removeAllViews()
             it.destroy()
         }
     )
