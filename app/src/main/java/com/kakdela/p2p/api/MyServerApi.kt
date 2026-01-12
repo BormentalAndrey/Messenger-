@@ -7,7 +7,7 @@ import com.kakdela.p2p.network.NetworkEvents
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
-import okhttp3.logging.HttpLoggingInterceptor
+import okio.Buffer
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
@@ -16,7 +16,7 @@ import retrofit2.http.POST
 import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
 
-// ================= MODELS =================
+// ================= MODELS (Модели данных) =================
 
 data class UserPayload(
     @SerializedName("hash") val hash: String,
@@ -41,70 +41,68 @@ data class UserRegistrationWrapper(
     @SerializedName("data") val data: UserPayload
 )
 
-// ================= API INTERFACE =================
+// ================= API INTERFACE (Интерфейс запросов) =================
 
 interface MyServerApi {
-    /**
-     * Анонсирует текущий узел серверу для регистрации в сети P2P.
-     */
     @POST("api.php")
     suspend fun announceSelf(
         @Query("action") action: String = "add_user",
         @Body payload: UserRegistrationWrapper
     ): ServerResponse
 
-    /**
-     * Получает список всех активных узлов из базы данных сервера.
-     */
     @GET("api.php")
     suspend fun getAllNodes(
         @Query("action") action: String = "list_users"
     ): ServerResponse
 }
 
-// ================= FACTORY =================
+// ================= FACTORY (Сборка клиента) =================
 
 object MyServerApiFactory {
     private const val BASE_URL = "http://kakdela.infinityfree.me/"
-    private const val TAG = "MyServerApi"
+    private const val TAG = "P2P_NETWORK_DEBUG"
 
-    /**
-     * Настройка HTTP-клиента с интерцепторами для логов, User-Agent и кук.
-     */
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
-            // Логирование запросов и ответов
-            .addInterceptor(HttpLoggingInterceptor().apply {
-                level = HttpLoggingInterceptor.Level.BODY 
-            })
-            // Основной интерцептор для заголовков и обхода антибота
             .addInterceptor { chain: Interceptor.Chain ->
-                val requestBuilder = chain.request().newBuilder()
+                val originalRequest = chain.request()
+                
+                // Формируем новый запрос с нужными заголовками
+                val requestBuilder = originalRequest.newBuilder()
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
                     .header("Accept", "application/json")
+                    .header("Connection", "keep-alive")
 
-                // Принудительно подставляем куку __test, если она получена через WebView
+                // Подставляем куку обхода антибота из CookieStore
                 CookieStore.testCookie?.let {
                     requestBuilder.header("Cookie", it)
-                    Log.d(TAG, "Используется сохраненная кука: $it")
+                    Log.i(TAG, ">>> Используется кука: $it")
                 }
 
                 val request = requestBuilder.build()
+
+                // ЛОГИРОВАНИЕ (Тот самый "Сниффер" в консоль)
+                Log.i(TAG, ">>> ОТПРАВКА: ${request.method} ${request.url}")
+                if (request.method == "POST") {
+                    val buffer = Buffer()
+                    request.body?.writeTo(buffer)
+                    Log.d(TAG, ">>> ТЕЛО (JSON): ${buffer.readUtf8()}")
+                }
+
                 val response: Response = chain.proceed(request)
 
-                /* Проверка на антибот InfinityFree. 
-                   Если сервер возвращает text/html вместо application/json, 
-                   значит запрос заблокирован защитой AES.
-                */
+                // АНАЛИЗ ОТВЕТА
+                Log.i(TAG, "<<< ОТВЕТ: ${response.code}")
                 val contentType = response.body?.contentType()?.toString()
+
+                // Если вместо JSON прилетел HTML — значит кука __test просрочена или неверна
                 if (contentType?.contains("text/html", ignoreCase = true) == true) {
-                    Log.w(TAG, "Обнаружена заглушка! Необходима кука __test.")
-                    
-                    // Уведомляем систему о необходимости открыть WebView для авторизации
+                    Log.e(TAG, "!!! ОБНАРУЖЕН АНТИБОТ (Блокировка AES) !!!")
+                    Log.e(TAG, "!!! Перезапускаю авторизацию через WebView...")
                     NetworkEvents.triggerAuth()
                 }
 
@@ -113,9 +111,6 @@ object MyServerApiFactory {
             .build()
     }
 
-    /**
-     * Готовый экземпляр Retrofit для выполнения сетевых запросов.
-     */
     val instance: MyServerApi by lazy {
         Retrofit.Builder()
             .baseUrl(BASE_URL)
