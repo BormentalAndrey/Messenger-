@@ -20,6 +20,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -239,7 +241,12 @@ fun SettingsScreen(
             Spacer(Modifier.height(20.dp))
 
             // ===== Список узлов =====
-            Text("Известные пиры (${nodes.size})", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.align(Alignment.Start))
+            Text(
+                "Известные пиры (${nodes.size})",
+                color = Color.Gray,
+                fontSize = 12.sp,
+                modifier = Modifier.align(Alignment.Start)
+            )
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
@@ -254,10 +261,20 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text(node.userHash.take(16) + "...", fontFamily = FontFamily.Monospace, color = Color.White, fontSize = 12.sp)
+                            Text(
+                                node.userHash.take(16) + "...",
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.White,
+                                fontSize = 12.sp
+                            )
                             Text("${node.ip}:${node.port}", color = Color.Gray, fontSize = 10.sp)
                         }
-                        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(if (online) Color.Green else Color.Gray))
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(if (online) Color.Green else Color.Gray)
+                        )
                     }
                     Divider(color = Color(0xFF1A1A1A))
                 }
