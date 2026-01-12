@@ -74,10 +74,13 @@ object MyServerApiFactory {
             .retryOnConnectionFailure(true)
             .addInterceptor { chain: Interceptor.Chain ->
                 val originalRequest = chain.request()
-                
-                // 1. Подготовка заголовков (Browser Emulator)
+
+                // 1. Заголовки (эмуляция браузера)
                 val requestBuilder = originalRequest.newBuilder()
-                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36")
+                    .header(
+                        "User-Agent",
+                        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36"
+                    )
                     .header("Accept", "application/json, text/plain, */*")
 
                 CookieStore.testCookie?.let {
@@ -85,36 +88,57 @@ object MyServerApiFactory {
                 }
 
                 val request = requestBuilder.build()
-                
-                // 2. Сбор данных для логирования
+
+                // 2. Лог запроса
                 val logEntry = StringBuilder()
                 logEntry.append("\n[${Date()}] ${request.method} ${request.url}\n")
-                
+
                 if (request.method == "POST") {
                     val buffer = Buffer()
                     request.body?.writeTo(buffer)
                     logEntry.append("PAYLOAD: ${buffer.readUtf8()}\n")
                 }
 
-                // 3. Запись в системный лог (Logcat)
                 Log.e(TAG, logEntry.toString())
-
-                // 4. Запись в файл (для Termux: /sdcard/Documents/p2p_log.txt)
                 writeLogToFile(logEntry.toString())
 
                 val response: Response = chain.proceed(request)
 
-                // 5. Логирование ответа
+                // 5. Лог ответа
                 val responseLog = "<<< [RESPONSE]: ${response.code}\n"
                 Log.e(TAG, responseLog)
                 writeLogToFile(responseLog)
 
-                // 6. Проверка на Anti-Bot
+                // 6. Проверка на Anti-Bot и ошибки сервера (РАСШИРЕННЫЙ ВАРИАНТ)
+                val responseBody = response.peekBody(Long.MAX_VALUE)
+                val content = responseBody.string()
                 val contentType = response.body?.contentType()?.toString()
-                if (contentType?.contains("text/html", ignoreCase = true) == true) {
-                    Log.e(TAG, "!!! ANTI-BOT DETECTED !!!")
-                    writeLogToFile("!!! ANTI-BOT DETECTED (HTML received instead of JSON) !!!\n")
+
+                if (
+                    contentType?.contains("text/html", ignoreCase = true) == true ||
+                    content.contains("<html>", ignoreCase = true)
+                ) {
+                    val msg =
+                        "!!! ANTI-BOT BLOCK DETECTED !!! Сервер вернул HTML. Запускаю WebView..."
+                    Log.e(TAG, msg)
+                    writeLogToFile(
+                        "\n$msg\nPREVIEW:\n${content.take(1000)}\n--- END HTML PREVIEW ---\n"
+                    )
+
+                    // Сигнализируем UI
                     NetworkEvents.triggerAuth()
+
+                    // Возвращаем безопасный JSON, чтобы Retrofit не упал
+                    return@addInterceptor response.newBuilder()
+                        .code(503)
+                        .message("Anti-Bot Challenge")
+                        .body(
+                            okhttp3.ResponseBody.create(
+                                okhttp3.MediaType.parse("application/json"),
+                                """{ "success": false, "error": "anti_bot_wait" }"""
+                            )
+                        )
+                        .build()
                 }
 
                 response
@@ -123,16 +147,16 @@ object MyServerApiFactory {
     }
 
     /**
-     * Записывает строку лога в публичную папку Documents.
+     * Запись лога в /sdcard/Documents/p2p_log.txt
      */
     private fun writeLogToFile(text: String) {
         try {
-            val publicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+            val publicDir =
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
             if (!publicDir.exists()) publicDir.mkdirs()
             val file = File(publicDir, LOG_FILE_NAME)
             file.appendText(text)
         } catch (e: Exception) {
-            // Если нет прав на запись, хотя бы выведем ошибку в консоль
             Log.e(TAG, "File Log Error: ${e.message}")
         }
     }
