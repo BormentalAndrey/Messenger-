@@ -34,7 +34,7 @@ class IdentityRepository(private val context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
 
-    // Используем WebView API вместо Retrofit
+    // Используем WebView API для обхода антибота
     private val api = WebViewApiClient
 
     private val db = ChatDatabase.getDatabase(context)
@@ -57,6 +57,7 @@ class IdentityRepository(private val context: Context) {
 
     @Volatile
     private var isRunning = false
+    private var udpSocket: DatagramSocket? = null
 
     /* ======================= PUBLIC API ======================= */
 
@@ -87,6 +88,7 @@ class IdentityRepository(private val context: Context) {
     fun stopNetwork() {
         isRunning = false
         try {
+            udpSocket?.close() // Прерывает блокирующий receive()
             nsdManager.unregisterService(registrationListener)
             nsdManager.stopServiceDiscovery(discoveryListener)
         } catch (_: Exception) {}
@@ -109,6 +111,8 @@ class IdentityRepository(private val context: Context) {
     }
 
     fun getPeerPublicKey(hash: String): String? {
+        // Изменено на runBlocking только если вызов идет не из корутины, 
+        // в идеале должен быть suspend.
         return runBlocking { nodeDao.getNodeByHash(hash)?.publicKey }
     }
 
@@ -220,8 +224,10 @@ class IdentityRepository(private val context: Context) {
     private fun announceMyself(userPayload: UserPayload) {
         scope.launch {
             try {
+                // ИСПРАВЛЕНО: параметр переименован в wrapper согласно API
                 val wrapper = UserRegistrationWrapper(hash = userPayload.hash, data = userPayload)
-                val response = api.announceSelf(payload = wrapper)
+                val response = api.announceSelf(wrapper = wrapper) 
+                
                 if (response.success) {
                     wifiPeers.values.forEach { ip -> sendUdp(ip, "PRESENCE", "ONLINE") }
                 }
@@ -233,22 +239,25 @@ class IdentityRepository(private val context: Context) {
 
     /* ======================= MESSAGING / UDP CORE ======================= */
 
-    fun sendMessageSmart(targetHash: String, phone: String?, message: String): Boolean {
+    /**
+     * ИСПРАВЛЕНО: Сделано suspend для избежания блокировки UI потока.
+     */
+    suspend fun sendMessageSmart(targetHash: String, phone: String?, message: String): Boolean = withContext(Dispatchers.IO) {
         var delivered = false
-        runBlocking(Dispatchers.IO) {
-            var ip = wifiPeers[targetHash] ?: swarmPeers[targetHash]
-            if (ip == null) ip = findPeerOnServer(targetHash)?.ip
+        
+        var ip = wifiPeers[targetHash] ?: swarmPeers[targetHash]
+        if (ip == null) ip = findPeerOnServer(targetHash)?.ip
 
-            if (!ip.isNullOrBlank() && ip != "0.0.0.0") {
-                delivered = sendUdp(ip, "CHAT", message)
-            }
-
-            if (!delivered && !phone.isNullOrBlank()) {
-                sendAsSms(phone, message)
-                delivered = true
-            }
+        if (!ip.isNullOrBlank() && ip != "0.0.0.0") {
+            delivered = sendUdp(ip, "CHAT", message)
         }
-        return delivered
+
+        if (!delivered && !phone.isNullOrBlank()) {
+            sendAsSms(phone, message)
+            delivered = true
+        }
+        
+        return@withContext delivered
     }
 
     private suspend fun findPeerOnServer(hash: String): UserPayload? {
@@ -263,6 +272,7 @@ class IdentityRepository(private val context: Context) {
         scope.launch {
             try {
                 DatagramSocket(null).use { socket ->
+                    udpSocket = socket
                     socket.reuseAddress = true
                     socket.bind(InetSocketAddress(PORT))
                     val buffer = ByteArray(65507)
@@ -278,6 +288,8 @@ class IdentityRepository(private val context: Context) {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "UDP Bind failed: ${e.message}")
+            } finally {
+                udpSocket = null
             }
         }
     }
@@ -290,6 +302,13 @@ class IdentityRepository(private val context: Context) {
                 val fromHash = json.getString("from")
                 val pubKey = json.getString("pubkey")
                 val sigBase64 = json.getString("signature")
+                
+                // Простая защита от атак повтором (Replay Attack)
+                val timestamp = json.optLong("timestamp", 0L)
+                if (timestamp != 0L && Math.abs(System.currentTimeMillis() - timestamp) > 600_000) {
+                    Log.w(TAG, "Rejected old packet from $fromIp")
+                    return@launch
+                }
 
                 val signature = Base64.decode(sigBase64, Base64.NO_WRAP)
                 val unsignedJson = JSONObject(raw).apply { remove("signature") }.toString()
@@ -334,7 +353,9 @@ class IdentityRepository(private val context: Context) {
     /* ======================= NSD ======================= */
 
     private val registrationListener = object : NsdManager.RegistrationListener {
-        override fun onServiceRegistered(s: NsdServiceInfo) {}
+        override fun onServiceRegistered(s: NsdServiceInfo) {
+            Log.d(TAG, "NSD Service registered: ${s.serviceName}")
+        }
         override fun onRegistrationFailed(s: NsdServiceInfo, e: Int) {}
         override fun onServiceUnregistered(s: NsdServiceInfo) {}
         override fun onUnregistrationFailed(s: NsdServiceInfo, e: Int) {}
@@ -347,16 +368,22 @@ class IdentityRepository(private val context: Context) {
                 override fun onServiceResolved(r: NsdServiceInfo) {
                     val host = r.host?.hostAddress ?: return
                     val parts = r.serviceName.split("-")
-                    if (parts.size >= 2) wifiPeers[parts[1]] = host
+                    if (parts.size >= 2) {
+                        val peerHash = parts[1]
+                        wifiPeers[peerHash] = host
+                        Log.d(TAG, "Peer resolved via NSD: $peerHash at $host")
+                    }
                 }
                 override fun onResolveFailed(s: NsdServiceInfo, e: Int) {}
             })
         }
 
-        override fun onServiceLost(s: NsdServiceInfo) { wifiPeers.entries.removeIf { it.value == s.host?.hostAddress } }
+        override fun onServiceLost(s: NsdServiceInfo) { 
+            wifiPeers.entries.removeIf { it.value == s.host?.hostAddress } 
+        }
         override fun onDiscoveryStarted(t: String) {}
         override fun onDiscoveryStopped(t: String) {}
-        override fun onStartDiscoveryFailed(t: String, e: Int) {}
+        override fun onStartDiscoveryFailed(t: String, e: Int) { stopNetwork() }
         override fun onStopDiscoveryFailed(t: String, e: Int) {}
     }
 
@@ -386,6 +413,7 @@ class IdentityRepository(private val context: Context) {
                 context.getSystemService(SmsManager::class.java)
             else @Suppress("DEPRECATION") SmsManager.getDefault()
             sms.sendTextMessage(phone, null, "[P2P] $message", null, null)
+            Log.d(TAG, "Fallback SMS sent to $phone")
         } catch (_: Exception) {}
     }
 
