@@ -8,7 +8,6 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.kakdela.p2p.MainActivity
-import com.kakdela.p2p.R
 import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.security.CryptoManager
 
@@ -20,29 +19,21 @@ class P2PService : Service() {
     override fun onCreate() {
         super.onCreate()
         try {
-            // Инициализация криптографии (безопасно вызывать повторно)
             CryptoManager.init(applicationContext)
 
-            // ✅ ИСПРАВЛЕНИЕ:
-            // Берем ГЛОБАЛЬНЫЙ репозиторий из Application,
-            // а не создаем новый (устраняем конфликт портов)
+            // Получаем глобальный инстанс репозитория
             val app = applicationContext as com.kakdela.p2p.MyApplication
             identityRepository = app.identityRepository
 
-            // Запускаем сеть (внутри есть защита от повторного запуска)
             identityRepository?.startNetwork()
-
-            Log.d(TAG, "P2P Service attached to Global Repository")
+            Log.d(TAG, "P2P Service Started")
         } catch (e: Exception) {
             Log.e(TAG, "Service Init Error: ${e.message}", e)
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // В Android 14+ startForeground должен вызываться максимально быстро
         promoteToForeground()
-
-        // Перезапуск при убийстве системой
         return START_STICKY
     }
 
@@ -52,65 +43,39 @@ class P2PService : Service() {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                channelId,
-                "P2P Сеть",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Обеспечивает работу защищенного узла связи"
-            }
+                channelId, "P2P Сеть", NotificationManager.IMPORTANCE_LOW
+            ).apply { description = "Работа узла связи" }
             notificationManager?.createNotificationChannel(channel)
         }
 
         val pendingIntent = Intent(this, MainActivity::class.java).let {
-            PendingIntent.getActivity(
-                this,
-                0,
-                it,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            )
+            PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE)
         }
 
         val notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("KakDela P2P Активен")
-            .setContentText("Ваше устройство работает как узел связи")
+            .setContentTitle("KakDela P2P")
+            .setContentText("Узел связи активен")
             .setSmallIcon(android.R.drawable.ic_menu_share)
             .setContentIntent(pendingIntent)
-            .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setForegroundServiceBehavior(
-                NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE
-            )
             .build()
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(
-                    1001,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-                )
+                startForeground(1001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
             } else {
                 startForeground(1001, notification)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Ошибка запуска Foreground: ${e.message}", e)
+            Log.e(TAG, "Foreground Error: ${e.message}")
         }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    /**
-     * Ключевое: закрываем сеть через stopNetwork(),
-     * так как именно там закрываются сокеты и корутины
-     */
     override fun onDestroy() {
-        Log.d(TAG, "Остановка P2P узла...")
-        try {
-            identityRepository?.stopNetwork()
-        } catch (e: Exception) {
-            Log.e(TAG, "Ошибка при закрытии сети: ${e.message}", e)
-        }
+        identityRepository?.stopNetwork()
         identityRepository = null
         super.onDestroy()
     }
