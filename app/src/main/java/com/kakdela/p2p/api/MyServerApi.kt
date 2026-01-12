@@ -109,35 +109,27 @@ object MyServerApiFactory {
                 Log.e(TAG, responseLog)
                 writeLogToFile(responseLog)
 
-                // 6. Проверка на Anti-Bot и ошибки сервера (РАСШИРЕННЫЙ ВАРИАНТ)
+                // 6. Проверка на Anti-Bot (ФИНАЛЬНЫЙ КОМПИЛИРУЕМЫЙ ВАРИАНТ)
                 val responseBody = response.peekBody(Long.MAX_VALUE)
                 val content = responseBody.string()
                 val contentType = response.body?.contentType()?.toString()
 
-                if (
-                    contentType?.contains("text/html", ignoreCase = true) == true ||
-                    content.contains("<html>", ignoreCase = true)
+                if (contentType?.contains("text/html", ignoreCase = true) == true ||
+                    content.contains("<html>")
                 ) {
-                    val msg =
-                        "!!! ANTI-BOT BLOCK DETECTED !!! Сервер вернул HTML. Запускаю WebView..."
+                    val msg = "!!! ANTI-BOT BLOCK DETECTED !!!"
                     Log.e(TAG, msg)
-                    writeLogToFile(
-                        "\n$msg\nPREVIEW:\n${content.take(1000)}\n--- END HTML PREVIEW ---\n"
-                    )
+                    writeLogToFile("\n$msg\n")
 
-                    // Сигнализируем UI
                     NetworkEvents.triggerAuth()
 
-                    // Возвращаем безопасный JSON, чтобы Retrofit не упал
+                    val jsonMediaType = okhttp3.MediaType.get("application/json")
+                    val mockJson = "{ \"success\": false, \"error\": \"anti_bot_wait\" }"
+
                     return@addInterceptor response.newBuilder()
                         .code(503)
                         .message("Anti-Bot Challenge")
-                        .body(
-                            okhttp3.ResponseBody.create(
-                                okhttp3.MediaType.parse("application/json"),
-                                """{ "success": false, "error": "anti_bot_wait" }"""
-                            )
-                        )
+                        .body(okhttp3.ResponseBody.create(jsonMediaType, mockJson))
                         .build()
                 }
 
