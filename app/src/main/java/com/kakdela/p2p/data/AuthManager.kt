@@ -2,9 +2,9 @@ package com.kakdela.p2p.data
 
 import android.content.Context
 import android.util.Log
-import com.kakdela.p2p.api.MyServerApiFactory
 import com.kakdela.p2p.api.UserPayload
 import com.kakdela.p2p.api.UserRegistrationWrapper
+import com.kakdela.p2p.api.WebViewApiClient
 import com.kakdela.p2p.data.local.ChatDatabase
 import com.kakdela.p2p.data.local.NodeEntity
 import com.kakdela.p2p.security.CryptoManager
@@ -17,9 +17,10 @@ class AuthManager(private val context: Context) {
     private val TAG = "AuthManager"
     private val db = ChatDatabase.getDatabase(context)
     private val nodeDao = db.nodeDao()
-    private val api = MyServerApiFactory.instance
+    
+    // Используем синглтон
+    private val api = WebViewApiClient
 
-    // Pepper должен совпадать с IdentityRepository
     private val PEPPER = "7fb8a1d2c3e4f5a6"
 
     suspend fun registerOrLogin(
@@ -30,13 +31,8 @@ class AuthManager(private val context: Context) {
 
         val normalizedPhone = normalizePhone(phone)
         val passwordHash = sha256(password)
-
-        // Уникальный hash пользователя
         val securityHash = sha256("$normalizedPhone|$email|$passwordHash")
-
-        // Hash телефона (поиск)
         val phoneHash = sha256(normalizedPhone + PEPPER)
-
         val publicKey = CryptoManager.getMyPublicKeyStr()
 
         val payload = UserPayload(
@@ -51,44 +47,28 @@ class AuthManager(private val context: Context) {
         )
 
         try {
-            Log.d(TAG, "Attempting server announce...")
+            Log.d(TAG, "Attempting server announce via WebView...")
+            
+            // Оборачиваем данные
             val wrapper = UserRegistrationWrapper(securityHash, payload)
-            val response = api.announceSelf(payload = wrapper)
-
-            // 🔴 АНТИБОТ: сервер вернул HTML, интерцептор подменил ответ
-            if (response.error == "anti_bot_wait") {
-                Log.w(
-                    TAG,
-                    "Anti-Bot challenge in progress. User must retry in a few seconds."
-                )
-                // ❗ НЕ создаем локальную сессию
-                // UI должен попросить пользователя нажать кнопку ещё раз
-                return@withContext false
-            }
+            
+            // Отправляем через WebView (теперь корректно сериализуется)
+            val response = api.announceSelf(wrapper)
 
             if (response.success) {
                 Log.d(TAG, "Server announce SUCCESS")
+                createLocalSession(payload, email, passwordHash, securityHash)
+                return@withContext true
             } else {
                 Log.w(TAG, "Server announce FAILED: ${response.error}")
+                // Если ошибка "wait", retry механизм внутри WebViewApiClient уже отработал 3 раза
+                return@withContext false
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Connection Error: ${e.message}")
-
-            // 🔍 ХОЛОСТОЙ вызов — чтобы увидеть HTML/ошибку в Termux через интерцептор
-            try {
-                api.getAllNodes()
-            } catch (_: Exception) {
-                // игнор — нам нужен только лог
-            }
-
-            // ❗ Не говорим «Offline mode» — просим повторить попытку
+            Log.e(TAG, "Auth Error: ${e.message}")
             return@withContext false
         }
-
-        // ✅ Только если не было anti_bot_wait и исключений
-        createLocalSession(payload, email, passwordHash, securityHash)
-        return@withContext true
     }
 
     private suspend fun createLocalSession(
@@ -117,6 +97,7 @@ class AuthManager(private val context: Context) {
                 .putBoolean("is_logged_in", true)
                 .putString("my_security_hash", securityHash)
                 .putString("my_phone", payload.phone)
+                .putString("my_email", email)
                 .apply()
 
             Log.d(TAG, "Local session created successfully")
