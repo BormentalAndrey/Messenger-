@@ -16,7 +16,7 @@ import retrofit2.http.POST
 import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
 
-// ================= MODELS (Модели данных) =================
+// ================= MODELS (Дата-классы для JSON) =================
 
 data class UserPayload(
     @SerializedName("hash") val hash: String,
@@ -41,69 +41,84 @@ data class UserRegistrationWrapper(
     @SerializedName("data") val data: UserPayload
 )
 
-// ================= API INTERFACE (Интерфейс запросов) =================
+// ================= API INTERFACE =================
 
 interface MyServerApi {
+    /**
+     * Регистрация/обновление узла в сети
+     */
     @POST("api.php")
     suspend fun announceSelf(
         @Query("action") action: String = "add_user",
         @Body payload: UserRegistrationWrapper
     ): ServerResponse
 
+    /**
+     * Получение списка всех активных пиров
+     */
     @GET("api.php")
     suspend fun getAllNodes(
         @Query("action") action: String = "list_users"
     ): ServerResponse
 }
 
-// ================= FACTORY (Сборка клиента) =================
+// ================= FACTORY (OkHttp + Retrofit) =================
 
 object MyServerApiFactory {
     private const val BASE_URL = "http://kakdela.infinityfree.me/"
+    // Используем уровень ERROR для критических логов, чтобы они были видны в Termux без фильтров
     private const val TAG = "P2P_NETWORK_DEBUG"
 
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(45, TimeUnit.SECONDS) // Увеличил таймаут для медленного хостинга
+            .readTimeout(45, TimeUnit.SECONDS)
+            .writeTimeout(45, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .addInterceptor { chain: Interceptor.Chain ->
                 val originalRequest = chain.request()
                 
-                // Формируем новый запрос с нужными заголовками
+                // Сборка запроса с имитацией реального браузера (защита от ботов)
                 val requestBuilder = originalRequest.newBuilder()
-                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
-                    .header("Accept", "application/json")
-                    .header("Connection", "keep-alive")
+                    .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36")
+                    .header("Accept", "application/json, text/plain, */*")
+                    .header("Accept-Language", "en-US,en;q=0.9")
+                    .header("Cache-Control", "no-cache")
 
-                // Подставляем куку обхода антибота из CookieStore
+                // Применяем куку обхода AES-защиты InfinityFree
                 CookieStore.testCookie?.let {
                     requestBuilder.header("Cookie", it)
-                    Log.i(TAG, ">>> Используется кука: $it")
+                    Log.e(TAG, ">>> [COOKIE]: $it")
                 }
 
                 val request = requestBuilder.build()
 
-                // ЛОГИРОВАНИЕ (Тот самый "Сниффер" в консоль)
-                Log.i(TAG, ">>> ОТПРАВКА: ${request.method} ${request.url}")
+                // ЛОГИРОВАНИЕ ПЕРЕД ОТПРАВКОЙ (Твой внутренний сниффер)
+                Log.e(TAG, ">>> [REQUEST]: ${request.method} ${request.url}")
+                
                 if (request.method == "POST") {
-                    val buffer = Buffer()
-                    request.body?.writeTo(buffer)
-                    Log.d(TAG, ">>> ТЕЛО (JSON): ${buffer.readUtf8()}")
+                    try {
+                        val buffer = Buffer()
+                        request.body?.writeTo(buffer)
+                        Log.e(TAG, ">>> [PAYLOAD]: ${buffer.readUtf8()}")
+                    } catch (e: Exception) {
+                        Log.e(TAG, ">>> [ERROR] Не удалось прочитать Body: ${e.message}")
+                    }
                 }
 
                 val response: Response = chain.proceed(request)
 
-                // АНАЛИЗ ОТВЕТА
-                Log.i(TAG, "<<< ОТВЕТ: ${response.code}")
+                // АНАЛИЗ ОТВЕТА СЕРВЕРА
+                Log.e(TAG, "<<< [RESPONSE]: Code ${response.code}")
+                
                 val contentType = response.body?.contentType()?.toString()
 
-                // Если вместо JSON прилетел HTML — значит кука __test просрочена или неверна
+                /* КРИТИЧЕСКИЙ МОМЕНТ: 
+                   Если сервер прислал HTML вместо JSON — значит нас заблокировал антибот.
+                */
                 if (contentType?.contains("text/html", ignoreCase = true) == true) {
-                    Log.e(TAG, "!!! ОБНАРУЖЕН АНТИБОТ (Блокировка AES) !!!")
-                    Log.e(TAG, "!!! Перезапускаю авторизацию через WebView...")
-                    NetworkEvents.triggerAuth()
+                    Log.e(TAG, "!!! [ALERT]: Обнаружена HTML-заглушка! Кука устарела.")
+                    NetworkEvents.triggerAuth() // Вызов WebView для получения новой куки
                 }
 
                 response
@@ -111,6 +126,9 @@ object MyServerApiFactory {
             .build()
     }
 
+    /**
+     * Основная точка доступа к API
+     */
     val instance: MyServerApi by lazy {
         Retrofit.Builder()
             .baseUrl(BASE_URL)
