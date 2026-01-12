@@ -20,26 +20,29 @@ class P2PService : Service() {
     override fun onCreate() {
         super.onCreate()
         try {
-            // Инициализация криптографии
+            // Инициализация криптографии (безопасно вызывать повторно)
             CryptoManager.init(applicationContext)
-            
-            // Инициализация репозитория
-            identityRepository = IdentityRepository(applicationContext)
-            
-            // Запуск сетевых возможностей (UDP слушатель, NSD и т.д.)
+
+            // ✅ ИСПРАВЛЕНИЕ:
+            // Берем ГЛОБАЛЬНЫЙ репозиторий из Application,
+            // а не создаем новый (устраняем конфликт портов)
+            val app = applicationContext as com.kakdela.p2p.MyApplication
+            identityRepository = app.identityRepository
+
+            // Запускаем сеть (внутри есть защита от повторного запуска)
             identityRepository?.startNetwork()
-            
-            Log.d(TAG, "P2P Node Service Created and Network Started")
+
+            Log.d(TAG, "P2P Service attached to Global Repository")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to initialize P2P components: ${e.message}")
+            Log.e(TAG, "Service Init Error: ${e.message}", e)
         }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Важно: в Android 14+ startForeground должен вызываться максимально быстро после onStartCommand
+        // В Android 14+ startForeground должен вызываться максимально быстро
         promoteToForeground()
-        
-        // Возвращаем START_STICKY, чтобы система пересоздала сервис при нехватке памяти
+
+        // Перезапуск при убийстве системой
         return START_STICKY
     }
 
@@ -49,7 +52,7 @@ class P2PService : Service() {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
-                channelId, 
+                channelId,
                 "P2P Сеть",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
@@ -60,9 +63,9 @@ class P2PService : Service() {
 
         val pendingIntent = Intent(this, MainActivity::class.java).let {
             PendingIntent.getActivity(
-                this, 
-                0, 
-                it, 
+                this,
+                0,
+                it,
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
         }
@@ -70,43 +73,43 @@ class P2PService : Service() {
         val notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("KakDela P2P Активен")
             .setContentText("Ваше устройство работает как узел связи")
-            .setSmallIcon(android.R.drawable.ic_menu_share) // Стандартная иконка для надежности
+            .setSmallIcon(android.R.drawable.ic_menu_share)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .setForegroundServiceBehavior(
+                NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE
+            )
             .build()
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Используем SPECIAL_USE для кастомных P2P протоколов в Android 14+, 
-                // либо CONNECTED_DEVICE (требует разрешения в манифесте)
                 startForeground(
-                    1001, 
-                    notification, 
+                    1001,
+                    notification,
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
                 )
             } else {
                 startForeground(1001, notification)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Ошибка запуска Foreground: ${e.message}")
+            Log.e(TAG, "Ошибка запуска Foreground: ${e.message}", e)
         }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     /**
-     * Ключевое исправление: вызываем stopNetwork(), так как именно этот метод 
-     * отвечает за закрытие сокетов и остановку корутин в IdentityRepository.
+     * Ключевое: закрываем сеть через stopNetwork(),
+     * так как именно там закрываются сокеты и корутины
      */
     override fun onDestroy() {
         Log.d(TAG, "Остановка P2P узла...")
         try {
             identityRepository?.stopNetwork()
         } catch (e: Exception) {
-            Log.e(TAG, "Ошибка при закрытии сети: ${e.message}")
+            Log.e(TAG, "Ошибка при закрытии сети: ${e.message}", e)
         }
         identityRepository = null
         super.onDestroy()
