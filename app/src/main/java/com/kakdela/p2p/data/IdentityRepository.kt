@@ -1,17 +1,17 @@
 package com.kakdela.p2p.data
 
-import android.os.Build
 import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.os.Build
 import android.telephony.SmsManager
 import android.util.Base64
 import android.util.Log
-import com.kakdela.p2p.api.MyServerApiFactory
 import com.kakdela.p2p.api.UserPayload
 import com.kakdela.p2p.api.UserRegistrationWrapper
+import com.kakdela.p2p.api.WebViewApiClient
 import com.kakdela.p2p.data.local.ChatDatabase
 import com.kakdela.p2p.data.local.NodeEntity
 import com.kakdela.p2p.security.CryptoManager
@@ -26,10 +26,6 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
-/**
- * Репозиторий идентификации и сетевого взаимодействия.
- * Реализует гибридную схему: NSD (Wi-Fi), Центральный сервер и UDP P2P.
- */
 class IdentityRepository(private val context: Context) {
 
     private val TAG = "IdentityRepository"
@@ -38,7 +34,9 @@ class IdentityRepository(private val context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
 
-    private val api = MyServerApiFactory.instance
+    // Используем WebView API вместо Retrofit
+    private val api = WebViewApiClient
+
     private val db = ChatDatabase.getDatabase(context)
     private val nodeDao = db.nodeDao()
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
@@ -55,7 +53,7 @@ class IdentityRepository(private val context: Context) {
     private val SERVICE_TYPE = "_kakdela_p2p._udp."
     private val PORT = 8888
     private val PEPPER = "7fb8a1d2c3e4f5a6b7c8d9e0f1a2b3c4"
-    private val SYNC_INTERVAL = 300_000L
+    private val SYNC_INTERVAL = 300_000L // 5 минут
 
     @Volatile
     private var isRunning = false
@@ -233,7 +231,7 @@ class IdentityRepository(private val context: Context) {
         }
     }
 
-    /* ======================= MESSAGING ======================= */
+    /* ======================= MESSAGING / UDP CORE ======================= */
 
     fun sendMessageSmart(targetHash: String, phone: String?, message: String): Boolean {
         var delivered = false
@@ -260,8 +258,6 @@ class IdentityRepository(private val context: Context) {
         }
         return fetchAllNodesFromServer().find { it.hash == hash }
     }
-
-    /* ======================= UDP CORE ======================= */
 
     private fun startUdpListener() {
         scope.launch {
@@ -330,12 +326,12 @@ class IdentityRepository(private val context: Context) {
                 it.send(DatagramPacket(bytes, bytes.size, InetAddress.getByName(ip), PORT))
             }
             true
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             false
         }
     }
 
-    /* ======================= NSD & SMS & UTILS ======================= */
+    /* ======================= NSD ======================= */
 
     private val registrationListener = object : NsdManager.RegistrationListener {
         override fun onServiceRegistered(s: NsdServiceInfo) {}
@@ -353,7 +349,6 @@ class IdentityRepository(private val context: Context) {
                     val parts = r.serviceName.split("-")
                     if (parts.size >= 2) wifiPeers[parts[1]] = host
                 }
-
                 override fun onResolveFailed(s: NsdServiceInfo, e: Int) {}
             })
         }
@@ -383,6 +378,8 @@ class IdentityRepository(private val context: Context) {
         } catch (_: Exception) {}
     }
 
+    /* ======================= SMS ======================= */
+
     private fun sendAsSms(phone: String, message: String) {
         try {
             val sms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
@@ -392,34 +389,23 @@ class IdentityRepository(private val context: Context) {
         } catch (_: Exception) {}
     }
 
+    /* ======================= UTILS ======================= */
+
     private fun sha256(s: String): String = MessageDigest.getInstance("SHA-256")
         .digest(s.toByteArray())
         .joinToString("") { "%02x".format(it) }
 
-    /* ======================= LOCAL AVATAR ======================= */
-
-    /**
-     * Сохраняет выбранное изображение во внутреннюю папку приложения как аватар.
-     */
     fun saveLocalAvatar(context: Context, uri: Uri) {
         try {
             val inputStream = context.contentResolver.openInputStream(uri)
             val file = java.io.File(context.filesDir, "my_avatar.jpg")
             val outputStream = java.io.FileOutputStream(file)
-            inputStream?.use { input ->
-                outputStream.use { output ->
-                    input.copyTo(output)
-                }
-            }
-            Log.d(TAG, "Аватар сохранен локально: ${file.absolutePath}")
+            inputStream?.use { input -> outputStream.use { output -> input.copyTo(output) } }
         } catch (e: Exception) {
-            Log.e(TAG, "Ошибка сохранения аватара: ${e.message}")
+            Log.e(TAG, "Avatar error: ${e.message}")
         }
     }
 
-    /**
-     * Возвращает Uri локального аватара, если он существует.
-     */
     fun getLocalAvatarUri(context: Context): Uri? {
         val file = java.io.File(context.filesDir, "my_avatar.jpg")
         return if (file.exists()) Uri.fromFile(file) else null
