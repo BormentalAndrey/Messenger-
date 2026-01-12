@@ -41,7 +41,6 @@ class MainActivity : ComponentActivity() {
 
     private var antiBotWebView: WebView? = null
 
-    // Лаунчер для обычных разрешений
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -52,23 +51,28 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
-        // 0. Инициализация хранилища кук
+        // 0. Хранилище кук
         CookieStore.init(applicationContext)
 
-        // 1. Безопасность и Репозиторий
+        // 1. Криптография + Identity
         initSecurity()
 
-        // 2. СНИФФЕР: Принудительный запуск API Фабрики для создания файла p2p_log.txt
+        // 2. Network debug / sniffer
         initNetworkDebug()
 
-        // 3. Запуск фонового P2P сервиса
+        // 3. Фоновый P2P сервис
         startP2PService()
 
-        // 4. Проверка разрешений (включая спец. доступ к файлам для логов)
+        // 4. Разрешения
         checkAndRequestPermissions()
 
-        // 5. Наблюдатель за антиботом
+        // 5. Антибот наблюдатель
         setupNetworkObserver()
+
+        // !!! ИСПРАВЛЕНИЕ !!!
+        // Принудительный прогрев cookies сразу при старте приложения
+        // ДО любых пользовательских действий
+        startSilentCookieRefresh()
 
         // 6. Навигация
         val prefs = getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
@@ -92,10 +96,8 @@ class MainActivity : ComponentActivity() {
     private fun initNetworkDebug() {
         lifecycleScope.launch {
             try {
-                // Обращение к инстансу спровоцирует выполнение блока init в Factory
-                // и запись первой строки в p2p_log.txt
-                val api = MyServerApiFactory.instance
-                Log.i(TAG, "Network Sniffer (Internal) initialized")
+                MyServerApiFactory.instance
+                Log.i(TAG, "Network Sniffer initialized")
             } catch (e: Exception) {
                 Log.e(TAG, "Sniffer Init Error: ${e.message}")
             }
@@ -114,11 +116,11 @@ class MainActivity : ComponentActivity() {
 
     private fun startP2PService() {
         try {
-            val serviceIntent = Intent(this, P2PService::class.java)
+            val intent = Intent(this, P2PService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                startForegroundService(serviceIntent)
+                startForegroundService(intent)
             } else {
-                startService(serviceIntent)
+                startService(intent)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Service Start Error: ${e.message}")
@@ -126,22 +128,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkAndRequestPermissions() {
-        // 1. Проверка доступа ко ВСЕМ файлам для Android 11+ (нужно для записи логов в Documents)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
                 try {
                     val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                    intent.addCategory("android.intent.category.DEFAULT")
                     intent.data = Uri.parse("package:$packageName")
                     startActivity(intent)
                 } catch (e: Exception) {
-                    val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                    startActivity(intent)
+                    startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
                 }
             }
         }
 
-        // 2. Стандартные разрешения
         val permissions = mutableListOf(
             Manifest.permission.READ_CONTACTS,
             Manifest.permission.RECORD_AUDIO,
@@ -149,22 +147,22 @@ class MainActivity : ComponentActivity() {
         )
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
-            permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
+            permissions += Manifest.permission.POST_NOTIFICATIONS
+            permissions += Manifest.permission.READ_MEDIA_AUDIO
         } else {
-            permissions.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            permissions.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            permissions += Manifest.permission.READ_EXTERNAL_STORAGE
+            permissions += Manifest.permission.WRITE_EXTERNAL_STORAGE
         }
 
         requestPermissionLauncher.launch(permissions.toTypedArray())
     }
 
     private fun handlePermissionsResult(permissions: Map<String, Boolean>) {
-        if (permissions[Manifest.permission.READ_MEDIA_AUDIO] == true || 
+        if (permissions[Manifest.permission.READ_MEDIA_AUDIO] == true ||
             permissions[Manifest.permission.READ_EXTERNAL_STORAGE] == true) {
             MusicManager.loadTracks(this)
         }
-        
+
         permissions.forEach { (perm, granted) ->
             if (!granted) Log.w(TAG, "Permission denied: $perm")
         }
@@ -173,7 +171,7 @@ class MainActivity : ComponentActivity() {
     private fun setupNetworkObserver() {
         lifecycleScope.launch {
             NetworkEvents.onAuthRequired.collectLatest {
-                Log.d(TAG, "Anti-Bot refresh needed")
+                Log.d(TAG, "Anti-Bot refresh triggered by network")
                 startSilentCookieRefresh()
             }
         }
@@ -189,7 +187,7 @@ class MainActivity : ComponentActivity() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             url?.let {
                                 CookieStore.updateFromWebView(applicationContext, it)
-                                Log.i(TAG, "Anti-Bot cookie successfully stored")
+                                Log.i(TAG, "Anti-Bot cookie stored successfully")
                             }
                         }
                     }
