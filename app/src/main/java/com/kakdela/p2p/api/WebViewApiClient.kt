@@ -13,6 +13,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -27,7 +28,6 @@ object WebViewApiClient {
     private const val TAG = "WebViewApiClient"
     private const val BASE_URL = "http://kakdela.infinityfree.me/"
     private const val API_URL = "http://kakdela.infinityfree.me/api.php"
-    
     private const val REQUEST_TIMEOUT_MS = 45_000L 
 
     private var webView: WebView? = null
@@ -46,6 +46,7 @@ object WebViewApiClient {
                         domStorageEnabled = true
                         databaseEnabled = true
                         cacheMode = WebSettings.LOAD_DEFAULT
+                        // Маскировка под обычный мобильный браузер
                         userAgentString = userAgentString.replace("; wv", "")
                     }
 
@@ -70,39 +71,21 @@ object WebViewApiClient {
                         }
                     }
                 }
-                
                 Log.i(TAG, "Starting Anti-Bot Warmup...")
                 webView?.loadUrl(BASE_URL)
-
             } catch (e: Exception) {
                 Log.e(TAG, "Error init WebView: ${e.message}")
             }
         }
     }
 
-    fun destroy() {
-        Handler(Looper.getMainLooper()).post {
-            try {
-                webView?.stopLoading()
-                webView?.clearHistory()
-                webView?.removeAllViews()
-                webView?.destroy()
-                webView = null
-                isReady.set(false)
-                Log.d(TAG, "WebView destroyed")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error destroying WebView: ${e.message}")
-            }
-        }
-    }
-
     /**
-     * ИСПРАВЛЕНО: Обертка в "data" для соответствия PHP скрипту
+     * Исправлено: Обертка в объект 'data', как того требует api.php (строка 27)
      */
     suspend fun announceSelf(wrapper: UserRegistrationWrapper): ServerResponse {
-        val wrappedMap = mapOf("data" to wrapper)
-        val jsonBody = gson.toJson(wrappedMap)
-        Log.d(TAG, "Sending announce: $jsonBody")
+        val wrappedPayload = mapOf("data" to wrapper)
+        val jsonBody = gson.toJson(wrappedPayload)
+        Log.d(TAG, "Request Body: $jsonBody")
         return executeRequest("add_user", "POST", jsonBody)
     }
 
@@ -130,11 +113,9 @@ object WebViewApiClient {
                 } catch (e: Exception) {
                     Log.e(TAG, "Attempt ${attempt + 1} failed: ${e.message}")
                     isReady.set(false)
-                    withContext(Dispatchers.Main) {
-                        webView?.loadUrl(BASE_URL)
-                    }
+                    withContext(Dispatchers.Main) { webView?.loadUrl(BASE_URL) }
+                    delay(2000)
                     attempt++
-                    kotlinx.coroutines.delay(2000)
                 }
             }
             return ServerResponse(success = false, error = "connection_failed_after_retries")
@@ -145,20 +126,13 @@ object WebViewApiClient {
         if (isReady.get()) return
         try {
             withTimeout(30_000) {
-                while (!isReady.get()) {
-                    kotlinx.coroutines.delay(500)
-                }
+                while (!isReady.get()) { delay(500) }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Wait for ready timeout. Proceeding anyway.")
+            Log.w(TAG, "Warmup timeout. Trying to proceed...")
         }
     }
 
-    /**
-     * Внедряет JS код fetch.
-     * ИСПРАВЛЕНО: Теперь bodyJson передается как строка, которая парсится внутри JS,
-     * что исключает ошибки синтаксиса при передаче объектов.
-     */
     private suspend fun performJsFetch(
         action: String,
         method: String,
@@ -168,7 +142,7 @@ object WebViewApiClient {
             val bridgeName = "AndroidBridge_${System.currentTimeMillis()}"
             val url = "$API_URL?action=$action"
             
-            // Защищенная передача строки JSON
+            // Экранируем кавычки для безопасной вставки в JS
             val safeJson = bodyJson?.replace("'", "\\'") ?: "null"
             
             val bridge = WebViewBridge { result ->
@@ -188,10 +162,7 @@ object WebViewApiClient {
                     try {
                         const url = '$url';
                         const method = '$method';
-                        const rawInput = '$safeJson';
-                        
-                        // Если есть входные данные, парсим их, иначе null
-                        const bodyData = (rawInput !== 'null') ? JSON.parse(rawInput) : null;
+                        const bodyData = $safeJson;
 
                         fetch(url, {
                             method: method,
@@ -204,23 +175,28 @@ object WebViewApiClient {
                         .then(response => response.text())
                         .then(text => {
                             try {
-                                JSON.parse(text);
+                                JSON.parse(text); // Проверка на валидность JSON
                                 $bridgeName.onSuccess(text);
                             } catch(e) {
-                                console.error('Raw response:', text);
-                                $bridgeName.onError('INVALID_JSON_HTML_DETECTED');
+                                $bridgeName.onError('INVALID_JSON_RECEIVED');
                             }
                         })
-                        .catch(err => {
-                            $bridgeName.onError(err.toString());
-                        });
+                        .catch(err => $bridgeName.onError(err.toString()));
                     } catch (e) {
-                        $bridgeName.onError('SCRIPT_ERROR: ' + e.toString());
+                        $bridgeName.onError('JS_ERROR: ' + e.toString());
                     }
                 })();
             """.trimIndent()
 
             webView?.evaluateJavascript(jsCode, null)
+        }
+    }
+
+    fun destroy() {
+        Handler(Looper.getMainLooper()).post {
+            webView?.destroy()
+            webView = null
+            isReady.set(false)
         }
     }
 }
