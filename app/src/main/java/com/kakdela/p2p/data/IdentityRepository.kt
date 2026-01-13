@@ -133,7 +133,7 @@ class IdentityRepository(private val context: Context) {
             publicKey = CryptoManager.getMyPublicKeyStr(),
             ip = "0.0.0.0",
             port = PORT,
-            phone = prefs.getString("my_phone", null),
+            phone = prefs.getString("my_phone", null) ?: "",
             lastSeen = System.currentTimeMillis()
         )
         announceMyself(payload)
@@ -162,7 +162,7 @@ class IdentityRepository(private val context: Context) {
             val nodes = fetchAllNodesFromServer()
             val node = nodes.find { it.hash == hash } ?: return false
 
-            nodeDao.insertNode(
+            nodeDao.insert(
                 NodeEntity(
                     userHash = node.hash,
                     ip = node.ip ?: "0.0.0.0",
@@ -178,9 +178,8 @@ class IdentityRepository(private val context: Context) {
     suspend fun fetchAllNodesFromServer(): List<UserPayload> {
         return try {
             val response = api.getAllNodes()
-            // проверяем, что response соответствует ApiResponse<List<UserPayload>>
-            if (response != null && response.success && response.data != null) {
-                response.data
+            if (response != null && response.success && response.data is List<*>) {
+                response.data.filterIsInstance<UserPayload>()
             } else emptyList()
         } catch (_: Exception) { emptyList() }
     }
@@ -197,7 +196,7 @@ class IdentityRepository(private val context: Context) {
                     publicKey = getPeerPublicKey(toHash),
                     ip = null,
                     port = null,
-                    phone = phone,
+                    phone = phone ?: "",
                     lastSeen = System.currentTimeMillis()
                 )
                 api.announceSelf(payload)
