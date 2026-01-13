@@ -1,4 +1,4 @@
-Package com.kakdela.p2p.api
+package com.kakdela.p2p.api
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -87,18 +87,12 @@ object WebViewApiClient {
     // PUBLIC API
     // ------------------------------------------------------------------------
 
-    /**
-     * Анонс текущего узла
-     */
     suspend fun announceSelf(payload: UserPayload): ServerResponse {
         val body = gson.toJson(mapOf("data" to payload))
         Log.d(TAG, "Announce JSON: $body")
         return executeRequest("add_user", "POST", body)
     }
 
-    /**
-     * Получение всех узлов
-     */
     suspend fun getAllNodes(): ServerResponse {
         return executeRequest("list_users", "GET", null)
     }
