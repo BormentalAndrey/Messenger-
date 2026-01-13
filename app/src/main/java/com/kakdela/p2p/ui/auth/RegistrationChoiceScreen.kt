@@ -28,7 +28,7 @@ fun RegistrationChoiceScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Text(
-                text = "KakDela P2P",
+                text = "Как дела?",
                 fontSize = 32.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = Color.Cyan,
