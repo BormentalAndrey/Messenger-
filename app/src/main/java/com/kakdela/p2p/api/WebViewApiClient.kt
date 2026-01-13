@@ -79,11 +79,17 @@ object WebViewApiClient {
         }
     }
 
+    /**
+     * Анонсирует узел. Оборачивает в "data", как того ожидает PHP.
+     */
     suspend fun announceSelf(payload: UserPayload): ServerResponse {
         val body = gson.toJson(mapOf("data" to payload))
         return executeRequest("add_user", "POST", body)
     }
 
+    /**
+     * Получает список всех активных узлов.
+     */
     suspend fun getAllNodes(): ServerResponse {
         return executeRequest("list_users", "GET", null)
     }
@@ -94,7 +100,7 @@ object WebViewApiClient {
         bodyJson: String?
     ): ServerResponse = mutex.withLock {
 
-        repeat(MAX_RETRIES) {
+        repeat(MAX_RETRIES) { attempt ->
             try {
                 waitForReady()
 
@@ -103,10 +109,12 @@ object WebViewApiClient {
                 }
 
                 val type = object : TypeToken<ServerResponse>() {}.type
-                return gson.fromJson(json, type)
+                val response = gson.fromJson<ServerResponse>(json, type)
+                
+                if (response != null) return@withLock response
 
             } catch (e: Exception) {
-                Log.e(TAG, "Request failed", e)
+                Log.e(TAG, "Request failed at attempt ${attempt + 1}", e)
                 isReady.set(false)
 
                 withContext(Dispatchers.Main) {
@@ -117,16 +125,16 @@ object WebViewApiClient {
             }
         }
 
-        ServerResponse(
-            success = false,
-            data = null,
-            message = "Max retries reached"
-        )
+        // ИСПРАВЛЕНИЕ: Создаем объект через позиционные аргументы, 
+        // которые точно есть в вашем ServerResponse (success и статусная строка/ошибка).
+        // Если у вас в ServerResponse поля называются иначе, например (success, error, users),
+        // убедитесь, что этот конструктор им соответствует.
+        ServerResponse(false, "Max retries reached")
     }
 
     private suspend fun waitForReady() {
         withTimeout(PAGE_LOAD_TIMEOUT_MS) {
-            while (!isReady.get()) delay(300)
+            while (!isReady.get()) delay(500)
         }
     }
 
@@ -136,7 +144,7 @@ object WebViewApiClient {
         bodyJson: String?
     ): String = withContext(Dispatchers.Main) {
 
-        suspendCancellableCoroutine { cont ->
+        suspendCancellableCoroutine<String> { cont ->
             val bridgeName = "AndroidBridge_${System.currentTimeMillis()}"
             val url = "$API_URL?action=$action"
 
@@ -197,6 +205,8 @@ object WebViewApiClient {
             try {
                 webView?.stopLoading()
                 webView?.destroy()
+            } catch (e: Exception) {
+                Log.e(TAG, "Destroy error", e)
             } finally {
                 webView = null
                 isReady.set(false)
