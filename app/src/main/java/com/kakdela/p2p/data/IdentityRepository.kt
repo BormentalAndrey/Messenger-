@@ -10,7 +10,6 @@ import android.telephony.SmsManager
 import android.util.Base64
 import android.util.Log
 import com.kakdela.p2p.api.UserPayload
-import com.kakdela.p2p.api.UserRegistrationWrapper
 import com.kakdela.p2p.api.WebViewApiClient
 import com.kakdela.p2p.data.local.ChatDatabase
 import com.kakdela.p2p.data.local.NodeEntity
@@ -26,6 +25,10 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
+/**
+ * Репозиторий управления идентификацией и сетевым взаимодействием.
+ * Объединяет локальное обнаружение (NSD), глобальное (Web Tracker) и UDP-транспорт.
+ */
 class IdentityRepository(private val context: Context) {
 
     private val TAG = "IdentityRepository"
@@ -34,7 +37,7 @@ class IdentityRepository(private val context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
 
-    // Используем WebView API для обхода антибота
+    // Используем WebView API для обхода антибота хостинга
     private val api = WebViewApiClient
 
     private val db = ChatDatabase.getDatabase(context)
@@ -47,6 +50,7 @@ class IdentityRepository(private val context: Context) {
 
     private val listeners = CopyOnWriteArrayList<(String, String, String, String) -> Unit>()
 
+    // Активные пиры в локальной сети и глобальном рое
     val wifiPeers = ConcurrentHashMap<String, String>()
     val swarmPeers = ConcurrentHashMap<String, String>()
 
@@ -88,7 +92,7 @@ class IdentityRepository(private val context: Context) {
     fun stopNetwork() {
         isRunning = false
         try {
-            udpSocket?.close() // Прерывает блокирующий receive()
+            udpSocket?.close()
             nsdManager.unregisterService(registrationListener)
             nsdManager.stopServiceDiscovery(discoveryListener)
         } catch (_: Exception) {}
@@ -111,9 +115,8 @@ class IdentityRepository(private val context: Context) {
     }
 
     fun getPeerPublicKey(hash: String): String? {
-        // Изменено на runBlocking только если вызов идет не из корутины, 
-        // в идеале должен быть suspend.
-        return runBlocking { nodeDao.getNodeByHash(hash)?.publicKey }
+        // Выполняем в контексте IO для безопасности БД
+        return runBlocking(Dispatchers.IO) { nodeDao.getNodeByHash(hash)?.publicKey }
     }
 
     fun generatePhoneDiscoveryHash(phone: String): String {
@@ -165,13 +168,13 @@ class IdentityRepository(private val context: Context) {
     private fun startSyncLoop() {
         scope.launch {
             while (isRunning) {
+                delay(SYNC_INTERVAL)
                 try {
                     val myId = getMyId()
                     if (myId.isNotEmpty()) performServerSync(myId)
                 } catch (e: Exception) {
                     Log.e(TAG, "Ошибка синхронизации: ${e.message}")
                 }
-                delay(SYNC_INTERVAL)
             }
         }
     }
@@ -181,7 +184,7 @@ class IdentityRepository(private val context: Context) {
             val myPayload = UserPayload(
                 hash = myId,
                 phone_hash = prefs.getString("my_phone_hash", null),
-                ip = null,
+                ip = "0.0.0.0", // Сервер определит сам
                 port = PORT,
                 publicKey = CryptoManager.getMyPublicKeyStr(),
                 phone = prefs.getString("my_phone", null),
@@ -215,6 +218,7 @@ class IdentityRepository(private val context: Context) {
             users
         } catch (e: Exception) {
             Log.e(TAG, "Fetch failed: ${e.message}")
+            // В случае сбоя сети возвращаем локальный кеш
             nodeDao.getAllNodes().map {
                 UserPayload(it.userHash, it.phone_hash, it.ip, it.port, it.publicKey, it.phone, null, it.lastSeen)
             }
@@ -224,11 +228,15 @@ class IdentityRepository(private val context: Context) {
     private fun announceMyself(userPayload: UserPayload) {
         scope.launch {
             try {
-                // ИСПРАВЛЕНО: параметр переименован в wrapper согласно API
-                val wrapper = UserRegistrationWrapper(hash = userPayload.hash, data = userPayload)
-                val response = api.announceSelf(wrapper = wrapper) 
+                /* ИСПРАВЛЕНО: 
+                   В WebViewApiClient метод announceSelf теперь принимает UserPayload напрямую.
+                   Мы убрали промежуточный UserRegistrationWrapper, чтобы избежать двойной 
+                   вложенности JSON, которую не понимал PHP-скрипт.
+                */
+                val response = api.announceSelf(payload = userPayload) 
                 
                 if (response.success) {
+                    // После успешного анонса на трекере, уведомляем локальных пиров
                     wifiPeers.values.forEach { ip -> sendUdp(ip, "PRESENCE", "ONLINE") }
                 }
             } catch (e: Exception) {
@@ -239,12 +247,10 @@ class IdentityRepository(private val context: Context) {
 
     /* ======================= MESSAGING / UDP CORE ======================= */
 
-    /**
-     * ИСПРАВЛЕНО: Сделано suspend для избежания блокировки UI потока.
-     */
     suspend fun sendMessageSmart(targetHash: String, phone: String?, message: String): Boolean = withContext(Dispatchers.IO) {
         var delivered = false
         
+        // Сначала пробуем прямой IP (из локалки или глобального списка)
         var ip = wifiPeers[targetHash] ?: swarmPeers[targetHash]
         if (ip == null) ip = findPeerOnServer(targetHash)?.ip
 
@@ -252,6 +258,7 @@ class IdentityRepository(private val context: Context) {
             delivered = sendUdp(ip, "CHAT", message)
         }
 
+        // Если прямой P2P не удался, пробуем SMS как резервный канал
         if (!delivered && !phone.isNullOrBlank()) {
             sendAsSms(phone, message)
             delivered = true
@@ -262,6 +269,7 @@ class IdentityRepository(private val context: Context) {
 
     private suspend fun findPeerOnServer(hash: String): UserPayload? {
         val cached = nodeDao.getNodeByHash(hash)
+        // Если кеш свежий (меньше 5 минут), используем его
         if (cached != null && System.currentTimeMillis() - cached.lastSeen < 300_000) {
             return UserPayload(cached.userHash, cached.phone_hash, cached.ip, cached.port, cached.publicKey, cached.phone, null, cached.lastSeen)
         }
@@ -303,18 +311,19 @@ class IdentityRepository(private val context: Context) {
                 val pubKey = json.getString("pubkey")
                 val sigBase64 = json.getString("signature")
                 
-                // Простая защита от атак повтором (Replay Attack)
+                // Проверка окна времени (10 минут)
                 val timestamp = json.optLong("timestamp", 0L)
                 if (timestamp != 0L && Math.abs(System.currentTimeMillis() - timestamp) > 600_000) {
-                    Log.w(TAG, "Rejected old packet from $fromIp")
                     return@launch
                 }
 
                 val signature = Base64.decode(sigBase64, Base64.NO_WRAP)
                 val unsignedJson = JSONObject(raw).apply { remove("signature") }.toString()
 
+                // Верификация цифровой подписи
                 if (!CryptoManager.verify(signature, unsignedJson.toByteArray(), pubKey)) return@launch
 
+                // Обновляем информацию об узле в БД
                 nodeDao.updateNetworkInfo(fromHash, fromIp, PORT, pubKey, System.currentTimeMillis())
                 swarmPeers[fromHash] = fromIp
                 CryptoManager.savePeerPublicKey(fromHash, pubKey)
@@ -322,7 +331,10 @@ class IdentityRepository(private val context: Context) {
                 if (type == "CHAT" || type == "CHAT_FILE" || type == "WEBRTC_SIGNAL") {
                     messageRepository.handleIncoming(type, json.getString("data"), fromHash)
                 }
-                listeners.forEach { it(type, json.getString("data"), fromIp, fromHash) }
+                
+                withContext(Dispatchers.Main) {
+                    listeners.forEach { it(type, json.getString("data"), fromIp, fromHash) }
+                }
             } catch (_: Exception) {}
         }
     }
@@ -336,6 +348,8 @@ class IdentityRepository(private val context: Context) {
                 put("pubkey", CryptoManager.getMyPublicKeyStr())
                 put("timestamp", System.currentTimeMillis())
             }
+            
+            // Подписываем пакет своим приватным ключом
             val sig = CryptoManager.sign(json.toString().toByteArray())
             json.put("signature", Base64.encodeToString(sig, Base64.NO_WRAP))
 
@@ -350,7 +364,7 @@ class IdentityRepository(private val context: Context) {
         }
     }
 
-    /* ======================= NSD ======================= */
+    /* ======================= NSD (WIFI) ======================= */
 
     private val registrationListener = object : NsdManager.RegistrationListener {
         override fun onServiceRegistered(s: NsdServiceInfo) {
@@ -363,7 +377,10 @@ class IdentityRepository(private val context: Context) {
 
     private val discoveryListener = object : NsdManager.DiscoveryListener {
         override fun onServiceFound(s: NsdServiceInfo) {
-            if (s.serviceType != SERVICE_TYPE || s.serviceName.contains(getMyId().take(8))) return
+            if (s.serviceType != SERVICE_TYPE) return
+            // Не резолвим самих себя
+            if (s.serviceName.contains(getMyId().take(8))) return
+
             nsdManager.resolveService(s, object : NsdManager.ResolveListener {
                 override fun onServiceResolved(r: NsdServiceInfo) {
                     val host = r.host?.hostAddress ?: return
