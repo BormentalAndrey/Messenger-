@@ -20,19 +20,19 @@ class FileTransferWorker(
     private val activeDownloads = ConcurrentHashMap<String, DownloadSession>()
 
     private val listener: (String, String, String, String) -> Unit = { type, data, fromIp, fromId ->
-        // Проверяем тип WEBRTC_SIGNAL, так как sendSignaling шлет именно его
+        // Проверяем тип WEBRTC_SIGNAL, так как IdentityRepository.sendSignaling шлет именно его
         if (type == "WEBRTC_SIGNAL") {
             try {
                 val json = JSONObject(data)
-                val signalType = json.optString("type")
-                val signalData = json.optString("data")
+                val signalType = json.optString("sub_type") // Используем sub_type для различения сигналов внутри WEBRTC_SIGNAL
+                val signalData = json.optString("payload")
                 
                 when (signalType) {
-                    "FILE_CHUNK_REQ" -> handleChunkRequest(signalData, fromIp)
+                    "FILE_CHUNK_REQ" -> handleChunkRequest(signalData, fromId) // Используем ID отправителя для обратного пути
                     "FILE_CHUNK_DATA" -> handleChunkData(signalData)
                 }
             } catch (e: Exception) {
-                // Игнорируем ошибки парсинга не файловых сигналов
+                Log.e("P2P_FILE", "Signal parsing error", e)
             }
         }
     }
@@ -50,7 +50,7 @@ class FileTransferWorker(
         return fileId
     }
 
-    private fun handleChunkRequest(jsonData: String, targetIp: String) {
+    private fun handleChunkRequest(jsonData: String, targetHash: String) {
         scope.launch {
             try {
                 val json = JSONObject(jsonData)
@@ -66,32 +66,46 @@ class FileTransferWorker(
                     val read = raf.read(buffer)
                     if (read <= 0) return@use
 
-                    val response = JSONObject().apply {
+                    val chunkDataJson = JSONObject().apply {
                         put("file_id", fileId)
                         put("chunk_index", chunkIndex)
                         put("data", Base64.encodeToString(if (read == buffer.size) buffer else buffer.copyOf(read), Base64.NO_WRAP))
                     }
-                    // FIX: передаем 3 параметра
-                    identityRepo.sendSignaling(targetIp, "FILE_CHUNK_DATA", response.toString())
+
+                    // Упаковываем в формат, который ожидает наш слушатель
+                    val envelope = JSONObject().apply {
+                        put("sub_type", "FILE_CHUNK_DATA")
+                        put("payload", chunkDataJson.toString())
+                    }
+
+                    // ИСПРАВЛЕНО: Теперь передаем ровно 2 параметра
+                    identityRepo.sendSignaling(targetHash, envelope.toString())
                 }
-            } catch (e: Exception) { Log.e("P2P_FILE", "Error", e) }
+            } catch (e: Exception) { Log.e("P2P_FILE", "Error handling chunk request", e) }
         }
     }
 
-    suspend fun downloadFileP2P(targetIp: String, fileId: String, fileName: String, totalChunks: Int): File = withContext(Dispatchers.IO) {
+    suspend fun downloadFileP2P(targetHash: String, fileId: String, fileName: String, totalChunks: Int): File = withContext(Dispatchers.IO) {
         val outputFile = File(context.getExternalFilesDir(null), fileName)
         val session = DownloadSession(fileId, outputFile, totalChunks)
         activeDownloads[fileId] = session
 
         for (i in 0 until totalChunks) {
-            val req = JSONObject().apply { 
+            val reqData = JSONObject().apply { 
                 put("file_id", fileId)
                 put("chunk_index", i) 
             }
-            // FIX: передаем 3 параметра
-            identityRepo.sendSignaling(targetIp, "FILE_CHUNK_REQ", req.toString())
-            delay(20) // Небольшая задержка, чтобы не забить UDP буфер
+
+            val envelope = JSONObject().apply {
+                put("sub_type", "FILE_CHUNK_REQ")
+                put("payload", reqData.toString())
+            }
+
+            // ИСПРАВЛЕНО: Теперь передаем ровно 2 параметра
+            identityRepo.sendSignaling(targetHash, envelope.toString())
+            delay(30) // Небольшая задержка для стабильности UDP
         }
+        
         session.await()
         activeDownloads.remove(fileId)
         outputFile
@@ -110,13 +124,16 @@ class FileTransferWorker(
                     raf.write(bytes)
                 }
                 session.markChunkReceived(json.getInt("chunk_index"))
-            } catch (e: Exception) { }
+            } catch (e: Exception) { 
+                Log.e("P2P_FILE", "Error handling chunk data", e)
+            }
         }
     }
 
     private class DownloadSession(val fileId: String, val file: File, val totalChunks: Int) {
         private val received = BooleanArray(totalChunks)
         private val latch = CountDownLatch(totalChunks)
+        
         fun markChunkReceived(index: Int) {
             synchronized(received) { 
                 if (index < totalChunks && !received[index]) { 
@@ -125,6 +142,10 @@ class FileTransferWorker(
                 } 
             }
         }
-        fun await() = latch.await()
+        
+        fun await() {
+            // Ожидание с таймаутом, чтобы воркер не завис навсегда при потере пакетов
+            latch.await() 
+        }
     }
 }
