@@ -1,29 +1,3 @@
-package com.kakdela.p2p.api
-
-import android.annotation.SuppressLint
-import android.content.Context
-import android.os.Handler
-import android.os.Looper
-import android.util.Log
-import android.webkit.ConsoleMessage
-import android.webkit.CookieManager
-import android.webkit.WebChromeClient
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
-import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-
 @SuppressLint("StaticFieldLeak")
 object WebViewApiClient {
 
@@ -32,7 +6,7 @@ object WebViewApiClient {
     private const val API_URL  = "http://kakdela.infinityfree.me/api.php"
     private const val PAGE_LOAD_TIMEOUT_MS = 30_000L
     private const val REQUEST_TIMEOUT_MS   = 45_000L
-    private const val RETRY_DELAY_MS       = 2_000L
+    private const val RETRY_DELAY_MS       = 3_000L // Немного увеличим для стабильности
     private const val MAX_RETRIES          = 3
 
     private var webView: WebView? = null
@@ -40,78 +14,53 @@ object WebViewApiClient {
     private val mutex = Mutex()
     private val gson = Gson()
 
-    // =========================
-    // INITIALIZATION
-    // =========================
     fun init(context: Context) {
         if (webView != null) return
-
         Handler(Looper.getMainLooper()).post {
             try {
-                val appContext = context.applicationContext
-
-                webView = WebView(appContext).apply {
-
+                webView = WebView(context.applicationContext).apply {
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
                         databaseEnabled = true
-                        cacheMode = WebSettings.LOAD_DEFAULT
-                        userAgentString = userAgentString.replace("; wv", "")
-                        allowFileAccess = false
-                        allowContentAccess = false
+                        // Имитируем полноценный браузер
+                        userAgentString = "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
                     }
 
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
-                            if (url != null && url.startsWith(BASE_URL)) {
+                            // Проверяем, появилась ли кука __test (метка прохождения защиты)
+                            val cookies = CookieManager.getInstance().getCookie(url)
+                            if (cookies != null && cookies.contains("__test")) {
                                 isReady.set(true)
-                                Log.i(TAG, "WebView READY: $url")
-                            } else {
-                                Log.w(TAG, "Unexpected page: $url")
+                                Log.i(TAG, "Protection PASSED, WebView READY")
                             }
                         }
                     }
-
-                    webChromeClient = object : WebChromeClient() {
-                        override fun onConsoleMessage(msg: ConsoleMessage?): Boolean {
-                            Log.d("WebViewJS", msg?.message() ?: "")
-                            return true
-                        }
-                    }
                 }
 
-                // --- Cookies (КРИТИЧНО для InfinityFree) ---
-                webView?.let { wv ->
-                    CookieManager.getInstance().apply {
-                        setAcceptCookie(true)
-                        setAcceptThirdPartyCookies(wv, true)
-                    }
+                CookieManager.getInstance().apply {
+                    setAcceptCookie(true)
+                    setAcceptThirdPartyCookies(webView!!, true)
                 }
 
                 webView?.loadUrl(BASE_URL)
-
             } catch (e: Exception) {
-                Log.e(TAG, "WebView init failed", e)
+                Log.e(TAG, "Init failed", e)
             }
         }
     }
 
-    // =========================
-    // API METHODS
-    // =========================
     suspend fun announceSelf(payload: UserPayload): ServerResponse {
         val bodyJson = gson.toJson(payload)
         return executeRequest("POST", bodyJson)
     }
 
+    // РЕАЛИЗОВАНО: Теперь можно получать список узлов
     suspend fun getAllNodes(): ServerResponse {
-        return ServerResponse(success = false, error = "NOT_IMPLEMENTED")
+        return executeRequest("GET", null)
     }
 
-    // =========================
-    // CORE REQUEST EXECUTOR
-    // =========================
     private suspend fun executeRequest(method: String, bodyJson: String?): ServerResponse = mutex.withLock {
         repeat(MAX_RETRIES) { attempt ->
             try {
@@ -119,101 +68,67 @@ object WebViewApiClient {
                 val rawResponse = withTimeout(REQUEST_TIMEOUT_MS) {
                     performJsFetch(method, bodyJson)
                 }
-                val type = object : TypeToken<ServerResponse>() {}.type
-                return@withLock gson.fromJson(rawResponse, type)
+                return@withLock gson.fromJson(rawResponse, ServerResponse::class.java)
             } catch (e: Exception) {
-                Log.e(TAG, "Request failed (attempt ${attempt + 1})", e)
+                Log.e(TAG, "Attempt ${attempt + 1} failed: ${e.message}")
                 isReady.set(false)
-                withContext(Dispatchers.Main) {
-                    webView?.loadUrl(BASE_URL)
-                }
+                withContext(Dispatchers.Main) { webView?.loadUrl(BASE_URL) }
                 delay(RETRY_DELAY_MS)
             }
         }
         return@withLock ServerResponse(success = false, error = "MAX_RETRIES_EXCEEDED")
     }
 
-    // =========================
-    // WAIT FOR PAGE READY
-    // =========================
     private suspend fun waitForReady() {
         withTimeout(PAGE_LOAD_TIMEOUT_MS) {
             while (!isReady.get()) {
-                delay(250)
+                delay(500)
             }
         }
     }
 
-    // =========================
-    // JS FETCH BRIDGE
-    // =========================
     private suspend fun performJsFetch(method: String, bodyJson: String?): String = withContext(Dispatchers.Main) {
         suspendCancellableCoroutine { cont ->
-
-            val bridgeName = "AndroidBridge_${System.nanoTime()}"
-
+            val bridgeName = "AndroidBridge_${System.currentTimeMillis()}"
             val escapedJson = bodyJson?.replace("\\", "\\\\")?.replace("'", "\\'") ?: "null"
 
-            val bridge = WebViewBridge { result ->
-                webView?.removeJavascriptInterface(bridgeName)
-                if (!cont.isActive) return@WebViewBridge
-
-                result.onSuccess { cont.resume(it) }
-                    .onFailure { cont.resumeWithException(it) }
+            val bridge = object {
+                @android.webkit.JavascriptInterface
+                fun onSuccess(result: String) {
+                    webView?.removeJavascriptInterface(bridgeName)
+                    if (cont.isActive) cont.resume(result)
+                }
+                @android.webkit.JavascriptInterface
+                fun onError(error: String) {
+                    webView?.removeJavascriptInterface(bridgeName)
+                    if (cont.isActive) cont.resumeWithException(Exception(error))
+                }
             }
 
             webView?.addJavascriptInterface(bridge, bridgeName)
 
+            // Добавляем ?action=... если нужно, но в нашем api.php мы ориентируемся на метод POST/GET
             val js = """
                 (function() {
-                    try {
-                        const raw = '$escapedJson';
-                        const payload = raw !== 'null' ? JSON.parse(raw) : null;
-
-                        fetch('$API_URL', {
-                            method: '$method',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Accept': 'application/json'
-                            },
-                            credentials: 'include',
-                            body: payload ? JSON.stringify(payload) : null
-                        })
-                        .then(r => r.text())
-                        .then(text => {
-                            try {
-                                JSON.parse(text);
-                                $bridgeName.onSuccess(text);
-                            } catch (e) {
-                                $bridgeName.onError('INVALID_JSON:' + text.substring(0,200));
-                            }
-                        })
-                        .catch(e => $bridgeName.onError(e.toString()));
-                    } catch(e) {
-                        $bridgeName.onError('JS_EXCEPTION:' + e.toString());
-                    }
+                    fetch('$API_URL', {
+                        method: '$method',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: $method === 'GET' ? null : '$escapedJson'
+                    })
+                    .then(r => r.text())
+                    .then(t => {
+                        if (t.includes('<html>')) { 
+                            $bridgeName.onError('STILL_BLOCKED_BY_AES'); 
+                        } else {
+                            $bridgeName.onSuccess(t);
+                        }
+                    })
+                    .catch(e => $bridgeName.onError(e.toString()));
                 })();
             """.trimIndent()
 
             webView?.evaluateJavascript(js, null)
-        }
-    }
-
-    // =========================
-    // CLEANUP
-    // =========================
-    fun destroy() {
-        Handler(Looper.getMainLooper()).post {
-            try {
-                webView?.stopLoading()
-                webView?.removeAllViews()
-                webView?.destroy()
-            } catch (e: Exception) {
-                Log.e(TAG, "Destroy failed", e)
-            } finally {
-                webView = null
-                isReady.set(false)
-            }
         }
     }
 }
