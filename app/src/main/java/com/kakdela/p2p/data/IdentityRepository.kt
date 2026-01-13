@@ -129,7 +129,7 @@ class IdentityRepository(private val context: Context) {
     private suspend fun performServerSync(myId: String) {
         val payload = UserPayload(
             hash = myId,
-            phone_hash = prefs.getString("my_phone_hash", null),
+            phone_hash = prefs.getString("my_phone_hash", null) ?: "",
             publicKey = CryptoManager.getMyPublicKeyStr(),
             ip = "0.0.0.0",
             port = PORT,
