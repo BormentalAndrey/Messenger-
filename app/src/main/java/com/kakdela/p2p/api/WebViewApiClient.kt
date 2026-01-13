@@ -11,6 +11,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.google.gson.Gson
+import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -27,6 +28,7 @@ import kotlin.coroutines.resumeWithException
 object WebViewApiClient {
 
     private const val TAG = "WebViewApiClient"
+
     private const val BASE_URL = "http://kakdela.infinityfree.me/"
     private const val API_URL  = "http://kakdela.infinityfree.me/api.php"
 
@@ -40,26 +42,34 @@ object WebViewApiClient {
     private val mutex = Mutex()
     private val gson = Gson()
 
+    /**
+     * =========================
+     * INITIALIZATION
+     * =========================
+     */
     fun init(context: Context) {
         if (webView != null) return
 
         Handler(Looper.getMainLooper()).post {
             try {
                 webView = WebView(context.applicationContext).apply {
+
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
                         databaseEnabled = true
                         cacheMode = WebSettings.LOAD_DEFAULT
                         userAgentString = userAgentString.replace("; wv", "")
+                        allowFileAccess = false
+                        allowContentAccess = false
                     }
 
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
-                            if (url?.contains("kakdela.infinityfree.me") == true) {
+                            if (url?.startsWith(BASE_URL) == true) {
                                 isReady.set(true)
                             }
-                            Log.d(TAG, "Loaded: $url")
+                            Log.d(TAG, "Page loaded: $url")
                         }
                     }
 
@@ -74,26 +84,31 @@ object WebViewApiClient {
                 webView?.loadUrl(BASE_URL)
 
             } catch (e: Exception) {
-                Log.e(TAG, "Init error", e)
+                Log.e(TAG, "WebView init failed", e)
             }
         }
     }
 
     /**
-     * Анонсирует узел. Оборачивает в "data", как того ожидает PHP.
+     * =========================
+     * API METHODS
+     * =========================
      */
+
     suspend fun announceSelf(payload: UserPayload): ServerResponse {
-        val body = gson.toJson(mapOf("data" to payload))
-        return executeRequest("add_user", "POST", body)
+        val bodyJson = gson.toJson(mapOf("data" to payload))
+        return executeRequest("add_user", "POST", bodyJson)
     }
 
-    /**
-     * Получает список всех активных узлов.
-     */
     suspend fun getAllNodes(): ServerResponse {
         return executeRequest("list_users", "GET", null)
     }
 
+    /**
+     * =========================
+     * CORE REQUEST EXECUTOR
+     * =========================
+     */
     private suspend fun executeRequest(
         action: String,
         method: String,
@@ -104,18 +119,16 @@ object WebViewApiClient {
             try {
                 waitForReady()
 
-                // Явно указываем String, чтобы избежать Type Mismatch
-                val jsonResponse: String = withTimeout(REQUEST_TIMEOUT_MS) {
+                val rawResponse: String = withTimeout(REQUEST_TIMEOUT_MS) {
                     performJsFetch(action, method, bodyJson)
                 }
 
                 val type = object : TypeToken<ServerResponse>() {}.type
-                val response = gson.fromJson<ServerResponse>(jsonResponse, type)
-                
-                if (response != null) return@withLock response
+                return@withLock gson.fromJson(rawResponse, type)
 
             } catch (e: Exception) {
-                Log.e(TAG, "Request failed at attempt ${attempt + 1}", e)
+                Log.e(TAG, "Request failed (attempt ${attempt + 1})", e)
+
                 isReady.set(false)
 
                 withContext(Dispatchers.Main) {
@@ -126,22 +139,29 @@ object WebViewApiClient {
             }
         }
 
-        // Используем конструктор ServerResponse с именованными аргументами для ясности
         ServerResponse(
             success = false,
-            error = "Max retries reached after $MAX_RETRIES attempts"
+            error = "MAX_RETRIES_EXCEEDED"
         )
     }
 
+    /**
+     * =========================
+     * WAIT FOR PAGE READY
+     * =========================
+     */
     private suspend fun waitForReady() {
         withTimeout(PAGE_LOAD_TIMEOUT_MS) {
-            while (!isReady.get()) delay(500)
+            while (!isReady.get()) {
+                delay(300)
+            }
         }
     }
 
     /**
-     * ИСПРАВЛЕНО: Добавлена явная типизация <String> и заменен resumeWith на resumeWithException 
-     * для исключения конфликтов типов в цепочке вызовов.
+     * =========================
+     * JS FETCH BRIDGE
+     * =========================
      */
     private suspend fun performJsFetch(
         action: String,
@@ -149,8 +169,9 @@ object WebViewApiClient {
         bodyJson: String?
     ): String = withContext(Dispatchers.Main) {
 
-        suspendCancellableCoroutine<String> { cont ->
-            val bridgeName = "AndroidBridge_${System.currentTimeMillis()}"
+        suspendCancellableCoroutine { cont ->
+
+            val bridgeName = "AndroidBridge_${System.nanoTime()}"
             val url = "$API_URL?action=$action"
 
             val escapedJson = bodyJson
@@ -160,13 +181,11 @@ object WebViewApiClient {
 
             val bridge = WebViewBridge { result ->
                 webView?.removeJavascriptInterface(bridgeName)
-                
+
                 if (!cont.isActive) return@WebViewBridge
 
-                // Обрабатываем результат вручную вместо fold, чтобы компилятор не путался
                 try {
-                    val value = result.getOrThrow()
-                    cont.resume(value)
+                    cont.resume(result.getOrThrow())
                 } catch (t: Throwable) {
                     cont.resumeWithException(t)
                 }
@@ -193,13 +212,13 @@ object WebViewApiClient {
                             try {
                                 JSON.parse(text);
                                 $bridgeName.onSuccess(text);
-                            } catch(e) {
-                                $bridgeName.onError('NOT_JSON: ' + text.substring(0, 200));
+                            } catch (e) {
+                                $bridgeName.onError('INVALID_JSON:' + text.substring(0,200));
                             }
                         })
                         .catch(e => $bridgeName.onError(e.toString()));
                     } catch(e) {
-                        $bridgeName.onError('JS_EXCEPTION: ' + e.toString());
+                        $bridgeName.onError('JS_EXCEPTION:' + e.toString());
                     }
                 })();
             """.trimIndent()
@@ -208,13 +227,19 @@ object WebViewApiClient {
         }
     }
 
+    /**
+     * =========================
+     * CLEANUP
+     * =========================
+     */
     fun destroy() {
         Handler(Looper.getMainLooper()).post {
             try {
                 webView?.stopLoading()
+                webView?.removeAllViews()
                 webView?.destroy()
             } catch (e: Exception) {
-                Log.e(TAG, "Destroy error", e)
+                Log.e(TAG, "Destroy failed", e)
             } finally {
                 webView = null
                 isReady.set(false)
@@ -222,4 +247,3 @@ object WebViewApiClient {
         }
     }
 }
-
