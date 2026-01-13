@@ -129,11 +129,11 @@ class IdentityRepository(private val context: Context) {
     private suspend fun performServerSync(myId: String) {
         val payload = UserPayload(
             hash = myId,
-            phone_hash = prefs.getString("my_phone_hash", ""),
+            phone_hash = prefs.getString("my_phone_hash", null),
             publicKey = CryptoManager.getMyPublicKeyStr(),
             ip = "0.0.0.0",
             port = PORT,
-            phone = prefs.getString("my_phone", ""),
+            phone = prefs.getString("my_phone", null),
             lastSeen = System.currentTimeMillis()
         )
         announceMyself(payload)
@@ -156,11 +156,9 @@ class IdentityRepository(private val context: Context) {
 
     suspend fun addNodeByHash(hash: String): Boolean {
         return try {
-            // Проверяем локально
             val existing = nodeDao.getNodeByHash(hash)
             if (existing != null) return true
 
-            // Ищем на сервере
             val nodes = fetchAllNodesFromServer()
             val node = nodes.find { it.hash == hash } ?: return false
 
@@ -185,20 +183,19 @@ class IdentityRepository(private val context: Context) {
         } catch (_: Exception) { emptyList() }
     }
 
-    suspend fun sendMessageSmart(toHash: String, type: String, message: String): Boolean {
+    suspend fun sendMessageSmart(toHash: String, phone: String?, message: String): Boolean {
         return try {
             val ip = swarmPeers[toHash] ?: wifiPeers[toHash]
             if (ip != null) {
-                sendUdp(ip, type, message)
+                sendUdp(ip, "CHAT", message)
             } else {
-                // fallback через сервер
                 val payload = UserPayload(
                     hash = toHash,
                     phone_hash = null,
                     publicKey = getPeerPublicKey(toHash),
                     ip = null,
                     port = null,
-                    phone = null,
+                    phone = phone,
                     lastSeen = System.currentTimeMillis()
                 )
                 api.announceSelf(payload)
@@ -208,8 +205,11 @@ class IdentityRepository(private val context: Context) {
     }
 
     suspend fun sendSignaling(toHash: String, sdp: String) {
-        val type = "WEBRTC_SIGNAL"
-        sendMessageSmart(toHash, type, sdp)
+        val json = JSONObject().apply {
+            put("type", "WEBRTC_SIGNAL")
+            put("data", sdp)
+        }
+        sendMessageSmart(toHash, null, json.toString())
     }
 
     /* ======================= UDP ======================= */
@@ -307,7 +307,6 @@ class IdentityRepository(private val context: Context) {
                 override fun onResolveFailed(s: NsdServiceInfo, e: Int) {}
             })
         }
-
         override fun onServiceLost(s: NsdServiceInfo) {}
         override fun onDiscoveryStarted(t: String) {}
         override fun onDiscoveryStopped(t: String) {}
