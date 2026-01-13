@@ -53,13 +53,21 @@ class WebRtcClient(
         peerConnection = factory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
             override fun onIceCandidate(candidate: IceCandidate?) {
                 candidate?.let {
-                    val json = JSONObject().apply {
+                    val iceJson = JSONObject().apply {
                         put("sdpMid", it.sdpMid)
                         put("sdpMLineIndex", it.sdpMLineIndex)
                         put("sdp", it.sdp)
                     }
-                    // FIX: 3 параметра
-                    identityRepo.sendSignaling(targetIp, "ICE_CANDIDATE", json.toString())
+                    
+                    val envelope = JSONObject().apply {
+                        put("sub_type", "ICE_CANDIDATE")
+                        put("payload", iceJson.toString())
+                    }
+
+                    // ИСПРАВЛЕНО: Вызов в корутине и 2 параметра
+                    scope.launch {
+                        identityRepo.sendSignaling(targetHash, envelope.toString())
+                    }
                 }
             }
 
@@ -67,7 +75,9 @@ class WebRtcClient(
                 dc?.let { setupDataChannel(it) }
             }
 
-            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {}
+            override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
+                Log.d(TAG, "ICE Connection State: $state")
+            }
             override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
             override fun onIceConnectionReceivingChange(b: Boolean) {}
             override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {}
@@ -98,17 +108,19 @@ class WebRtcClient(
                             messageId = UUID.randomUUID().toString(),
                             chatId = chatId,
                             senderId = targetHash,
-                            receiverId = identityRepo.getMyId(), // FIX: добавлен метод
+                            receiverId = identityRepo.getMyId(),
                             text = decryptedText,
                             timestamp = System.currentTimeMillis(),
                             isMe = false,
                             status = "RECEIVED"
                         )
                         dao.insert(message)
-                    } catch (e: Exception) { Log.e(TAG, "Error", e) }
+                    } catch (e: Exception) { Log.e(TAG, "Decryption/DB Error", e) }
                 }
             }
-            override fun onStateChange() {}
+            override fun onStateChange() {
+                Log.d(TAG, "DataChannel State: ${dataChannel?.state()}")
+            }
             override fun onBufferedAmountChange(l: Long) {}
         })
     }
@@ -118,8 +130,8 @@ class WebRtcClient(
             if (fromId != targetHash || type != "WEBRTC_SIGNAL") return@addListener
             try {
                 val json = JSONObject(data)
-                val signalType = json.getString("type")
-                val signalData = json.getString("data")
+                val signalType = json.getString("sub_type")
+                val signalData = json.getString("payload")
 
                 when (signalType) {
                     "OFFER" -> handleOffer(signalData)
@@ -134,7 +146,7 @@ class WebRtcClient(
                         peerConnection?.addIceCandidate(candidate)
                     }
                 }
-            } catch (e: Exception) { Log.e(TAG, "Signaling Error", e) }
+            } catch (e: Exception) { Log.e(TAG, "Signaling Listener Error", e) }
         }
     }
 
@@ -144,8 +156,16 @@ class WebRtcClient(
             override fun onCreateSuccess(sdp: SessionDescription?) {
                 sdp?.let {
                     peerConnection?.setLocalDescription(SimpleSdpObserver(), it)
-                    // FIX: 3 параметра
-                    identityRepo.sendSignaling(targetIp, "OFFER", it.description)
+                    
+                    val envelope = JSONObject().apply {
+                        put("sub_type", "OFFER")
+                        put("payload", it.description)
+                    }
+
+                    // ИСПРАВЛЕНО: Вызов в корутине и 2 параметра
+                    scope.launch {
+                        identityRepo.sendSignaling(targetHash, envelope.toString())
+                    }
                 }
             }
         }, constraints)
@@ -159,8 +179,16 @@ class WebRtcClient(
                     override fun onCreateSuccess(answer: SessionDescription?) {
                         answer?.let {
                             peerConnection?.setLocalDescription(SimpleSdpObserver(), it)
-                            // FIX: 3 параметра
-                            identityRepo.sendSignaling(targetIp, "ANSWER", it.description)
+                            
+                            val envelope = JSONObject().apply {
+                                put("sub_type", "ANSWER")
+                                put("payload", it.description)
+                            }
+
+                            // ИСПРАВЛЕНО: Вызов в корутине и 2 параметра
+                            scope.launch {
+                                identityRepo.sendSignaling(targetHash, envelope.toString())
+                            }
                         }
                     }
                 }, MediaConstraints())
@@ -180,7 +208,10 @@ class WebRtcClient(
             val buffer = ByteBuffer.wrap(encrypted.toByteArray())
             dataChannel?.send(DataChannel.Buffer(buffer, false))
             true
-        } catch (e: Exception) { false }
+        } catch (e: Exception) { 
+            Log.e(TAG, "DataChannel send error", e)
+            false 
+        }
     }
 
     fun close() {
@@ -193,7 +224,7 @@ class WebRtcClient(
     open class SimpleSdpObserver : SdpObserver {
         override fun onCreateSuccess(p0: SessionDescription?) {}
         override fun onSetSuccess() {}
-        override fun onCreateFailure(p0: String?) {}
-        override fun onSetFailure(p0: String?) {}
+        override fun onCreateFailure(p0: String?) { Log.e("WebRtcClient", "SDP Create Failure: $p0") }
+        override fun onSetFailure(p0: String?) { Log.e("WebRtcClient", "SDP Set Failure: $p0") }
     }
 }
