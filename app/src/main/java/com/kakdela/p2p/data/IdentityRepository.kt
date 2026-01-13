@@ -167,7 +167,7 @@ class IdentityRepository(private val context: Context) {
                     userHash = node.hash,
                     ip = node.ip ?: "0.0.0.0",
                     port = node.port ?: PORT,
-                    publicKey = node.publicKey
+                    publicKey = node.publicKey ?: ""
                 )
             )
             wifiPeers[node.hash] = node.ip ?: "0.0.0.0"
@@ -178,8 +178,10 @@ class IdentityRepository(private val context: Context) {
     suspend fun fetchAllNodesFromServer(): List<UserPayload> {
         return try {
             val response = api.getAllNodes()
-            if (response.success && response.data != null) response.data as List<UserPayload>
-            else emptyList()
+            // проверяем, что response соответствует ApiResponse<List<UserPayload>>
+            if (response != null && response.success && response.data != null) {
+                response.data
+            } else emptyList()
         } catch (_: Exception) { emptyList() }
     }
 
