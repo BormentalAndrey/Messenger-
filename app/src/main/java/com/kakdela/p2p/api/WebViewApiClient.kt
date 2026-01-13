@@ -6,12 +6,12 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.webkit.ConsoleMessage
+import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.google.gson.Gson
-import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -42,17 +42,23 @@ object WebViewApiClient {
     private val mutex = Mutex()
     private val gson = Gson()
 
-    /**
-     * =========================
-     * INITIALIZATION
-     * =========================
-     */
+    // =========================
+    // INITIALIZATION
+    // =========================
     fun init(context: Context) {
         if (webView != null) return
 
         Handler(Looper.getMainLooper()).post {
             try {
-                webView = WebView(context.applicationContext).apply {
+                val appContext = context.applicationContext
+
+                webView = WebView(appContext).apply {
+
+                    // --- Cookies (КРИТИЧНО для InfinityFree) ---
+                    CookieManager.getInstance().apply {
+                        setAcceptCookie(true)
+                        setAcceptThirdPartyCookies(this@apply, true)
+                    }
 
                     settings.apply {
                         javaScriptEnabled = true
@@ -66,10 +72,12 @@ object WebViewApiClient {
 
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
-                            if (url?.startsWith(BASE_URL) == true) {
+                            if (url != null && url.startsWith(BASE_URL)) {
                                 isReady.set(true)
+                                Log.i(TAG, "WebView READY: $url")
+                            } else {
+                                Log.w(TAG, "Unexpected page: $url")
                             }
-                            Log.d(TAG, "Page loaded: $url")
                         }
                     }
 
@@ -89,28 +97,34 @@ object WebViewApiClient {
         }
     }
 
-    /**
-     * =========================
-     * API METHODS
-     * =========================
-     */
+    // =========================
+    // API METHODS
+    // =========================
 
+    /**
+     * РЕГИСТРАЦИЯ / ОБНОВЛЕНИЕ PEER
+     * PHP api.php принимает просто JSON body — action НЕ НУЖЕН
+     */
     suspend fun announceSelf(payload: UserPayload): ServerResponse {
-        val bodyJson = gson.toJson(mapOf("data" to payload))
-        return executeRequest("add_user", "POST", bodyJson)
-    }
-
-    suspend fun getAllNodes(): ServerResponse {
-        return executeRequest("list_users", "GET", null)
+        val bodyJson = gson.toJson(payload)
+        return executeRequest("POST", bodyJson)
     }
 
     /**
-     * =========================
-     * CORE REQUEST EXECUTOR
-     * =========================
+     * (ЗАГОТОВКА) получение узлов — сервером пока не реализовано
+     * метод оставлен, но безопасно вернёт ошибку
      */
+    suspend fun getAllNodes(): ServerResponse {
+        return ServerResponse(
+            success = false,
+            error = "NOT_IMPLEMENTED"
+        )
+    }
+
+    // =========================
+    // CORE REQUEST EXECUTOR
+    // =========================
     private suspend fun executeRequest(
-        action: String,
         method: String,
         bodyJson: String?
     ): ServerResponse = mutex.withLock {
@@ -119,8 +133,8 @@ object WebViewApiClient {
             try {
                 waitForReady()
 
-                val rawResponse: String = withTimeout(REQUEST_TIMEOUT_MS) {
-                    performJsFetch(action, method, bodyJson)
+                val rawResponse = withTimeout(REQUEST_TIMEOUT_MS) {
+                    performJsFetch(method, bodyJson)
                 }
 
                 val type = object : TypeToken<ServerResponse>() {}.type
@@ -145,26 +159,21 @@ object WebViewApiClient {
         )
     }
 
-    /**
-     * =========================
-     * WAIT FOR PAGE READY
-     * =========================
-     */
+    // =========================
+    // WAIT FOR PAGE READY
+    // =========================
     private suspend fun waitForReady() {
         withTimeout(PAGE_LOAD_TIMEOUT_MS) {
             while (!isReady.get()) {
-                delay(300)
+                delay(250)
             }
         }
     }
 
-    /**
-     * =========================
-     * JS FETCH BRIDGE
-     * =========================
-     */
+    // =========================
+    // JS FETCH BRIDGE
+    // =========================
     private suspend fun performJsFetch(
-        action: String,
         method: String,
         bodyJson: String?
     ): String = withContext(Dispatchers.Main) {
@@ -172,7 +181,6 @@ object WebViewApiClient {
         suspendCancellableCoroutine { cont ->
 
             val bridgeName = "AndroidBridge_${System.nanoTime()}"
-            val url = "$API_URL?action=$action"
 
             val escapedJson = bodyJson
                 ?.replace("\\", "\\\\")
@@ -181,14 +189,11 @@ object WebViewApiClient {
 
             val bridge = WebViewBridge { result ->
                 webView?.removeJavascriptInterface(bridgeName)
-
                 if (!cont.isActive) return@WebViewBridge
 
-                try {
-                    cont.resume(result.getOrThrow())
-                } catch (t: Throwable) {
-                    cont.resumeWithException(t)
-                }
+                result
+                    .onSuccess { cont.resume(it) }
+                    .onFailure { cont.resumeWithException(it) }
             }
 
             webView?.addJavascriptInterface(bridge, bridgeName)
@@ -199,12 +204,13 @@ object WebViewApiClient {
                         const raw = '$escapedJson';
                         const payload = raw !== 'null' ? JSON.parse(raw) : null;
 
-                        fetch('$url', {
+                        fetch('$API_URL', {
                             method: '$method',
                             headers: {
                                 'Content-Type': 'application/json',
                                 'Accept': 'application/json'
                             },
+                            credentials: 'include',
                             body: payload ? JSON.stringify(payload) : null
                         })
                         .then(r => r.text())
@@ -227,11 +233,9 @@ object WebViewApiClient {
         }
     }
 
-    /**
-     * =========================
-     * CLEANUP
-     * =========================
-     */
+    // =========================
+    // CLEANUP
+    // =========================
     fun destroy() {
         Handler(Looper.getMainLooper()).post {
             try {
