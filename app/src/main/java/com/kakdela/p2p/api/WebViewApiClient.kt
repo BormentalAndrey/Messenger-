@@ -11,6 +11,7 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -39,10 +40,6 @@ object WebViewApiClient {
     private val isReady = AtomicBoolean(false)
     private val mutex = Mutex()
     private val gson = Gson()
-
-    // ------------------------------------------------------------------------
-    // INIT
-    // ------------------------------------------------------------------------
 
     fun init(context: Context) {
         if (webView != null) return
@@ -83,23 +80,14 @@ object WebViewApiClient {
         }
     }
 
-    // ------------------------------------------------------------------------
-    // PUBLIC API
-    // ------------------------------------------------------------------------
-
     suspend fun announceSelf(payload: UserPayload): ServerResponse {
         val body = gson.toJson(mapOf("data" to payload))
-        Log.d(TAG, "Announce JSON: $body")
         return executeRequest("add_user", "POST", body)
     }
 
     suspend fun getAllNodes(): ServerResponse {
         return executeRequest("list_users", "GET", null)
     }
-
-    // ------------------------------------------------------------------------
-    // CORE
-    // ------------------------------------------------------------------------
 
     private suspend fun executeRequest(
         action: String,
@@ -115,8 +103,9 @@ object WebViewApiClient {
                     performJsFetch(action, method, bodyJson)
                 }
 
-                return gson.fromJson(json, ServerResponse::class.java)
-                    ?: ServerResponse(false, "Empty response")
+                // 🔴 ВАЖНО: парсим через TypeToken
+                val type = object : TypeToken<ServerResponse>() {}.type
+                return gson.fromJson<ServerResponse>(json, type)
 
             } catch (e: Exception) {
                 Log.e(TAG, "Attempt ${attempt + 1} failed", e)
@@ -139,17 +128,13 @@ object WebViewApiClient {
         }
     }
 
-    // ------------------------------------------------------------------------
-    // JS FETCH
-    // ------------------------------------------------------------------------
-
     private suspend fun performJsFetch(
         action: String,
         method: String,
         bodyJson: String?
     ): String = withContext(Dispatchers.Main) {
 
-        suspendCancellableCoroutine<String> { cont ->
+        suspendCancellableCoroutine { cont ->
 
             val bridgeName = "AndroidBridge_${System.currentTimeMillis()}"
             val url = "$API_URL?action=$action"
@@ -161,7 +146,6 @@ object WebViewApiClient {
 
             val bridge = WebViewBridge { result ->
                 webView?.removeJavascriptInterface(bridgeName)
-
                 if (!cont.isActive) return@WebViewBridge
 
                 try {
@@ -207,17 +191,12 @@ object WebViewApiClient {
         }
     }
 
-    // ------------------------------------------------------------------------
-    // DESTROY
-    // ------------------------------------------------------------------------
-
     fun destroy() {
         Handler(Looper.getMainLooper()).post {
             try {
                 webView?.stopLoading()
                 webView?.destroy()
-            } catch (_: Exception) {}
-            finally {
+            } finally {
                 webView = null
                 isReady.set(false)
             }
