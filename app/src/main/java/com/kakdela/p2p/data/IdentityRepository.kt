@@ -38,6 +38,7 @@ class IdentityRepository(private val context: Context) {
     private val nodeDao = db.nodeDao()
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
 
+    // MessageRepository должен быть инициализирован корректно
     private val messageRepository by lazy { MessageRepository(context, db.messageDao(), this) }
     private val listeners = CopyOnWriteArrayList<(String, String, String, String) -> Unit>()
 
@@ -129,11 +130,11 @@ class IdentityRepository(private val context: Context) {
     private suspend fun performServerSync(myId: String) {
         val payload = UserPayload(
             hash = myId,
-            phone_hash = prefs.getString("my_phone_hash", null) ?: "",
+            phone_hash = prefs.getString("my_phone_hash", "") ?: "",
             publicKey = CryptoManager.getMyPublicKeyStr(),
             ip = "0.0.0.0",
             port = PORT,
-            phone = prefs.getString("my_phone", null) ?: "",
+            phone = prefs.getString("my_phone", "") ?: "",
             lastSeen = System.currentTimeMillis()
         )
         announceMyself(payload)
@@ -144,6 +145,8 @@ class IdentityRepository(private val context: Context) {
             try {
                 val response = api.announceSelf(payload)
                 if (response.success) {
+                    // После успешного анонса обновляем локальный список узлов
+                    syncLocalNodesWithServer()
                     wifiPeers.values.forEach { sendUdp(it, "PRESENCE", "ONLINE") }
                 }
             } catch (e: Exception) {
@@ -153,6 +156,25 @@ class IdentityRepository(private val context: Context) {
     }
 
     /* ======================= NODE MANAGEMENT ======================= */
+
+    /**
+     * ИСПРАВЛЕНО: Прямое использование response.users (согласно новому API)
+     */
+    private suspend fun syncLocalNodesWithServer() {
+        val nodes = fetchAllNodesFromServer()
+        nodes.forEach { node ->
+            nodeDao.insert(
+                NodeEntity(
+                    userHash = node.hash,
+                    phone_hash = node.phone_hash ?: "",
+                    ip = node.ip ?: "0.0.0.0",
+                    port = node.port ?: PORT,
+                    publicKey = node.publicKey ?: "",
+                    lastSeen = node.lastSeen ?: System.currentTimeMillis()
+                )
+            )
+        }
+    }
 
     suspend fun addNodeByHash(hash: String): Boolean {
         return try {
@@ -165,23 +187,34 @@ class IdentityRepository(private val context: Context) {
             nodeDao.insert(
                 NodeEntity(
                     userHash = node.hash,
+                    phone_hash = node.phone_hash ?: "",
                     ip = node.ip ?: "0.0.0.0",
                     port = node.port ?: PORT,
-                    publicKey = node.publicKey ?: ""
+                    publicKey = node.publicKey ?: "",
+                    lastSeen = node.lastSeen ?: System.currentTimeMillis()
                 )
             )
             wifiPeers[node.hash] = node.ip ?: "0.0.0.0"
             true
-        } catch (_: Exception) { false }
+        } catch (e: Exception) {
+            Log.e(TAG, "Add node error", e)
+            false
+        }
     }
 
+    /**
+     * ИСПРАВЛЕНО: Удалено обращение к .data. Теперь API возвращает список в response.users
+     */
     suspend fun fetchAllNodesFromServer(): List<UserPayload> {
         return try {
             val response = api.getAllNodes()
-            if (response != null && response.success && response.data is List<*>) {
-                response.data.filterIsInstance<UserPayload>()
+            if (response.success && response.users != null) {
+                response.users!!
             } else emptyList()
-        } catch (_: Exception) { emptyList() }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fetch nodes error", e)
+            emptyList()
+        }
     }
 
     suspend fun sendMessageSmart(toHash: String, phone: String?, message: String): Boolean {
@@ -190,21 +223,17 @@ class IdentityRepository(private val context: Context) {
             if (ip != null) {
                 sendUdp(ip, "CHAT", message)
             } else {
-                val payload = UserPayload(
-                    hash = toHash,
-                    phone_hash = null,
-                    publicKey = getPeerPublicKey(toHash),
-                    ip = null,
-                    port = null,
-                    phone = phone ?: "",
-                    lastSeen = System.currentTimeMillis()
-                )
-                api.announceSelf(payload)
-                true
+                // Если IP неизвестен, пробуем найти через сервер (анонсируем себя для обновления связи)
+                val myId = getMyId()
+                performServerSync(myId)
+                false
             }
         } catch (_: Exception) { false }
     }
 
+    /**
+     * ИСПРАВЛЕНО: Соответствие сигнатуре (2 аргумента), вызывается из Coroutine в UI/WebRTC
+     */
     suspend fun sendSignaling(toHash: String, sdp: String) {
         val json = JSONObject().apply {
             put("type", "WEBRTC_SIGNAL")
@@ -231,7 +260,7 @@ class IdentityRepository(private val context: Context) {
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "UDP error", e)
+                if (isRunning) Log.e(TAG, "UDP listener error", e)
             } finally {
                 udpSocket = null
             }
@@ -254,14 +283,16 @@ class IdentityRepository(private val context: Context) {
                 swarmPeers[fromHash] = fromIp
                 CryptoManager.savePeerPublicKey(fromHash, pubKey)
 
-                if (type.startsWith("CHAT") || type == "WEBRTC_SIGNAL") {
+                if (type == "CHAT" || type == "WEBRTC_SIGNAL") {
                     messageRepository.handleIncoming(type, json.getString("data"), fromHash)
                 }
 
                 withContext(Dispatchers.Main) {
                     listeners.forEach { it(type, json.getString("data"), fromIp, fromHash) }
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.e(TAG, "Handle incoming error: ${e.message}")
+            }
         }
     }
 
@@ -282,14 +313,21 @@ class IdentityRepository(private val context: Context) {
                 val bytes = json.toString().toByteArray()
                 DatagramSocket().use { it.send(DatagramPacket(bytes, bytes.size, InetAddress.getByName(ip), PORT)) }
                 true
-            } catch (_: Exception) { false }
+            } catch (e: Exception) {
+                Log.e(TAG, "UDP send error to $ip", e)
+                false
+            }
         }
 
     /* ======================= NSD ======================= */
 
     private val registrationListener = object : NsdManager.RegistrationListener {
-        override fun onServiceRegistered(s: NsdServiceInfo) {}
-        override fun onRegistrationFailed(s: NsdServiceInfo, e: Int) {}
+        override fun onServiceRegistered(s: NsdServiceInfo) {
+            Log.d(TAG, "NSD Service registered: ${s.serviceName}")
+        }
+        override fun onRegistrationFailed(s: NsdServiceInfo, e: Int) {
+            Log.e(TAG, "NSD Registration failed: $e")
+        }
         override fun onServiceUnregistered(s: NsdServiceInfo) {}
         override fun onUnregistrationFailed(s: NsdServiceInfo, e: Int) {}
     }
@@ -302,8 +340,13 @@ class IdentityRepository(private val context: Context) {
             nsdManager.resolveService(s, object : NsdManager.ResolveListener {
                 override fun onServiceResolved(r: NsdServiceInfo) {
                     val ip = r.host?.hostAddress ?: return
+                    // Имя сервиса: KakDela-HASH-RAND
                     val parts = r.serviceName.split("-")
-                    if (parts.size >= 2) wifiPeers[parts[1]] = ip
+                    if (parts.size >= 2) {
+                        val peerHash = parts[1]
+                        wifiPeers[peerHash] = ip
+                        Log.d(TAG, "Peer discovered via WiFi: $peerHash at $ip")
+                    }
                 }
                 override fun onResolveFailed(s: NsdServiceInfo, e: Int) {}
             })
@@ -323,24 +366,31 @@ class IdentityRepository(private val context: Context) {
                 port = PORT
             }
             nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, registrationListener)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.e(TAG, "NSD register error", e)
+        }
     }
 
     private fun discoverInWifi() {
         try {
             nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.e(TAG, "NSD discover error", e)
+        }
     }
 
     /* ======================= SMS ======================= */
 
-    private fun sendAsSms(phone: String, message: String) {
+    fun sendAsSms(phone: String, message: String) {
         try {
             val sms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
                 context.getSystemService(SmsManager::class.java)
-            else SmsManager.getDefault()
+            else @Suppress("DEPRECATION") SmsManager.getDefault()
+            
             sms.sendTextMessage(phone, null, "[P2P] $message", null, null)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.e(TAG, "SMS send error", e)
+        }
     }
 
     /* ======================= UTILS ======================= */
@@ -356,7 +406,7 @@ class IdentityRepository(private val context: Context) {
                 context.openFileOutput("my_avatar.jpg", Context.MODE_PRIVATE).use { input.copyTo(it) }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Avatar error", e)
+            Log.e(TAG, "Avatar save error", e)
         }
     }
 
