@@ -56,54 +56,39 @@ object WebViewApiClient {
                             }
                         }
                     }
-                    webChromeClient = object : WebChromeClient() {
-                        override fun onConsoleMessage(msg: ConsoleMessage?): Boolean {
-                            Log.d("WebViewConsole", "[JS] ${msg?.message()}")
-                            return true
-                        }
-                    }
                 }
                 webView?.loadUrl(BASE_URL)
             } catch (e: Exception) { Log.e(TAG, "Init Error: ${e.message}") }
         }
     }
 
-    /**
-     * Анонс себя в сети.
-     */
     suspend fun announceSelf(payload: UserPayload): ServerResponse {
         val wrapped = mapOf("data" to payload)
         return executeRequest("add_user", "POST", gson.toJson(wrapped))
     }
 
-    /**
-     * Поддержка старой сигнатуры для IdentityRepository.
-     */
     suspend fun announceSelf(wrapper: UserRegistrationWrapper): ServerResponse {
         val wrapped = mapOf("data" to wrapper.data)
         return executeRequest("add_user", "POST", gson.toJson(wrapped))
     }
 
-    /**
-     * Получение списка всех узлов.
-     */
     suspend fun getAllNodes(): ServerResponse = executeRequest("list_users", "GET", null)
 
-    /**
-     * Основной исполнитель запросов.
-     */
     private suspend fun executeRequest(action: String, method: String, bodyJson: String?): ServerResponse {
         return mutex.withLock {
             var attempt = 0
             while (attempt < 3) {
                 try {
                     waitForReady()
-                    val resultString = withTimeout(REQUEST_TIMEOUT_MS) { 
+                    // Получаем строку из WebView
+                    val jsonResult: String = withTimeout(REQUEST_TIMEOUT_MS) { 
                         performJsFetch(action, method, bodyJson) 
                     }
                     
-                    val response = gson.fromJson(resultString, ServerResponse::class.java)
-                    return response ?: ServerResponse(false, "Parsing failed")
+                    // Парсим строку в объект ServerResponse
+                    val response = gson.fromJson(jsonResult, ServerResponse::class.java)
+                    return response ?: ServerResponse(false, "Parsed response is null")
+                    
                 } catch (e: Exception) {
                     Log.e(TAG, "Attempt ${attempt + 1} failed: ${e.message}")
                     isReady.set(false)
@@ -120,11 +105,8 @@ object WebViewApiClient {
         withTimeout(30_000) { while (!isReady.get()) delay(500) }
     }
 
-    /**
-     * ИСПРАВЛЕНО: Убрана путаница с типами в fold.
-     * Теперь метод четко возвращает String или выбрасывает Exception.
-     */
     private suspend fun performJsFetch(action: String, method: String, bodyJson: String?): String = withContext(Dispatchers.Main) {
+        // Явно указываем тип String для корутины
         suspendCancellableCoroutine<String> { continuation ->
             val bridgeName = "AndroidBridge_${System.currentTimeMillis()}"
             val url = "$API_URL?action=$action"
@@ -133,10 +115,10 @@ object WebViewApiClient {
             val bridge = WebViewBridge { result ->
                 webView?.removeJavascriptInterface(bridgeName)
                 if (continuation.isActive) {
-                    // Явно обрабатываем результат без использования неоднозначного fold()
+                    // Используем стандартный try-catch вместо fold для точности типов
                     try {
-                        val successValue = result.getOrThrow()
-                        continuation.resume(successValue)
+                        val content = result.getOrThrow() 
+                        continuation.resume(content)
                     } catch (e: Throwable) {
                         continuation.resumeWithException(e)
                     }
