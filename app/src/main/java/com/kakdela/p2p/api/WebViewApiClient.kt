@@ -62,12 +62,6 @@ object WebViewApiClient {
                         allowContentAccess = false
                     }
 
-                    // --- Cookies (КРИТИЧНО для InfinityFree) ---
-                    CookieManager.getInstance().apply {
-                        setAcceptCookie(true)
-                        setAcceptThirdPartyCookies(this@WebViewApiClient.webView!!, true)
-                    }
-
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             if (url != null && url.startsWith(BASE_URL)) {
@@ -84,6 +78,14 @@ object WebViewApiClient {
                             Log.d("WebViewJS", msg?.message() ?: "")
                             return true
                         }
+                    }
+                }
+
+                // --- Cookies (КРИТИЧНО для InfinityFree) ---
+                webView?.let { wv ->
+                    CookieManager.getInstance().apply {
+                        setAcceptCookie(true)
+                        setAcceptThirdPartyCookies(wv, true)
                     }
                 }
 
