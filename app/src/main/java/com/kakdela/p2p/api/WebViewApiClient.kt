@@ -21,6 +21,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 @SuppressLint("StaticFieldLeak")
 object WebViewApiClient {
@@ -54,9 +55,6 @@ object WebViewApiClient {
                                 isReady.set(true)
                             }
                         }
-                        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                            return false 
-                        }
                     }
                     webChromeClient = object : WebChromeClient() {
                         override fun onConsoleMessage(msg: ConsoleMessage?): Boolean {
@@ -71,34 +69,28 @@ object WebViewApiClient {
     }
 
     /**
-     * Анонс узла. Принимает UserPayload.
-     * Оборачивает данные в ключ "data" для корректной работы api.php.
+     * Анонс себя в сети.
      */
     suspend fun announceSelf(payload: UserPayload): ServerResponse {
         val wrapped = mapOf("data" to payload)
-        val jsonBody = gson.toJson(wrapped)
-        return executeRequest("add_user", "POST", jsonBody)
+        return executeRequest("add_user", "POST", gson.toJson(wrapped))
     }
 
     /**
-     * Перегрузка для поддержки старого кода, использующего Wrapper.
+     * Поддержка старой сигнатуры для IdentityRepository.
      */
     suspend fun announceSelf(wrapper: UserRegistrationWrapper): ServerResponse {
         val wrapped = mapOf("data" to wrapper.data)
-        val jsonBody = gson.toJson(wrapped)
-        return executeRequest("add_user", "POST", jsonBody)
+        return executeRequest("add_user", "POST", gson.toJson(wrapped))
     }
 
     /**
      * Получение списка всех узлов.
      */
-    suspend fun getAllNodes(): ServerResponse {
-        return executeRequest("list_users", "GET", null)
-    }
+    suspend fun getAllNodes(): ServerResponse = executeRequest("list_users", "GET", null)
 
     /**
-     * Основной метод выполнения запроса через WebView.
-     * Гарантирует возврат ServerResponse, а не сырой строки.
+     * Основной исполнитель запросов.
      */
     private suspend fun executeRequest(action: String, method: String, bodyJson: String?): ServerResponse {
         return mutex.withLock {
@@ -106,21 +98,12 @@ object WebViewApiClient {
             while (attempt < 3) {
                 try {
                     waitForReady()
-                    
-                    // Выполняем JS и получаем строку
-                    val rawResult: String = withTimeout(REQUEST_TIMEOUT_MS) { 
+                    val resultString = withTimeout(REQUEST_TIMEOUT_MS) { 
                         performJsFetch(action, method, bodyJson) 
                     }
                     
-                    // Десериализуем строку в объект ответа
-                    val response = gson.fromJson(rawResult, ServerResponse::class.java)
-                    
-                    if (response != null) {
-                        return@withLock response
-                    } else {
-                        throw Exception("Failed to parse server response")
-                    }
-                    
+                    val response = gson.fromJson(resultString, ServerResponse::class.java)
+                    return response ?: ServerResponse(false, "Parsing failed")
                 } catch (e: Exception) {
                     Log.e(TAG, "Attempt ${attempt + 1} failed: ${e.message}")
                     isReady.set(false)
@@ -134,50 +117,41 @@ object WebViewApiClient {
     }
 
     private suspend fun waitForReady() {
-        withTimeout(30_000) { 
-            while (!isReady.get()) {
-                delay(500) 
-            }
-        }
+        withTimeout(30_000) { while (!isReady.get()) delay(500) }
     }
 
     /**
-     * Низкоуровневый метод взаимодействия с JavaScript.
-     * Возвращает String (JSON).
+     * ИСПРАВЛЕНО: Убрана путаница с типами в fold.
+     * Теперь метод четко возвращает String или выбрасывает Exception.
      */
     private suspend fun performJsFetch(action: String, method: String, bodyJson: String?): String = withContext(Dispatchers.Main) {
-        suspendCancellableCoroutine { continuation ->
+        suspendCancellableCoroutine<String> { continuation ->
             val bridgeName = "AndroidBridge_${System.currentTimeMillis()}"
             val url = "$API_URL?action=$action"
-            
             val escapedJson = bodyJson?.replace("\\", "\\\\")?.replace("'", "\\'") ?: "null"
             
             val bridge = WebViewBridge { result ->
                 webView?.removeJavascriptInterface(bridgeName)
                 if (continuation.isActive) {
-                    // Результат fold возвращает String в случае успеха
-                    result.fold(
-                        onSuccess = { continuation.resume(it) },
-                        onFailure = { continuation.resumeWith(Result.failure(it)) }
-                    )
+                    // Явно обрабатываем результат без использования неоднозначного fold()
+                    try {
+                        val successValue = result.getOrThrow()
+                        continuation.resume(successValue)
+                    } catch (e: Throwable) {
+                        continuation.resumeWithException(e)
+                    }
                 }
             }
+            
             webView?.addJavascriptInterface(bridge, bridgeName)
 
             val jsCode = """
                 (function() {
                     try {
-                        const method = '$method';
-                        const url = '$url';
-                        const rawJson = '$escapedJson';
-                        const payload = rawJson !== 'null' ? JSON.parse(rawJson) : null;
-
-                        fetch(url, {
-                            method: method,
-                            headers: { 
-                                'Content-Type': 'application/json',
-                                'Accept': 'application/json'
-                            },
+                        const payload = $escapedJson !== null ? JSON.parse('$escapedJson') : null;
+                        fetch('$url', {
+                            method: '$method',
+                            headers: { 'Content-Type': 'application/json' },
                             body: payload ? JSON.stringify(payload) : null
                         })
                         .then(r => r.text())
@@ -186,11 +160,11 @@ object WebViewApiClient {
                                 JSON.parse(text); 
                                 $bridgeName.onSuccess(text); 
                             } catch(e) { 
-                                $bridgeName.onError('NOT_JSON_RESPONSE: ' + text.substring(0, 200)); 
+                                $bridgeName.onError('INVALID_JSON: ' + text.substring(0, 100)); 
                             }
                         })
                         .catch(e => $bridgeName.onError(e.toString()));
-                    } catch(e) { $bridgeName.onError('JS_EXCEPTION: ' + e.toString()); }
+                    } catch(e) { $bridgeName.onError('JS_EXC: ' + e.toString()); }
                 })();
             """.trimIndent()
             webView?.evaluateJavascript(jsCode, null)
