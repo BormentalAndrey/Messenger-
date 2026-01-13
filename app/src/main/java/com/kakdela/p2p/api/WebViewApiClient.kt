@@ -28,10 +28,8 @@ import kotlin.coroutines.resumeWithException
 object WebViewApiClient {
 
     private const val TAG = "WebViewApiClient"
-
     private const val BASE_URL = "http://kakdela.infinityfree.me/"
     private const val API_URL  = "http://kakdela.infinityfree.me/api.php"
-
     private const val PAGE_LOAD_TIMEOUT_MS = 30_000L
     private const val REQUEST_TIMEOUT_MS   = 45_000L
     private const val RETRY_DELAY_MS       = 2_000L
@@ -54,12 +52,6 @@ object WebViewApiClient {
 
                 webView = WebView(appContext).apply {
 
-                    // --- Cookies (КРИТИЧНО для InfinityFree) ---
-                    CookieManager.getInstance().apply {
-                        setAcceptCookie(true)
-                        setAcceptThirdPartyCookies(this@apply, true)
-                    }
-
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
@@ -68,6 +60,12 @@ object WebViewApiClient {
                         userAgentString = userAgentString.replace("; wv", "")
                         allowFileAccess = false
                         allowContentAccess = false
+                    }
+
+                    // --- Cookies (КРИТИЧНО для InfinityFree) ---
+                    CookieManager.getInstance().apply {
+                        setAcceptCookie(true)
+                        setAcceptThirdPartyCookies(this@WebViewApiClient.webView!!, true)
                     }
 
                     webViewClient = object : WebViewClient() {
@@ -100,63 +98,37 @@ object WebViewApiClient {
     // =========================
     // API METHODS
     // =========================
-
-    /**
-     * РЕГИСТРАЦИЯ / ОБНОВЛЕНИЕ PEER
-     * PHP api.php принимает просто JSON body — action НЕ НУЖЕН
-     */
     suspend fun announceSelf(payload: UserPayload): ServerResponse {
         val bodyJson = gson.toJson(payload)
         return executeRequest("POST", bodyJson)
     }
 
-    /**
-     * (ЗАГОТОВКА) получение узлов — сервером пока не реализовано
-     * метод оставлен, но безопасно вернёт ошибку
-     */
     suspend fun getAllNodes(): ServerResponse {
-        return ServerResponse(
-            success = false,
-            error = "NOT_IMPLEMENTED"
-        )
+        return ServerResponse(success = false, error = "NOT_IMPLEMENTED")
     }
 
     // =========================
     // CORE REQUEST EXECUTOR
     // =========================
-    private suspend fun executeRequest(
-        method: String,
-        bodyJson: String?
-    ): ServerResponse = mutex.withLock {
-
+    private suspend fun executeRequest(method: String, bodyJson: String?): ServerResponse = mutex.withLock {
         repeat(MAX_RETRIES) { attempt ->
             try {
                 waitForReady()
-
                 val rawResponse = withTimeout(REQUEST_TIMEOUT_MS) {
                     performJsFetch(method, bodyJson)
                 }
-
                 val type = object : TypeToken<ServerResponse>() {}.type
                 return@withLock gson.fromJson(rawResponse, type)
-
             } catch (e: Exception) {
                 Log.e(TAG, "Request failed (attempt ${attempt + 1})", e)
-
                 isReady.set(false)
-
                 withContext(Dispatchers.Main) {
                     webView?.loadUrl(BASE_URL)
                 }
-
                 delay(RETRY_DELAY_MS)
             }
         }
-
-        ServerResponse(
-            success = false,
-            error = "MAX_RETRIES_EXCEEDED"
-        )
+        return@withLock ServerResponse(success = false, error = "MAX_RETRIES_EXCEEDED")
     }
 
     // =========================
@@ -173,26 +145,18 @@ object WebViewApiClient {
     // =========================
     // JS FETCH BRIDGE
     // =========================
-    private suspend fun performJsFetch(
-        method: String,
-        bodyJson: String?
-    ): String = withContext(Dispatchers.Main) {
-
+    private suspend fun performJsFetch(method: String, bodyJson: String?): String = withContext(Dispatchers.Main) {
         suspendCancellableCoroutine { cont ->
 
             val bridgeName = "AndroidBridge_${System.nanoTime()}"
 
-            val escapedJson = bodyJson
-                ?.replace("\\", "\\\\")
-                ?.replace("'", "\\'")
-                ?: "null"
+            val escapedJson = bodyJson?.replace("\\", "\\\\")?.replace("'", "\\'") ?: "null"
 
             val bridge = WebViewBridge { result ->
                 webView?.removeJavascriptInterface(bridgeName)
                 if (!cont.isActive) return@WebViewBridge
 
-                result
-                    .onSuccess { cont.resume(it) }
+                result.onSuccess { cont.resume(it) }
                     .onFailure { cont.resumeWithException(it) }
             }
 
