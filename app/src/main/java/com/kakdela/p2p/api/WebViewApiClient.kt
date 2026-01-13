@@ -54,6 +54,9 @@ object WebViewApiClient {
                                 isReady.set(true)
                             }
                         }
+                        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                            return false 
+                        }
                     }
                     webChromeClient = object : WebChromeClient() {
                         override fun onConsoleMessage(msg: ConsoleMessage?): Boolean {
@@ -68,11 +71,13 @@ object WebViewApiClient {
     }
 
     /**
-     * Исправлено: Оборачиваем в "data" ТУТ, чтобы PHP (api.php:27) увидел ключ.
+     * ИСПРАВЛЕНО: Принимаем UserPayload напрямую. 
+     * Оборачиваем в ключ "data" один раз, чтобы PHP (api.php:27) увидел корректную структуру.
      */
-    suspend fun announceSelf(wrapper: UserRegistrationWrapper): ServerResponse {
-        val wrapped = mapOf("data" to wrapper)
+    suspend fun announceSelf(payload: UserPayload): ServerResponse {
+        val wrapped = mapOf("data" to payload)
         val jsonBody = gson.toJson(wrapped)
+        Log.d(TAG, "Announce JSON: $jsonBody")
         return executeRequest("add_user", "POST", jsonBody)
     }
 
@@ -107,7 +112,7 @@ object WebViewApiClient {
             val bridgeName = "AndroidBridge_${System.currentTimeMillis()}"
             val url = "$API_URL?action=$action"
             
-            // Важно: экранируем только обратные слеши и одинарные кавычки для JS строки
+            // Экранируем спецсимволы для безопасной вставки в JS-строку
             val escapedJson = bodyJson?.replace("\\", "\\\\")?.replace("'", "\\'") ?: "null"
             
             val bridge = WebViewBridge { result ->
@@ -125,21 +130,28 @@ object WebViewApiClient {
                         const url = '$url';
                         const rawJson = '$escapedJson';
                         
-                        // Парсим строку в объект, чтобы fetch отправил чистый JSON
+                        // Парсим строку в объект, чтобы fetch отправил чистый JSON объект в body
                         const payload = rawJson !== 'null' ? JSON.parse(rawJson) : null;
 
                         fetch(url, {
                             method: method,
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: { 
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
+                            },
                             body: payload ? JSON.stringify(payload) : null
                         })
                         .then(r => r.text())
                         .then(text => {
-                            try { JSON.parse(text); $bridgeName.onSuccess(text); }
-                            catch(e) { $bridgeName.onError('NOT_JSON: ' + text); }
+                            try { 
+                                JSON.parse(text); 
+                                $bridgeName.onSuccess(text); 
+                            } catch(e) { 
+                                $bridgeName.onError('NOT_JSON_RESPONSE: ' + text.substring(0, 200)); 
+                            }
                         })
                         .catch(e => $bridgeName.onError(e.toString()));
-                    } catch(e) { $bridgeName.onError('JS_EXC: ' + e.toString()); }
+                    } catch(e) { $bridgeName.onError('JS_EXCEPTION: ' + e.toString()); }
                 })();
             """.trimIndent()
             webView?.evaluateJavascript(jsCode, null)
@@ -147,6 +159,11 @@ object WebViewApiClient {
     }
 
     fun destroy() {
-        Handler(Looper.getMainLooper()).post { webView?.destroy(); webView = null }
+        Handler(Looper.getMainLooper()).post { 
+            webView?.stopLoading()
+            webView?.destroy() 
+            webView = null 
+            isReady.set(false)
+        }
     }
 }
