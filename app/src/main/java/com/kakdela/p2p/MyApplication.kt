@@ -14,31 +14,27 @@ class MyApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        
+
         try {
-            // 1. Инициализация WebView для обхода защиты.
-            // Запускает скрытый браузер и начинает прогрев антибота InfinityFree.
+            // 1. WebView API (антибот + fetch)
             WebViewApiClient.init(this)
-            
-            // 2. Инициализация криптографии.
+
+            // 2. Crypto
             CryptoManager.init(this)
-            
+
+            // 3. Identity
             val myId = identityRepository.getMyId()
             if (myId.isNotEmpty()) {
-                Log.i(TAG, "Init Success. ID: $myId")
+                Log.i(TAG, "Init OK. Peer ID: $myId")
             } else {
-                Log.w(TAG, "ID Empty. Waiting for registration.")
+                Log.w(TAG, "Peer ID empty — waiting for registration")
             }
-            
+
         } catch (e: Exception) {
-            Log.e(TAG, "Critical Init Error: ${e.message}")
+            Log.e(TAG, "Critical init error", e)
         }
     }
 
-    /**
-     * Вызывается при эмуляции остановки или реальном убийстве процесса системой.
-     * Полезно для очистки WebView.
-     */
     override fun onTerminate() {
         WebViewApiClient.destroy()
         super.onTerminate()
