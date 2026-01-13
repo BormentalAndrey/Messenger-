@@ -1,4 +1,4 @@
-package com.kakdela.p2p.api
+Package com.kakdela.p2p.api
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -7,7 +7,6 @@ import android.os.Looper
 import android.util.Log
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -27,17 +26,27 @@ import kotlin.coroutines.resumeWithException
 object WebViewApiClient {
 
     private const val TAG = "WebViewApiClient"
+
     private const val BASE_URL = "http://kakdela.infinityfree.me/"
-    private const val API_URL = "http://kakdela.infinityfree.me/api.php"
-    private const val REQUEST_TIMEOUT_MS = 45_000L 
+    private const val API_URL  = "http://kakdela.infinityfree.me/api.php"
+
+    private const val PAGE_LOAD_TIMEOUT_MS = 30_000L
+    private const val REQUEST_TIMEOUT_MS   = 45_000L
+    private const val RETRY_DELAY_MS       = 2_000L
+    private const val MAX_RETRIES          = 3
 
     private var webView: WebView? = null
     private val isReady = AtomicBoolean(false)
     private val mutex = Mutex()
     private val gson = Gson()
 
+    // ------------------------------------------------------------------------
+    // INIT
+    // ------------------------------------------------------------------------
+
     fun init(context: Context) {
         if (webView != null) return
+
         Handler(Looper.getMainLooper()).post {
             try {
                 webView = WebView(context.applicationContext).apply {
@@ -48,6 +57,7 @@ object WebViewApiClient {
                         cacheMode = WebSettings.LOAD_DEFAULT
                         userAgentString = userAgentString.replace("; wv", "")
                     }
+
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             Log.d(TAG, "Page loaded: $url")
@@ -56,109 +66,167 @@ object WebViewApiClient {
                             }
                         }
                     }
-                }
-                webView?.loadUrl(BASE_URL)
-            } catch (e: Exception) { Log.e(TAG, "Init Error: ${e.message}") }
-        }
-    }
 
-    suspend fun announceSelf(payload: UserPayload): ServerResponse {
-        val wrapped = mapOf("data" to payload)
-        return executeRequest("add_user", "POST", gson.toJson(wrapped))
-    }
-
-    suspend fun announceSelf(wrapper: UserRegistrationWrapper): ServerResponse {
-        val wrapped = mapOf("data" to wrapper.data)
-        return executeRequest("add_user", "POST", gson.toJson(wrapped))
-    }
-
-    suspend fun getAllNodes(): ServerResponse = executeRequest("list_users", "GET", null)
-
-    private suspend fun executeRequest(action: String, method: String, bodyJson: String?): ServerResponse {
-        return mutex.withLock {
-            var attempt = 0
-            while (attempt < 3) {
-                try {
-                    waitForReady()
-                    // Получаем строку из WebView
-                    val jsonResult: String = withTimeout(REQUEST_TIMEOUT_MS) { 
-                        performJsFetch(action, method, bodyJson) 
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onConsoleMessage(msg: ConsoleMessage?): Boolean {
+                            Log.d("WebViewConsole", "[JS] ${msg?.message()}")
+                            return true
+                        }
                     }
-                    
-                    // Парсим строку в объект ServerResponse
-                    val response = gson.fromJson(jsonResult, ServerResponse::class.java)
-                    return response ?: ServerResponse(false, "Parsed response is null")
-                    
-                } catch (e: Exception) {
-                    Log.e(TAG, "Attempt ${attempt + 1} failed: ${e.message}")
-                    isReady.set(false)
-                    withContext(Dispatchers.Main) { webView?.loadUrl(BASE_URL) }
-                    delay(2000)
-                    attempt++
                 }
+
+                webView?.loadUrl(BASE_URL)
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Init error", e)
             }
-            ServerResponse(false, "Max retries reached")
         }
+    }
+
+    // ------------------------------------------------------------------------
+    // PUBLIC API
+    // ------------------------------------------------------------------------
+
+    /**
+     * Анонс текущего узла
+     */
+    suspend fun announceSelf(payload: UserPayload): ServerResponse {
+        val body = gson.toJson(mapOf("data" to payload))
+        Log.d(TAG, "Announce JSON: $body")
+        return executeRequest("add_user", "POST", body)
+    }
+
+    /**
+     * Получение всех узлов
+     */
+    suspend fun getAllNodes(): ServerResponse {
+        return executeRequest("list_users", "GET", null)
+    }
+
+    // ------------------------------------------------------------------------
+    // CORE
+    // ------------------------------------------------------------------------
+
+    private suspend fun executeRequest(
+        action: String,
+        method: String,
+        bodyJson: String?
+    ): ServerResponse = mutex.withLock {
+
+        repeat(MAX_RETRIES) { attempt ->
+            try {
+                waitForReady()
+
+                val json = withTimeout(REQUEST_TIMEOUT_MS) {
+                    performJsFetch(action, method, bodyJson)
+                }
+
+                return gson.fromJson(json, ServerResponse::class.java)
+                    ?: ServerResponse(false, "Empty response")
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Attempt ${attempt + 1} failed", e)
+
+                isReady.set(false)
+                withContext(Dispatchers.Main) {
+                    webView?.loadUrl(BASE_URL)
+                }
+
+                delay(RETRY_DELAY_MS)
+            }
+        }
+
+        ServerResponse(false, "Max retries reached")
     }
 
     private suspend fun waitForReady() {
-        withTimeout(30_000) { while (!isReady.get()) delay(500) }
+        withTimeout(PAGE_LOAD_TIMEOUT_MS) {
+            while (!isReady.get()) delay(300)
+        }
     }
 
-    private suspend fun performJsFetch(action: String, method: String, bodyJson: String?): String = withContext(Dispatchers.Main) {
-        // Явно указываем тип String для корутины
-        suspendCancellableCoroutine<String> { continuation ->
+    // ------------------------------------------------------------------------
+    // JS FETCH
+    // ------------------------------------------------------------------------
+
+    private suspend fun performJsFetch(
+        action: String,
+        method: String,
+        bodyJson: String?
+    ): String = withContext(Dispatchers.Main) {
+
+        suspendCancellableCoroutine<String> { cont ->
+
             val bridgeName = "AndroidBridge_${System.currentTimeMillis()}"
             val url = "$API_URL?action=$action"
-            val escapedJson = bodyJson?.replace("\\", "\\\\")?.replace("'", "\\'") ?: "null"
-            
+
+            val escapedJson = bodyJson
+                ?.replace("\\", "\\\\")
+                ?.replace("'", "\\'")
+                ?: "null"
+
             val bridge = WebViewBridge { result ->
                 webView?.removeJavascriptInterface(bridgeName)
-                if (continuation.isActive) {
-                    // Используем стандартный try-catch вместо fold для точности типов
-                    try {
-                        val content = result.getOrThrow() 
-                        continuation.resume(content)
-                    } catch (e: Throwable) {
-                        continuation.resumeWithException(e)
-                    }
+
+                if (!cont.isActive) return@WebViewBridge
+
+                try {
+                    cont.resume(result.getOrThrow())
+                } catch (t: Throwable) {
+                    cont.resumeWithException(t)
                 }
             }
-            
+
             webView?.addJavascriptInterface(bridge, bridgeName)
 
-            val jsCode = """
+            val js = """
                 (function() {
                     try {
-                        const payload = $escapedJson !== null ? JSON.parse('$escapedJson') : null;
+                        const raw = '$escapedJson';
+                        const payload = raw !== 'null' ? JSON.parse(raw) : null;
+
                         fetch('$url', {
                             method: '$method',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
+                            },
                             body: payload ? JSON.stringify(payload) : null
                         })
                         .then(r => r.text())
                         .then(text => {
-                            try { 
-                                JSON.parse(text); 
-                                $bridgeName.onSuccess(text); 
-                            } catch(e) { 
-                                $bridgeName.onError('INVALID_JSON: ' + text.substring(0, 100)); 
+                            try {
+                                JSON.parse(text);
+                                $bridgeName.onSuccess(text);
+                            } catch(e) {
+                                $bridgeName.onError('NOT_JSON: ' + text.substring(0, 200));
                             }
                         })
                         .catch(e => $bridgeName.onError(e.toString()));
-                    } catch(e) { $bridgeName.onError('JS_EXC: ' + e.toString()); }
+                    } catch(e) {
+                        $bridgeName.onError('JS_EXCEPTION: ' + e.toString());
+                    }
                 })();
             """.trimIndent()
-            webView?.evaluateJavascript(jsCode, null)
+
+            webView?.evaluateJavascript(js, null)
         }
     }
 
+    // ------------------------------------------------------------------------
+    // DESTROY
+    // ------------------------------------------------------------------------
+
     fun destroy() {
-        Handler(Looper.getMainLooper()).post { 
-            webView?.stopLoading()
-            webView?.destroy() 
-            webView = null 
-            isReady.set(false)
+        Handler(Looper.getMainLooper()).post {
+            try {
+                webView?.stopLoading()
+                webView?.destroy()
+            } catch (_: Exception) {}
+            finally {
+                webView = null
+                isReady.set(false)
+            }
         }
     }
 }
