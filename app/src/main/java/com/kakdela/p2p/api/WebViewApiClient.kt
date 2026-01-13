@@ -71,13 +71,24 @@ object WebViewApiClient {
     }
 
     /**
-     * ИСПРАВЛЕНО: Принимаем UserPayload напрямую. 
-     * Оборачиваем в ключ "data" один раз, чтобы PHP (api.php:27) увидел корректную структуру.
+     * Исправлено: Возвращаем поддержку аргумента 'payload', чтобы IdentityRepository.kt:229 скомпилировался.
+     * PHP (api.php:27) ожидает {"data": { ... }}
      */
     suspend fun announceSelf(payload: UserPayload): ServerResponse {
+        // Оборачиваем UserPayload в мапу с ключом "data" для PHP
         val wrapped = mapOf("data" to payload)
         val jsonBody = gson.toJson(wrapped)
         Log.d(TAG, "Announce JSON: $jsonBody")
+        return executeRequest("add_user", "POST", jsonBody)
+    }
+
+    /**
+     * Дополнительный метод для обратной совместимости, если где-то еще используется старый Wrapper.
+     */
+    suspend fun announceSelf(wrapper: UserRegistrationWrapper): ServerResponse {
+        // Если пришел Wrapper, берем его внутренний payload и шлем его
+        // (Либо шлем Wrapper целиком, если PHP перенастроен на двойную вложенность)
+        val jsonBody = gson.toJson(mapOf("data" to wrapper.data))
         return executeRequest("add_user", "POST", jsonBody)
     }
 
@@ -89,8 +100,11 @@ object WebViewApiClient {
             while (attempt < 3) {
                 try {
                     waitForReady()
-                    val result = withTimeout(REQUEST_TIMEOUT_MS) { performJsFetch(action, method, bodyJson) }
-                    return gson.fromJson(result, ServerResponse::class.java)
+                    val jsonResult = withTimeout(REQUEST_TIMEOUT_MS) { performJsFetch(action, method, bodyJson) }
+                    
+                    // Парсим строку в объект ServerResponse. 
+                    // Gson автоматически заполнит List<UserPayload> внутри ServerResponse
+                    return gson.fromJson(jsonResult, ServerResponse::class.java)
                 } catch (e: Exception) {
                     Log.e(TAG, "Attempt ${attempt + 1} failed: ${e.message}")
                     isReady.set(false)
@@ -130,7 +144,6 @@ object WebViewApiClient {
                         const url = '$url';
                         const rawJson = '$escapedJson';
                         
-                        // Парсим строку в объект, чтобы fetch отправил чистый JSON объект в body
                         const payload = rawJson !== 'null' ? JSON.parse(rawJson) : null;
 
                         fetch(url, {
