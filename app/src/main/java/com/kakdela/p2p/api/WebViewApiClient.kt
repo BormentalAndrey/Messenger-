@@ -28,21 +28,13 @@ object WebViewApiClient {
     private const val BASE_URL = "http://kakdela.infinityfree.me/"
     private const val API_URL = "http://kakdela.infinityfree.me/api.php"
     
-    // Таймаут на выполнение одного JS-запроса (включая ожидание сети внутри WebView)
     private const val REQUEST_TIMEOUT_MS = 45_000L 
 
     private var webView: WebView? = null
-    
-    // Флаг готовности (пройден ли антибот)
     private val isReady = AtomicBoolean(false)
-    
-    // Мьютекс для последовательного выполнения (WebView однопоточен)
     private val mutex = Mutex()
     private val gson = Gson()
 
-    /**
-     * Инициализация WebView. Вызывается в Application.onCreate()
-     */
     fun init(context: Context) {
         if (webView != null) return
 
@@ -54,14 +46,12 @@ object WebViewApiClient {
                         domStorageEnabled = true
                         databaseEnabled = true
                         cacheMode = WebSettings.LOAD_DEFAULT
-                        // Маскировка под Chrome (удаляем маркер WebView)
                         userAgentString = userAgentString.replace("; wv", "")
                     }
 
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             Log.d(TAG, "Page loaded: $url")
-                            // Если загрузился наш домен, считаем, что куки получены
                             if (url?.contains("kakdela.infinityfree.me") == true) {
                                 isReady.set(true)
                             }
@@ -70,14 +60,11 @@ object WebViewApiClient {
                         override fun shouldOverrideUrlLoading(
                             view: WebView?,
                             request: WebResourceRequest?
-                        ): Boolean {
-                            return false // Разрешаем редиректы внутри WebView для работы защиты
-                        }
+                        ): Boolean = false
                     }
 
                     webChromeClient = object : WebChromeClient() {
                         override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
-                            // Логи из JS для отладки антибота (теперь включено)
                             Log.d("WebViewConsole", "[JS] ${consoleMessage?.message()}")
                             return true
                         }
@@ -93,9 +80,6 @@ object WebViewApiClient {
         }
     }
 
-    /**
-     * Очистка ресурсов при завершении работы (опционально)
-     */
     fun destroy() {
         Handler(Looper.getMainLooper()).post {
             try {
@@ -113,24 +97,19 @@ object WebViewApiClient {
     }
 
     /**
-     * Публичный метод регистрации.
-     * Принимает Wrapper, сериализует его и отправляет.
+     * ИСПРАВЛЕНО: Обертка в "data" для соответствия PHP скрипту
      */
     suspend fun announceSelf(wrapper: UserRegistrationWrapper): ServerResponse {
-        val jsonBody = gson.toJson(wrapper)
+        val wrappedMap = mapOf("data" to wrapper)
+        val jsonBody = gson.toJson(wrappedMap)
+        Log.d(TAG, "Sending announce: $jsonBody")
         return executeRequest("add_user", "POST", jsonBody)
     }
 
-    /**
-     * Публичный метод получения списка узлов.
-     */
     suspend fun getAllNodes(): ServerResponse {
         return executeRequest("list_users", "GET", null)
     }
 
-    /**
-     * Универсальный исполнитель запросов через JS fetch с защитой от ошибок.
-     */
     private suspend fun executeRequest(
         action: String,
         method: String,
@@ -140,27 +119,21 @@ object WebViewApiClient {
             var attempt = 0
             while (attempt < 3) {
                 try {
-                    // 1. Ждем прогрева (максимум 30 сек)
                     waitForReady()
 
-                    // 2. Выполняем JS fetch с таймаутом
                     val jsonResult = withTimeout(REQUEST_TIMEOUT_MS) {
                         performJsFetch(action, method, bodyJson)
                     }
                     
-                    // 3. Парсим ответ
                     return gson.fromJson(jsonResult, ServerResponse::class.java)
 
                 } catch (e: Exception) {
                     Log.e(TAG, "Attempt ${attempt + 1} failed: ${e.message}")
-                    
-                    // Если ошибка похожа на HTML (антибот) или таймаут
                     isReady.set(false)
                     withContext(Dispatchers.Main) {
-                        webView?.loadUrl(BASE_URL) // Перезагружаем главную для обновления кук
+                        webView?.loadUrl(BASE_URL)
                     }
                     attempt++
-                    // Небольшая задержка перед следующей попыткой
                     kotlinx.coroutines.delay(2000)
                 }
             }
@@ -177,13 +150,14 @@ object WebViewApiClient {
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Wait for ready timeout. Proceeding anyway (might fail).")
+            Log.w(TAG, "Wait for ready timeout. Proceeding anyway.")
         }
     }
 
     /**
      * Внедряет JS код fetch.
-     * ИСПРАВЛЕНО: Безопасная передача bodyJson без инъекций строк.
+     * ИСПРАВЛЕНО: Теперь bodyJson передается как строка, которая парсится внутри JS,
+     * что исключает ошибки синтаксиса при передаче объектов.
      */
     private suspend fun performJsFetch(
         action: String,
@@ -194,13 +168,11 @@ object WebViewApiClient {
             val bridgeName = "AndroidBridge_${System.currentTimeMillis()}"
             val url = "$API_URL?action=$action"
             
-            // Если bodyJson null, передаем null. Если есть JSON, передаем его как ОБЪЕКТНЫЙ ЛИТЕРАЛ JS.
-            // Мы НЕ оборачиваем bodyJson в кавычки, так как это уже валидная JSON-строка (например {"a":"b"}).
-            // В JS это превратится в: const payload = {"a":"b"};
-            val jsPayloadVar = bodyJson ?: "null"
+            // Защищенная передача строки JSON
+            val safeJson = bodyJson?.replace("'", "\\'") ?: "null"
             
             val bridge = WebViewBridge { result ->
-                webView?.removeJavascriptInterface(bridgeName) // Cleanup
+                webView?.removeJavascriptInterface(bridgeName)
                 if (continuation.isActive) {
                     result.fold(
                         onSuccess = { continuation.resume(it) },
@@ -216,38 +188,33 @@ object WebViewApiClient {
                     try {
                         const url = '$url';
                         const method = '$method';
-                        // ВАЖНО: jsPayloadVar вставляется как код, а не строка.
-                        // Если bodyJson = {"key":"val'ue"}, то JS код будет: const rawData = {"key":"val'ue"};
-                        const rawData = $jsPayloadVar;
+                        const rawInput = '$safeJson';
                         
-                        // Если данные есть, превращаем их обратно в строку для отправки, иначе null
-                        const bodyData = rawData ? JSON.stringify(rawData) : null;
+                        // Если есть входные данные, парсим их, иначе null
+                        const bodyData = (rawInput !== 'null') ? JSON.parse(rawInput) : null;
 
                         fetch(url, {
                             method: method,
                             headers: {
-                                'Content-Type': 'application/json'
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
                             },
-                            body: bodyData
+                            body: bodyData ? JSON.stringify(bodyData) : null
                         })
                         .then(response => response.text())
                         .then(text => {
                             try {
-                                // Проверка: если это не JSON, то JSON.parse выбросит ошибку
-                                const json = JSON.parse(text);
+                                JSON.parse(text);
                                 $bridgeName.onSuccess(text);
                             } catch(e) {
-                                // Сервер вернул HTML (антибот) или мусор
-                                console.error('Invalid JSON received: ' + text.substring(0, 100));
+                                console.error('Raw response:', text);
                                 $bridgeName.onError('INVALID_JSON_HTML_DETECTED');
                             }
                         })
                         .catch(err => {
-                            console.error('Fetch error: ' + err);
                             $bridgeName.onError(err.toString());
                         });
                     } catch (e) {
-                        console.error('Script injection error: ' + e);
                         $bridgeName.onError('SCRIPT_ERROR: ' + e.toString());
                     }
                 })();
