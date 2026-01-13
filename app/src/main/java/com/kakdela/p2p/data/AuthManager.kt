@@ -12,27 +12,25 @@ import kotlinx.coroutines.withContext
 import java.security.MessageDigest
 
 /**
- * Менеджер аутентификации и регистрации узла в P2P рое.
- * Отвечает за генерацию идентификаторов, хеширование и синхронизацию с сервером-трекером.
+ * Менеджер аутентификации и регистрации узла в P2P-сети.
+ * Работает СТРОГО синхронно с IdentityRepository и CryptoManager.
  */
 class AuthManager(private val context: Context) {
 
     private val TAG = "AuthManager"
+
     private val db = ChatDatabase.getDatabase(context)
     private val nodeDao = db.nodeDao()
-    
-    // Используем синглтон API клиента
+
     private val api = WebViewApiClient
 
-    // Соль для хеширования телефона (должна совпадать на всех узлах для поиска)
-    private val PEPPER = "7fb8a1d2c3e4f5a6"
+    // ДОЛЖЕН совпадать с IdentityRepository
+    private val PEPPER = "7fb8a1d2c3e4f5a6b7c8d9e0f1a2b3c4"
 
     /**
-     * Основной метод входа/регистрации.
-     * 1. Нормализует данные.
-     * 2. Генерирует уникальный securityHash (ID личности).
-     * 3. Отправляет анонс на сервер через WebView (проход антибота).
-     * 4. При успехе сохраняет сессию локально.
+     * Регистрация / вход.
+     * Email и пароль — ЛОКАЛЬНЫЕ.
+     * Identity (hash + ключи) — через CryptoManager.
      */
     suspend fun registerOrLogin(
         email: String,
@@ -40,68 +38,68 @@ class AuthManager(private val context: Context) {
         phone: String
     ): Boolean = withContext(Dispatchers.IO) {
 
-        val normalizedPhone = normalizePhone(phone)
-        val passwordHash = sha256(password)
-        
-        // Генерируем уникальный хэш пользователя (ID в глобальном рое)
-        val securityHash = sha256("$normalizedPhone|$email|$passwordHash")
-        
-        // Генерируем публичный хэш телефона для поиска контактов другими людьми
-        val phoneHash = sha256(normalizedPhone + PEPPER)
-        
-        // Получаем RSA публичный ключ (сгенерированный CryptoManager)
-        val publicKey = CryptoManager.getMyPublicKeyStr()
-
-        // Формируем данные узла
-        val payload = UserPayload(
-            hash = securityHash,
-            phone_hash = phoneHash,
-            ip = "0.0.0.0", // Сервер сам определит наш внешний IP
-            port = 8888,    // Стандартный порт нашего P2P роя
-            publicKey = publicKey,
-            phone = normalizedPhone,
-            email = email,
-            lastSeen = System.currentTimeMillis()
-        )
-
         try {
-            Log.d(TAG, "Attempting server announce for hash: ${securityHash.take(8)}...")
-            
-            /* ИСПРАВЛЕНО: 
-               Мы больше не используем UserRegistrationWrapper здесь.
-               Передаем напрямую payload. WebViewApiClient сам обернет его в {"data": ...}
-               Это устраняет ошибку "Invalid JSON data" на PHP стороне.
-            */
-            val response = api.announceSelf(payload)
+            // --- Нормализация ---
+            val normalizedPhone = normalizePhone(phone)
+            val passwordHash = sha256(password)
 
-            if (response.success) {
-                Log.d(TAG, "Server announce SUCCESS: ${response.status}")
-                
-                // Сохраняем данные в локальную БД и SharedPreferences
-                createLocalSession(payload, email, passwordHash, securityHash)
-                return@withContext true
-            } else {
-                Log.w(TAG, "Server announce FAILED: ${response.error}")
+            // --- ЕДИНЫЙ identity hash ---
+            CryptoManager.init(context)
+            val securityHash = CryptoManager.getMyIdentityHash()
+            if (securityHash.isEmpty()) {
+                Log.e(TAG, "Identity hash generation failed")
                 return@withContext false
             }
 
+            // --- phone_hash для discovery ---
+            val phoneHash = sha256(normalizedPhone + PEPPER)
+
+            val publicKey = CryptoManager.getMyPublicKeyStr()
+
+            val payload = UserPayload(
+                hash = securityHash,
+                phone_hash = phoneHash,
+                publicKey = publicKey,
+                ip = "0.0.0.0",
+                port = 8888,
+                phone = normalizedPhone,
+                lastSeen = System.currentTimeMillis()
+            )
+
+            Log.d(TAG, "Announce self: ${securityHash.take(8)}")
+
+            val response = api.announceSelf(payload)
+
+            if (!response.success) {
+                Log.w(TAG, "Server reject: ${response.error}")
+                return@withContext false
+            }
+
+            createLocalSession(
+                payload = payload,
+                email = email,
+                passwordHash = passwordHash
+            )
+
+            Log.i(TAG, "Auth SUCCESS for ${securityHash.take(8)}")
+            true
+
         } catch (e: Exception) {
-            Log.e(TAG, "Auth Error: ${e.message}", e)
-            return@withContext false
+            Log.e(TAG, "Auth error", e)
+            false
         }
     }
 
     /**
-     * Сохраняет данные о собственной личности в локальную БД.
+     * Сохраняет локальную сессию.
+     * Совместимо с IdentityRepository.
      */
     private suspend fun createLocalSession(
         payload: UserPayload,
         email: String,
-        passwordHash: String,
-        securityHash: String
+        passwordHash: String
     ) {
         try {
-            // Сохраняем себя как основной узел в таблицу NodeEntity
             nodeDao.insert(
                 NodeEntity(
                     userHash = payload.hash,
@@ -116,24 +114,22 @@ class AuthManager(private val context: Context) {
                 )
             )
 
-            // Сохраняем флаг авторизации для быстрого доступа
             context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
                 .edit()
                 .putBoolean("is_logged_in", true)
-                .putString("my_security_hash", securityHash)
+                .putString("my_security_hash", payload.hash)
                 .putString("my_phone", payload.phone)
+                .putString("my_phone_hash", payload.phone_hash)
                 .putString("my_email", email)
                 .apply()
 
-            Log.d(TAG, "Local session created successfully for $securityHash")
-
         } catch (e: Exception) {
-            Log.e(TAG, "Local auth save failed", e)
+            Log.e(TAG, "Local session save failed", e)
         }
     }
 
     /**
-     * Приводит номер телефона к международному формату 7XXXXXXXXXX.
+     * Приведение телефона к международному формату.
      */
     private fun normalizePhone(raw: String): String {
         val digits = raw.replace(Regex("[^0-9]"), "")
@@ -146,11 +142,10 @@ class AuthManager(private val context: Context) {
     }
 
     /**
-     * SHA-256 хеширование.
+     * SHA-256.
      */
-    private fun sha256(input: String): String {
-        return MessageDigest.getInstance("SHA-256")
+    private fun sha256(input: String): String =
+        MessageDigest.getInstance("SHA-256")
             .digest(input.toByteArray())
             .joinToString("") { "%02x".format(it) }
-    }
 }
