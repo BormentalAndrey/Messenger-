@@ -27,7 +27,6 @@ import kotlin.coroutines.resumeWithException
 object WebViewApiClient {
 
     private const val TAG = "WebViewApiClient"
-
     private const val BASE_URL = "http://kakdela.infinityfree.me/"
     private const val API_URL  = "http://kakdela.infinityfree.me/api.php"
 
@@ -57,16 +56,16 @@ object WebViewApiClient {
 
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
-                            Log.d(TAG, "Page loaded: $url")
                             if (url?.contains("kakdela.infinityfree.me") == true) {
                                 isReady.set(true)
                             }
+                            Log.d(TAG, "Loaded: $url")
                         }
                     }
 
                     webChromeClient = object : WebChromeClient() {
                         override fun onConsoleMessage(msg: ConsoleMessage?): Boolean {
-                            Log.d("WebViewConsole", "[JS] ${msg?.message()}")
+                            Log.d("WebViewJS", msg?.message() ?: "")
                             return true
                         }
                     }
@@ -95,7 +94,7 @@ object WebViewApiClient {
         bodyJson: String?
     ): ServerResponse = mutex.withLock {
 
-        repeat(MAX_RETRIES) { attempt ->
+        repeat(MAX_RETRIES) {
             try {
                 waitForReady()
 
@@ -103,14 +102,13 @@ object WebViewApiClient {
                     performJsFetch(action, method, bodyJson)
                 }
 
-                // 🔴 ВАЖНО: парсим через TypeToken
                 val type = object : TypeToken<ServerResponse>() {}.type
-                return gson.fromJson<ServerResponse>(json, type)
+                return gson.fromJson(json, type)
 
             } catch (e: Exception) {
-                Log.e(TAG, "Attempt ${attempt + 1} failed", e)
-
+                Log.e(TAG, "Request failed", e)
                 isReady.set(false)
+
                 withContext(Dispatchers.Main) {
                     webView?.loadUrl(BASE_URL)
                 }
@@ -119,7 +117,11 @@ object WebViewApiClient {
             }
         }
 
-        ServerResponse(false, "Max retries reached")
+        ServerResponse(
+            success = false,
+            data = null,
+            message = "Max retries reached"
+        )
     }
 
     private suspend fun waitForReady() {
@@ -135,7 +137,6 @@ object WebViewApiClient {
     ): String = withContext(Dispatchers.Main) {
 
         suspendCancellableCoroutine { cont ->
-
             val bridgeName = "AndroidBridge_${System.currentTimeMillis()}"
             val url = "$API_URL?action=$action"
 
