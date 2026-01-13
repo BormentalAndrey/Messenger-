@@ -37,7 +37,6 @@ object WebViewApiClient {
 
     fun init(context: Context) {
         if (webView != null) return
-
         Handler(Looper.getMainLooper()).post {
             try {
                 webView = WebView(context.applicationContext).apply {
@@ -46,10 +45,8 @@ object WebViewApiClient {
                         domStorageEnabled = true
                         databaseEnabled = true
                         cacheMode = WebSettings.LOAD_DEFAULT
-                        // Маскировка под обычный мобильный браузер
                         userAgentString = userAgentString.replace("; wv", "")
                     }
-
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             Log.d(TAG, "Page loaded: $url")
@@ -57,59 +54,38 @@ object WebViewApiClient {
                                 isReady.set(true)
                             }
                         }
-
-                        override fun shouldOverrideUrlLoading(
-                            view: WebView?,
-                            request: WebResourceRequest?
-                        ): Boolean = false
                     }
-
                     webChromeClient = object : WebChromeClient() {
-                        override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
-                            Log.d("WebViewConsole", "[JS] ${consoleMessage?.message()}")
+                        override fun onConsoleMessage(msg: ConsoleMessage?): Boolean {
+                            Log.d("WebViewConsole", "[JS] ${msg?.message()}")
                             return true
                         }
                     }
                 }
-                Log.i(TAG, "Starting Anti-Bot Warmup...")
                 webView?.loadUrl(BASE_URL)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error init WebView: ${e.message}")
-            }
+            } catch (e: Exception) { Log.e(TAG, "Init Error: ${e.message}") }
         }
     }
 
     /**
-     * Исправлено: Обертка в объект 'data', как того требует api.php (строка 27)
+     * Исправлено: Оборачиваем в "data" ТУТ, чтобы PHP (api.php:27) увидел ключ.
      */
     suspend fun announceSelf(wrapper: UserRegistrationWrapper): ServerResponse {
-        val wrappedPayload = mapOf("data" to wrapper)
-        val jsonBody = gson.toJson(wrappedPayload)
-        Log.d(TAG, "Request Body: $jsonBody")
+        val wrapped = mapOf("data" to wrapper)
+        val jsonBody = gson.toJson(wrapped)
         return executeRequest("add_user", "POST", jsonBody)
     }
 
-    suspend fun getAllNodes(): ServerResponse {
-        return executeRequest("list_users", "GET", null)
-    }
+    suspend fun getAllNodes(): ServerResponse = executeRequest("list_users", "GET", null)
 
-    private suspend fun executeRequest(
-        action: String,
-        method: String,
-        bodyJson: String?
-    ): ServerResponse {
+    private suspend fun executeRequest(action: String, method: String, bodyJson: String?): ServerResponse {
         return mutex.withLock {
             var attempt = 0
             while (attempt < 3) {
                 try {
                     waitForReady()
-
-                    val jsonResult = withTimeout(REQUEST_TIMEOUT_MS) {
-                        performJsFetch(action, method, bodyJson)
-                    }
-                    
-                    return gson.fromJson(jsonResult, ServerResponse::class.java)
-
+                    val result = withTimeout(REQUEST_TIMEOUT_MS) { performJsFetch(action, method, bodyJson) }
+                    return gson.fromJson(result, ServerResponse::class.java)
                 } catch (e: Exception) {
                     Log.e(TAG, "Attempt ${attempt + 1} failed: ${e.message}")
                     isReady.set(false)
@@ -118,85 +94,59 @@ object WebViewApiClient {
                     attempt++
                 }
             }
-            return ServerResponse(success = false, error = "connection_failed_after_retries")
+            return ServerResponse(false, "Max retries reached")
         }
     }
 
     private suspend fun waitForReady() {
-        if (isReady.get()) return
-        try {
-            withTimeout(30_000) {
-                while (!isReady.get()) { delay(500) }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Warmup timeout. Trying to proceed...")
-        }
+        withTimeout(30_000) { while (!isReady.get()) delay(500) }
     }
 
-    private suspend fun performJsFetch(
-        action: String,
-        method: String,
-        bodyJson: String?
-    ): String = withContext(Dispatchers.Main) {
+    private suspend fun performJsFetch(action: String, method: String, bodyJson: String?): String = withContext(Dispatchers.Main) {
         suspendCancellableCoroutine { continuation ->
             val bridgeName = "AndroidBridge_${System.currentTimeMillis()}"
             val url = "$API_URL?action=$action"
             
-            // Экранируем кавычки для безопасной вставки в JS
-            val safeJson = bodyJson?.replace("'", "\\'") ?: "null"
+            // Важно: экранируем только обратные слеши и одинарные кавычки для JS строки
+            val escapedJson = bodyJson?.replace("\\", "\\\\")?.replace("'", "\\'") ?: "null"
             
             val bridge = WebViewBridge { result ->
                 webView?.removeJavascriptInterface(bridgeName)
                 if (continuation.isActive) {
-                    result.fold(
-                        onSuccess = { continuation.resume(it) },
-                        onFailure = { continuation.resumeWith(Result.failure(it)) }
-                    )
+                    result.fold({ continuation.resume(it) }, { continuation.resumeWith(Result.failure(it)) })
                 }
             }
-
             webView?.addJavascriptInterface(bridge, bridgeName)
 
             val jsCode = """
                 (function() {
                     try {
-                        const url = '$url';
                         const method = '$method';
-                        const bodyData = $safeJson;
+                        const url = '$url';
+                        const rawJson = '$escapedJson';
+                        
+                        // Парсим строку в объект, чтобы fetch отправил чистый JSON
+                        const payload = rawJson !== 'null' ? JSON.parse(rawJson) : null;
 
                         fetch(url, {
                             method: method,
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Accept': 'application/json'
-                            },
-                            body: bodyData ? JSON.stringify(bodyData) : null
+                            headers: { 'Content-Type': 'application/json' },
+                            body: payload ? JSON.stringify(payload) : null
                         })
-                        .then(response => response.text())
+                        .then(r => r.text())
                         .then(text => {
-                            try {
-                                JSON.parse(text); // Проверка на валидность JSON
-                                $bridgeName.onSuccess(text);
-                            } catch(e) {
-                                $bridgeName.onError('INVALID_JSON_RECEIVED');
-                            }
+                            try { JSON.parse(text); $bridgeName.onSuccess(text); }
+                            catch(e) { $bridgeName.onError('NOT_JSON: ' + text); }
                         })
-                        .catch(err => $bridgeName.onError(err.toString()));
-                    } catch (e) {
-                        $bridgeName.onError('JS_ERROR: ' + e.toString());
-                    }
+                        .catch(e => $bridgeName.onError(e.toString()));
+                    } catch(e) { $bridgeName.onError('JS_EXC: ' + e.toString()); }
                 })();
             """.trimIndent()
-
             webView?.evaluateJavascript(jsCode, null)
         }
     }
 
     fun destroy() {
-        Handler(Looper.getMainLooper()).post {
-            webView?.destroy()
-            webView = null
-            isReady.set(false)
-        }
+        Handler(Looper.getMainLooper()).post { webView?.destroy(); webView = null }
     }
 }
