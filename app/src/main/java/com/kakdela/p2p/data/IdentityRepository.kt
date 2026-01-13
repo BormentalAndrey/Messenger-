@@ -34,15 +34,11 @@ class IdentityRepository(private val context: Context) {
         context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
 
     private val api = WebViewApiClient
-
     private val db = ChatDatabase.getDatabase(context)
     private val nodeDao = db.nodeDao()
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
 
-    private val messageRepository by lazy {
-        MessageRepository(context, db.messageDao(), this)
-    }
-
+    private val messageRepository by lazy { MessageRepository(context, db.messageDao(), this) }
     private val listeners = CopyOnWriteArrayList<(String, String, String, String) -> Unit>()
 
     val wifiPeers = ConcurrentHashMap<String, String>()
@@ -75,7 +71,6 @@ class IdentityRepository(private val context: Context) {
 
                 if (myId.isNotEmpty()) performServerSync(myId)
                 startSyncLoop()
-
             } catch (e: Exception) {
                 Log.e(TAG, "Start error", e)
                 isRunning = false
@@ -141,7 +136,6 @@ class IdentityRepository(private val context: Context) {
             phone = prefs.getString("my_phone", ""),
             lastSeen = System.currentTimeMillis()
         )
-
         announceMyself(payload)
     }
 
@@ -150,14 +144,72 @@ class IdentityRepository(private val context: Context) {
             try {
                 val response = api.announceSelf(payload)
                 if (response.success) {
-                    wifiPeers.values.forEach {
-                        sendUdp(it, "PRESENCE", "ONLINE")
-                    }
+                    wifiPeers.values.forEach { sendUdp(it, "PRESENCE", "ONLINE") }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Announce failed", e)
             }
         }
+    }
+
+    /* ======================= NODE MANAGEMENT ======================= */
+
+    suspend fun addNodeByHash(hash: String): Boolean {
+        return try {
+            // Проверяем локально
+            val existing = nodeDao.getNodeByHash(hash)
+            if (existing != null) return true
+
+            // Ищем на сервере
+            val nodes = fetchAllNodesFromServer()
+            val node = nodes.find { it.hash == hash } ?: return false
+
+            nodeDao.insertNode(
+                NodeEntity(
+                    userHash = node.hash,
+                    ip = node.ip ?: "0.0.0.0",
+                    port = node.port ?: PORT,
+                    publicKey = node.publicKey
+                )
+            )
+            wifiPeers[node.hash] = node.ip ?: "0.0.0.0"
+            true
+        } catch (_: Exception) { false }
+    }
+
+    suspend fun fetchAllNodesFromServer(): List<UserPayload> {
+        return try {
+            val response = api.getAllNodes()
+            if (response.success && response.data != null) response.data as List<UserPayload>
+            else emptyList()
+        } catch (_: Exception) { emptyList() }
+    }
+
+    suspend fun sendMessageSmart(toHash: String, type: String, message: String): Boolean {
+        return try {
+            val ip = swarmPeers[toHash] ?: wifiPeers[toHash]
+            if (ip != null) {
+                sendUdp(ip, type, message)
+            } else {
+                // fallback через сервер
+                val payload = UserPayload(
+                    hash = toHash,
+                    phone_hash = null,
+                    publicKey = getPeerPublicKey(toHash),
+                    ip = null,
+                    port = null,
+                    phone = null,
+                    lastSeen = System.currentTimeMillis()
+                )
+                api.announceSelf(payload)
+                true
+            }
+        } catch (_: Exception) { false }
+    }
+
+    suspend fun sendSignaling(toHash: String, sdp: String) {
+        val type = "WEBRTC_SIGNAL"
+        sendMessageSmart(toHash, type, sdp)
     }
 
     /* ======================= UDP ======================= */
@@ -174,10 +226,7 @@ class IdentityRepository(private val context: Context) {
                     while (isRunning) {
                         val packet = DatagramPacket(buffer, buffer.size)
                         socket.receive(packet)
-                        handleIncoming(
-                            String(packet.data, 0, packet.length),
-                            packet.address.hostAddress ?: ""
-                        )
+                        handleIncoming(String(packet.data, 0, packet.length), packet.address.hostAddress ?: "")
                     }
                 }
             } catch (e: Exception) {
@@ -230,13 +279,9 @@ class IdentityRepository(private val context: Context) {
                 json.put("signature", Base64.encodeToString(sig, Base64.NO_WRAP))
 
                 val bytes = json.toString().toByteArray()
-                DatagramSocket().use {
-                    it.send(DatagramPacket(bytes, bytes.size, InetAddress.getByName(ip), PORT))
-                }
+                DatagramSocket().use { it.send(DatagramPacket(bytes, bytes.size, InetAddress.getByName(ip), PORT)) }
                 true
-            } catch (_: Exception) {
-                false
-            }
+            } catch (_: Exception) { false }
         }
 
     /* ======================= NSD ======================= */
@@ -294,7 +339,6 @@ class IdentityRepository(private val context: Context) {
             val sms = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
                 context.getSystemService(SmsManager::class.java)
             else SmsManager.getDefault()
-
             sms.sendTextMessage(phone, null, "[P2P] $message", null, null)
         } catch (_: Exception) {}
     }
@@ -309,9 +353,7 @@ class IdentityRepository(private val context: Context) {
     fun saveLocalAvatar(context: Context, uri: Uri) {
         try {
             context.contentResolver.openInputStream(uri)?.use { input ->
-                context.openFileOutput("my_avatar.jpg", Context.MODE_PRIVATE).use {
-                    input.copyTo(it)
-                }
+                context.openFileOutput("my_avatar.jpg", Context.MODE_PRIVATE).use { input.copyTo(it) }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Avatar error", e)
