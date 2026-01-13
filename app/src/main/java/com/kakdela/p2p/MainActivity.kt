@@ -3,7 +3,6 @@ package com.kakdela.p2p
 import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -11,6 +10,7 @@ import android.os.Environment
 import android.provider.Settings
 import android.util.Log
 import android.view.View
+import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
@@ -25,7 +25,6 @@ import com.kakdela.p2p.api.MyServerApiFactory
 import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.network.CookieStore
 import com.kakdela.p2p.network.NetworkEvents
-import com.kakdela.p2p.security.CryptoManager
 import com.kakdela.p2p.services.P2PService
 import com.kakdela.p2p.ui.navigation.NavGraph
 import com.kakdela.p2p.ui.navigation.Routes
@@ -41,40 +40,37 @@ class MainActivity : ComponentActivity() {
 
     private var antiBotWebView: WebView? = null
 
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        handlePermissionsResult(permissions)
-    }
+    private val requestPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            handlePermissionsResult(it)
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
-        // 0. Хранилище кук
+        // 0. Cookie storage (singleton)
         CookieStore.init(applicationContext)
 
-        // 1. Криптография + Identity
-        initSecurity()
+        // 1. Identity (Crypto уже инициализирован в MyApplication)
+        identityRepository = IdentityRepository(applicationContext)
+        identityRepository.getMyId()
 
-        // 2. Network debug / sniffer
+        // 2. Network debug
         initNetworkDebug()
 
-        // 3. Фоновый P2P сервис
+        // 3. P2P service
         startP2PService()
 
-        // 4. Разрешения
+        // 4. Permissions
         checkAndRequestPermissions()
 
-        // 5. Антибот наблюдатель
+        // 5. Network observer (anti-bot trigger)
         setupNetworkObserver()
 
-        // !!! ИСПРАВЛЕНИЕ !!!
-        // Принудительный прогрев cookies сразу при старте приложения
-        // ДО любых пользовательских действий
+        // 6. Принудительный прогрев антибота при старте
         startSilentCookieRefresh()
 
-        // 6. Навигация
         val prefs = getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
         val isLoggedIn = prefs.getBoolean("is_logged_in", false)
 
@@ -104,16 +100,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun initSecurity() {
-        try {
-            CryptoManager.init(applicationContext)
-            identityRepository = IdentityRepository(applicationContext)
-            identityRepository.getMyId()
-        } catch (e: Exception) {
-            Log.e(TAG, "Critical Init Error: ${e.message}")
-        }
-    }
-
     private fun startP2PService() {
         try {
             val intent = Intent(this, P2PService::class.java)
@@ -128,15 +114,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkAndRequestPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()) {
-                try {
-                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
-                    intent.data = Uri.parse("package:$packageName")
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-                }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            !Environment.isExternalStorageManager()
+        ) {
+            try {
+                startActivity(
+                    Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                )
+            } catch (_: Exception) {
+                startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
             }
         }
 
@@ -159,7 +147,8 @@ class MainActivity : ComponentActivity() {
 
     private fun handlePermissionsResult(permissions: Map<String, Boolean>) {
         if (permissions[Manifest.permission.READ_MEDIA_AUDIO] == true ||
-            permissions[Manifest.permission.READ_EXTERNAL_STORAGE] == true) {
+            permissions[Manifest.permission.READ_EXTERNAL_STORAGE] == true
+        ) {
             MusicManager.loadTracks(this)
         }
 
@@ -171,7 +160,7 @@ class MainActivity : ComponentActivity() {
     private fun setupNetworkObserver() {
         lifecycleScope.launch {
             NetworkEvents.onAuthRequired.collectLatest {
-                Log.d(TAG, "Anti-Bot refresh triggered by network")
+                Log.d(TAG, "Anti-bot refresh requested")
                 startSilentCookieRefresh()
             }
         }
@@ -183,11 +172,17 @@ class MainActivity : ComponentActivity() {
                 antiBotWebView = WebView(this).apply {
                     visibility = View.GONE
                     settings.javaScriptEnabled = true
+
+                    CookieManager.getInstance().apply {
+                        setAcceptCookie(true)
+                        setAcceptThirdPartyCookies(this@apply, true)
+                    }
+
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             url?.let {
                                 CookieStore.updateFromWebView(applicationContext, it)
-                                Log.i(TAG, "Anti-Bot cookie stored successfully")
+                                Log.i(TAG, "Anti-bot cookies refreshed")
                             }
                         }
                     }
