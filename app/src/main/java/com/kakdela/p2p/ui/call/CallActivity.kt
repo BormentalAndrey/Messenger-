@@ -4,20 +4,24 @@ import android.Manifest
 import android.content.Context
 import android.media.AudioManager
 import android.os.Bundle
+import android.util.Log
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
+import androidx.lifecycle.lifecycleScope
 import com.kakdela.p2p.MyApplication
 import com.kakdela.p2p.data.IdentityRepository
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.webrtc.*
 import java.util.concurrent.CopyOnWriteArrayList
 
 class CallActivity : ComponentActivity() {
 
+    private val TAG = "CallActivity"
     private lateinit var identityRepo: IdentityRepository
     private lateinit var factory: PeerConnectionFactory
     private lateinit var audioManager: AudioManager
@@ -32,16 +36,17 @@ class CallActivity : ComponentActivity() {
     private var videoCapturer: VideoCapturer? = null
 
     // State
-    private var targetIp: String = ""
+    private var targetHash: String = "" // Используем Hash для адресации
     private var isIncoming by mutableStateOf(false)
     private val pendingIce = CopyOnWriteArrayList<IceCandidate>()
     @Volatile private var isRemoteSdpSet = false
 
-    private val signalingListener: (String, String, String, String) -> Unit = { type, data, fromIp, _ ->
-        if (fromIp == targetIp && type == "WEBRTC_SIGNAL") {
+    private val signalingListener: (String, String, String, String) -> Unit = { type, data, _, fromId ->
+        // Проверяем, что сигнал от нужного абонента и имеет правильный тип
+        if (fromId == targetHash && type == "WEBRTC_SIGNAL") {
             try {
                 val json = JSONObject(data)
-                val signalSubtype = json.getString("subtype")
+                val signalSubtype = json.getString("sub_type") // Синхронизировано с FileTransferWorker
                 val payload = json.getString("payload")
 
                 when (signalSubtype) {
@@ -50,14 +55,16 @@ class CallActivity : ComponentActivity() {
                     "ICE" -> handleRemoteIce(payload)
                     "HANGUP" -> finish()
                 }
-            } catch (e: Exception) { e.printStackTrace() }
+            } catch (e: Exception) { 
+                Log.e(TAG, "Signaling error: ${e.message}")
+            }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Настройка экрана для звонка (поверх блокировки)
+        // Поверх блокировки
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                 WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
@@ -66,7 +73,8 @@ class CallActivity : ComponentActivity() {
         identityRepo = app.identityRepository
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
-        targetIp = intent.getStringExtra("chatId") ?: intent.getStringExtra("targetIp") ?: ""
+        // Получаем hash цели (id пользователя)
+        targetHash = intent.getStringExtra("chatId") ?: intent.getStringExtra("targetHash") ?: ""
         isIncoming = intent.getBooleanExtra("isIncoming", false)
         val remoteSdp = intent.getStringExtra("remoteSdp")
 
@@ -91,30 +99,41 @@ class CallActivity : ComponentActivity() {
                 localTrack = localVideoTrack,
                 remoteTrack = remoteVideoTrack,
                 eglBaseContext = eglBase.eglBaseContext,
-                chatPartnerName = "Абонент ${targetIp.take(6)}",
+                chatPartnerName = "Абонент ${targetHash.take(6)}",
                 isIncoming = isIncoming,
                 onAccept = { 
                     isIncoming = false 
-                    // Offer уже обработан в startCallProcess если пришел SDP
+                    // Если offer пришел в интенте, он уже в процессе обработки
                 },
                 onReject = {
-                    identityRepo.sendSignaling(targetIp, "HANGUP", "rejected")
+                    sendCallSignal("HANGUP", "rejected")
                     finish()
                 },
                 onHangup = {
-                    identityRepo.sendSignaling(targetIp, "HANGUP", "end")
+                    sendCallSignal("HANGUP", "end")
                     finish()
                 },
                 onToggleMute = { isMuted -> localAudioTrack?.setEnabled(!isMuted) },
                 onToggleSpeaker = { isSpeaker -> toggleSpeaker(isSpeaker) },
                 onToggleVideo = { isVideo -> localVideoTrack?.setEnabled(isVideo) },
                 onStartRecording = { 
-                    Toast.makeText(this, "Запись начата (P2P Local)", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Запись начата локально", Toast.LENGTH_SHORT).show()
                 },
                 onAddUser = {
-                    Toast.makeText(this, "Функция конференции в разработке", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Групповые звонки в разработке", Toast.LENGTH_SHORT).show()
                 }
             )
+        }
+    }
+
+    // Вспомогательная функция для отправки сигналов (ИСПРАВЛЕНО: 2 параметра + корутина)
+    private fun sendCallSignal(subtype: String, payload: String) {
+        val envelope = JSONObject().apply {
+            put("sub_type", subtype)
+            put("payload", payload)
+        }
+        lifecycleScope.launch {
+            identityRepo.sendSignaling(targetHash, envelope.toString())
         }
     }
 
@@ -145,7 +164,7 @@ class CallActivity : ComponentActivity() {
         peerConnection = factory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
             override fun onIceCandidate(candidate: IceCandidate) {
                 val payload = "${candidate.sdpMid}|${candidate.sdpMLineIndex}|${candidate.sdp}"
-                identityRepo.sendSignaling(targetIp, "ICE", payload)
+                sendCallSignal("ICE", payload)
             }
             override fun onTrack(transceiver: RtpTransceiver?) {
                 val track = transceiver?.receiver?.track()
@@ -168,12 +187,10 @@ class CallActivity : ComponentActivity() {
     }
 
     private fun setupLocalStream() {
-        // Audio setup
         val audioSource = factory.createAudioSource(MediaConstraints())
         localAudioTrack = factory.createAudioTrack("ARDAMSa0", audioSource)
         peerConnection?.addTrack(localAudioTrack)
 
-        // Video setup
         val videoSource = factory.createVideoSource(false)
         val surfaceHelper = SurfaceTextureHelper.create("CaptureThread", eglBase.eglBaseContext)
         val enumerator = Camera2Enumerator(this)
@@ -186,7 +203,6 @@ class CallActivity : ComponentActivity() {
         localVideoTrack = factory.createVideoTrack("ARDAMSv0", videoSource)
         peerConnection?.addTrack(localVideoTrack)
         
-        // Установка аудио режима для звонка
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
         audioManager.isSpeakerphoneOn = false
     }
@@ -199,7 +215,7 @@ class CallActivity : ComponentActivity() {
         peerConnection?.createOffer(object : SdpAdapter() {
             override fun onCreateSuccess(desc: SessionDescription) {
                 peerConnection?.setLocalDescription(SdpAdapter(), desc)
-                identityRepo.sendSignaling(targetIp, "OFFER", desc.description)
+                sendCallSignal("OFFER", desc.description)
             }
         }, constraints)
     }
@@ -213,7 +229,7 @@ class CallActivity : ComponentActivity() {
                 peerConnection?.createAnswer(object : SdpAdapter() {
                     override fun onCreateSuccess(desc: SessionDescription) {
                         peerConnection?.setLocalDescription(SdpAdapter(), desc)
-                        identityRepo.sendSignaling(targetIp, "ANSWER", desc.description)
+                        sendCallSignal("ANSWER", desc.description)
                     }
                 }, MediaConstraints())
             }
@@ -233,10 +249,11 @@ class CallActivity : ComponentActivity() {
     private fun handleRemoteIce(data: String) {
         try {
             val parts = data.split("|")
+            if (parts.size < 3) return
             val candidate = IceCandidate(parts[0], parts[1].toInt(), parts[2])
             if (isRemoteSdpSet) peerConnection?.addIceCandidate(candidate)
             else pendingIce.add(candidate)
-        } catch (e: Exception) { e.printStackTrace() }
+        } catch (e: Exception) { Log.e(TAG, "ICE Candidate error") }
     }
 
     private fun drainIce() {
@@ -262,7 +279,7 @@ class CallActivity : ComponentActivity() {
     private open class SdpAdapter : SdpObserver {
         override fun onCreateSuccess(desc: SessionDescription) {}
         override fun onSetSuccess() {}
-        override fun onCreateFailure(p0: String?) {}
-        override fun onSetFailure(p0: String?) {}
+        override fun onCreateFailure(p0: String?) { Log.e("CallActivity", "SDP Create Fail: $p0") }
+        override fun onSetFailure(p0: String?) { Log.e("CallActivity", "SDP Set Fail: $p0") }
     }
 }
