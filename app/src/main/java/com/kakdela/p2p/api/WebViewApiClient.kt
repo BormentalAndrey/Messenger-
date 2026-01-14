@@ -26,10 +26,10 @@ import kotlin.coroutines.resumeWithException
 object WebViewApiClient {
 
     private const val TAG = "WebViewApiClient"
-    private const val BASE_URL = "http://kakdela.infinityfree.me/"
+    private private const val BASE_URL = "http://kakdela.infinityfree.me/api.php"
     
     // ВСТАВЛЕН ВАШ ТЕСТОВЫЙ URL
-    private const val API_ENDPOINT = "https://webhook.site/356b0a2f-8512-48c0-bca7-b94a76c30f63"
+    private const val API_ENDPOINT = "http://kakdela.infinityfree.me/api.php"
     
     private const val PAGE_LOAD_TIMEOUT_MS = 30_000L
     private const val REQUEST_TIMEOUT_MS   = 20_000L
