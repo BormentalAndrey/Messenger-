@@ -45,5 +45,8 @@ data class NodeEntity(
     val publicKey: String = "",
 
     /** Метка времени последнего контакта с узлом. */
-    val lastSeen: Long = System.currentTimeMillis()
+    val lastSeen: Long = System.currentTimeMillis(),
+
+    /** Флаг синхронизации с сервером (необязательный, для локального кэширования). */
+    val isSynced: Boolean = false
 )
