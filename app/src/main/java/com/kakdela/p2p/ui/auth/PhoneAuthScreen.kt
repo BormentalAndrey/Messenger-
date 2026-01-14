@@ -76,8 +76,8 @@ fun PhoneAuthScreen(
             )
             Spacer(Modifier.height(32.dp))
 
-            // Ввод номера телефона
             if (sentCode == null) {
+                // Ввод номера телефона
                 OutlinedTextField(
                     value = phone,
                     onValueChange = { phone = it },
@@ -129,12 +129,12 @@ fun PhoneAuthScreen(
                         if (inputCode == sentCode) {
                             isLoading = true
                             scope.launch {
-                                // Новый метод AuthManager для phone-only регистрации
                                 val success = authManager.registerOrLoginByPhone(
                                     phone = phone,
                                     otpCode = inputCode
                                 )
-                                if (success) onSuccess() else error = "Ошибка сети или регистрации"
+                                if (success) onSuccess()
+                                else error = "Ошибка сети или регистрации"
                                 isLoading = false
                             }
                         } else {
@@ -153,7 +153,7 @@ fun PhoneAuthScreen(
                 }
             }
 
-            // Ошибки
+            // Отображение ошибки
             error?.let {
                 Text(it, color = Color.Red, modifier = Modifier.padding(top = 16.dp))
             }
