@@ -20,8 +20,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,7 +54,8 @@ fun SettingsScreen(
     val myP2PId = remember { identityRepository.getMyId() }
 
     // ===== Аватар (локально) =====
-    var avatarUri by remember { mutableStateOf(identityRepository.getLocalAvatarUri(context)) }
+    // ИСПРАВЛЕНО: Убран аргумент context
+    var avatarUri by remember { mutableStateOf(identityRepository.getLocalAvatarUri()) }
     var isUploading by remember { mutableStateOf(false) }
 
     val avatarPicker = rememberLauncherForActivityResult(
@@ -65,16 +64,18 @@ fun SettingsScreen(
         uri?.let {
             isUploading = true
             scope.launch(Dispatchers.IO) {
-                identityRepository.saveLocalAvatar(context, it)
+                // ИСПРАВЛЕНО: Передаем it.toString(), убран context
+                identityRepository.saveLocalAvatar(it.toString())
                 withContext(Dispatchers.Main) {
-                    avatarUri = it
+                    // ИСПРАВЛЕНО: Сохраняем строку в стейт
+                    avatarUri = it.toString()
                     isUploading = false
                 }
             }
         }
     }
 
-    // ===== Список узлов =====
+    // ===== Остальной код без изменений =====
     val db = remember { ChatDatabase.getDatabase(context) }
     var nodes by remember { mutableStateOf<List<NodeEntity>>(emptyList()) }
 
@@ -195,7 +196,6 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // ===== Добавить узел =====
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF111111)),
@@ -209,7 +209,11 @@ fun SettingsScreen(
                         onValueChange = { manualHash = it },
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = { Text("Security Hash") },
-                        singleLine = true
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        )
                     )
                     Spacer(Modifier.height(12.dp))
                     Button(
@@ -230,9 +234,10 @@ fun SettingsScreen(
                             }
                         },
                         enabled = manualHash.length > 8 && !isAdding,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan, contentColor = Color.Black)
                     ) {
-                        if (isAdding) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        if (isAdding) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = Color.Black)
                         else Text("Синхронизировать")
                     }
                 }
@@ -240,7 +245,6 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            // ===== Список узлов =====
             Text(
                 "Известные пиры (${nodes.size})",
                 color = Color.Gray,
@@ -280,7 +284,6 @@ fun SettingsScreen(
                 }
             }
 
-            // ===== Остановка узла =====
             TextButton(
                 onClick = {
                     identityRepository.stopNetwork()
