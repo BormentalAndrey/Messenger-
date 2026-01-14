@@ -124,7 +124,7 @@ class IdentityRepository(private val context: Context) {
 
     /**
      * Ручное добавление узла по хешу.
-     * ИСПРАВЛЕНО: Теперь ветка 'else' возвращает 'false', что делает выражение корректным.
+     * ИСПРАВЛЕНО: Добавлена ветка else для корректного возврата Boolean из withContext.
      */
     suspend fun addNodeByHash(hash: String): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -252,7 +252,8 @@ class IdentityRepository(private val context: Context) {
             var ip = wifiPeers[targetHash] ?: swarmPeers[targetHash]
 
             if (ip == null) {
-                ip = findPeerOnServer(targetHash)?.ip
+                val serverPeer = findPeerOnServer(targetHash)
+                ip = serverPeer?.ip
             }
 
             if (!ip.isNullOrBlank() && ip != "0.0.0.0") {
@@ -305,8 +306,8 @@ class IdentityRepository(private val context: Context) {
                         val packet = DatagramPacket(buffer, buffer.size)
                         socket.receive(packet)
                         val ip = packet.address.hostAddress ?: continue
-                        val data = String(packet.data, 0, packet.length)
-                        handleIncoming(data, ip)
+                        val dataString = String(packet.data, 0, packet.length)
+                        handleIncoming(dataString, ip)
                     } catch (e: Exception) {
                         if (isRunning) Log.e(TAG, "Packet receive error: ${e.message}")
                     }
@@ -341,13 +342,13 @@ class IdentityRepository(private val context: Context) {
                 swarmPeers[fromHash] = fromIp
                 CryptoManager.savePeerPublicKey(fromHash, pubKey)
 
-                val contentData = json.getString("data")
+                val content = json.getString("data")
 
                 if (type == "CHAT" || type == "CHAT_FILE") {
-                    messageRepository.handleIncoming(type, contentData, fromHash)
+                    messageRepository.handleIncoming(type, content, fromHash)
                 }
 
-                listeners.forEach { it(type, contentData, fromIp, fromHash) }
+                listeners.forEach { it(type, content, fromIp, fromHash) }
             } catch (e: Exception) {
                 Log.e(TAG, "Malformed packet: ${e.message}")
             }
