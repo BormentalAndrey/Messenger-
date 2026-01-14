@@ -114,23 +114,17 @@ class IdentityRepository(private val context: Context) {
         return id
     }
 
-    /* ======================= UI HELPERS (ИСПРАВЛЕНО) ======================= */
+    /* ======================= UI HELPERS ======================= */
 
-    /**
-     * Возвращает путь к локальному аватару.
-     */
     fun getLocalAvatarUri(): String? = prefs.getString("local_avatar_uri", null)
 
-    /**
-     * Сохраняет путь к локальному аватару (Uri.toString()).
-     */
     fun saveLocalAvatar(uri: String) {
         prefs.edit().putString("local_avatar_uri", uri).apply()
     }
 
     /**
      * Ручное добавление узла по хешу.
-     * Исправлено: добавлен обязательный блок else для работы с expression.
+     * ИСПРАВЛЕНО: Теперь ветка 'else' возвращает 'false', что делает выражение корректным.
      */
     suspend fun addNodeByHash(hash: String): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -183,7 +177,9 @@ class IdentityRepository(private val context: Context) {
                 val response = api.announceSelf(myPayload)
                 if (response.success) {
                     Log.d(TAG, "Server announce successful")
-                    wifiPeers.values.forEach { ip -> sendUdp(ip, "PRESENCE", "ONLINE") }
+                    wifiPeers.values.forEach { ip -> 
+                        launch { sendUdp(ip, "PRESENCE", "ONLINE") } 
+                    }
                     fetchAllNodesFromServer()
                 }
             } catch (e: Exception) {
@@ -198,7 +194,6 @@ class IdentityRepository(private val context: Context) {
             val users = response.users.orEmpty()
 
             if (users.isNotEmpty()) {
-                // Пакетное обновление (upsertAll теперь есть в NodeDao)
                 nodeDao.upsertAll(users.map {
                     NodeEntity(
                         userHash = it.hash,
@@ -222,7 +217,6 @@ class IdentityRepository(private val context: Context) {
     }
 
     private suspend fun saveNodeToDb(node: UserPayload) {
-        // Одиночное обновление (upsert теперь есть в NodeDao)
         nodeDao.upsert(
             NodeEntity(
                 userHash = node.hash,
@@ -347,11 +341,13 @@ class IdentityRepository(private val context: Context) {
                 swarmPeers[fromHash] = fromIp
                 CryptoManager.savePeerPublicKey(fromHash, pubKey)
 
+                val contentData = json.getString("data")
+
                 if (type == "CHAT" || type == "CHAT_FILE") {
-                    messageRepository.handleIncoming(type, json.getString("data"), fromHash)
+                    messageRepository.handleIncoming(type, contentData, fromHash)
                 }
 
-                listeners.forEach { it(type, json.getString("data"), fromIp, fromHash) }
+                listeners.forEach { it(type, contentData, fromIp, fromHash) }
             } catch (e: Exception) {
                 Log.e(TAG, "Malformed packet: ${e.message}")
             }
@@ -420,7 +416,9 @@ class IdentityRepository(private val context: Context) {
 
     private fun registerInWifi() {
         try {
-            val safeName = "KakDela-${getMyId().take(8)}-${UUID.randomUUID().toString().take(4)}"
+            val myId = getMyId()
+            if (myId.isEmpty()) return
+            val safeName = "KakDela-${myId.take(8)}-${UUID.randomUUID().toString().take(4)}"
             val serviceInfo = NsdServiceInfo().apply {
                 serviceName = safeName
                 serviceType = SERVICE_TYPE
@@ -448,7 +446,7 @@ class IdentityRepository(private val context: Context) {
                 context.getSystemService(SmsManager::class.java)
             else @Suppress("DEPRECATION") SmsManager.getDefault()
 
-            sms.sendTextMessage(phone, null, "[P2P] $message", null, null)
+            sms?.sendTextMessage(phone, null, "[P2P] $message", null, null)
             Log.i(TAG, "Message sent via SMS to $phone")
         } catch (e: Exception) {
             Log.e(TAG, "SMS failed: ${e.message}")
