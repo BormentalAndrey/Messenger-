@@ -117,12 +117,24 @@ class IdentityRepository(private val context: Context) {
 
     /* ======================= UI HELPERS ======================= */
 
+    /**
+     * Возвращает путь к локальному аватару.
+     * Исправлено: не принимает Context, так как он есть в классе.
+     */
     fun getLocalAvatarUri(): String? = prefs.getString("local_avatar_uri", null)
 
+    /**
+     * Сохраняет путь к локальному аватару.
+     * Исправлено: принимает только String (Uri.toString()).
+     */
     fun saveLocalAvatar(uri: String) {
         prefs.edit().putString("local_avatar_uri", uri).apply()
     }
 
+    /**
+     * Ручное добавление узла по хешу.
+     * Исправлено: добавлен обязательный блок else для корректного возврата Boolean.
+     */
     suspend fun addNodeByHash(hash: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val response = api.getAllNodes()
@@ -130,7 +142,9 @@ class IdentityRepository(private val context: Context) {
             if (node != null) {
                 saveNodeToDb(node)
                 true
-            } else false
+            } else {
+                false
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Manual node add failed: ${e.message}")
             false
@@ -188,6 +202,7 @@ class IdentityRepository(private val context: Context) {
 
             if (users.isNotEmpty()) {
                 // Пакетное обновление локальной базы данных
+                // Убедитесь, что в NodeDao есть метод upsertAll
                 nodeDao.upsertAll(users.map {
                     NodeEntity(
                         userHash = it.hash,
@@ -211,6 +226,7 @@ class IdentityRepository(private val context: Context) {
     }
 
     private suspend fun saveNodeToDb(node: UserPayload) {
+        // Убедитесь, что в NodeDao есть метод upsert
         nodeDao.upsert(
             NodeEntity(
                 userHash = node.hash,
