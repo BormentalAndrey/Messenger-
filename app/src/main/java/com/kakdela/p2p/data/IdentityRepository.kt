@@ -58,7 +58,6 @@ class IdentityRepository(private val context: Context) {
     @Volatile
     private var isRunning = false
 
-    // Для корректного закрытия сокета
     private var udpSocket: DatagramSocket? = null
 
     /* ======================= PUBLIC API ======================= */
@@ -115,17 +114,15 @@ class IdentityRepository(private val context: Context) {
         return id
     }
 
-    /* ======================= UI HELPERS ======================= */
+    /* ======================= UI HELPERS (ИСПРАВЛЕНО) ======================= */
 
     /**
      * Возвращает путь к локальному аватару.
-     * Исправлено: не принимает Context, так как он есть в классе.
      */
     fun getLocalAvatarUri(): String? = prefs.getString("local_avatar_uri", null)
 
     /**
-     * Сохраняет путь к локальному аватару.
-     * Исправлено: принимает только String (Uri.toString()).
+     * Сохраняет путь к локальному аватару (Uri.toString()).
      */
     fun saveLocalAvatar(uri: String) {
         prefs.edit().putString("local_avatar_uri", uri).apply()
@@ -133,7 +130,7 @@ class IdentityRepository(private val context: Context) {
 
     /**
      * Ручное добавление узла по хешу.
-     * Исправлено: добавлен обязательный блок else для корректного возврата Boolean.
+     * Исправлено: добавлен обязательный блок else для работы с expression.
      */
     suspend fun addNodeByHash(hash: String): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -143,6 +140,7 @@ class IdentityRepository(private val context: Context) {
                 saveNodeToDb(node)
                 true
             } else {
+                Log.w(TAG, "Node with hash $hash not found on server")
                 false
             }
         } catch (e: Exception) {
@@ -185,7 +183,6 @@ class IdentityRepository(private val context: Context) {
                 val response = api.announceSelf(myPayload)
                 if (response.success) {
                     Log.d(TAG, "Server announce successful")
-                    // Рассылаем статус присутствия известным узлам в локальной сети
                     wifiPeers.values.forEach { ip -> sendUdp(ip, "PRESENCE", "ONLINE") }
                     fetchAllNodesFromServer()
                 }
@@ -201,8 +198,7 @@ class IdentityRepository(private val context: Context) {
             val users = response.users.orEmpty()
 
             if (users.isNotEmpty()) {
-                // Пакетное обновление локальной базы данных
-                // Убедитесь, что в NodeDao есть метод upsertAll
+                // Пакетное обновление (upsertAll теперь есть в NodeDao)
                 nodeDao.upsertAll(users.map {
                     NodeEntity(
                         userHash = it.hash,
@@ -226,7 +222,7 @@ class IdentityRepository(private val context: Context) {
     }
 
     private suspend fun saveNodeToDb(node: UserPayload) {
-        // Убедитесь, что в NodeDao есть метод upsert
+        // Одиночное обновление (upsert теперь есть в NodeDao)
         nodeDao.upsert(
             NodeEntity(
                 userHash = node.hash,
@@ -259,20 +255,16 @@ class IdentityRepository(private val context: Context) {
     fun sendMessageSmart(targetHash: String, phone: String?, message: String): Boolean {
         var delivered = false
         runBlocking(Dispatchers.IO) {
-            // 1. Приоритет Wi-Fi или недавние активные узлы (Swarm)
             var ip = wifiPeers[targetHash] ?: swarmPeers[targetHash]
 
-            // 2. Поиск в глобальном кэше/БД
             if (ip == null) {
                 ip = findPeerOnServer(targetHash)?.ip
             }
 
-            // Попытка отправки через UDP
             if (!ip.isNullOrBlank() && ip != "0.0.0.0") {
                 delivered = sendUdp(ip, "CHAT", message)
             }
 
-            // 3. Fallback: SMS
             if (!delivered && !phone.isNullOrBlank()) {
                 sendAsSms(phone, message)
                 delivered = true
@@ -283,7 +275,6 @@ class IdentityRepository(private val context: Context) {
 
     private suspend fun findPeerOnServer(hash: String): UserPayload? {
         val cached = nodeDao.getNodeByHash(hash)
-        // Если запись свежая — используем
         if (cached != null && System.currentTimeMillis() - cached.lastSeen < CACHE_FRESHNESS_MS) {
             return UserPayload(
                 hash = cached.userHash,
@@ -295,7 +286,6 @@ class IdentityRepository(private val context: Context) {
                 lastSeen = cached.lastSeen
             )
         }
-        // Если устарела — обновляем кэш с сервера
         return fetchAllNodesFromServer().find { it.hash == hash }
     }
 
@@ -353,7 +343,6 @@ class IdentityRepository(private val context: Context) {
                     return@launch
                 }
 
-                // Обновляем информацию об узле на основе прямого контакта
                 nodeDao.updateNetworkInfo(fromHash, fromIp, PORT, pubKey, System.currentTimeMillis())
                 swarmPeers[fromHash] = fromIp
                 CryptoManager.savePeerPublicKey(fromHash, pubKey)
