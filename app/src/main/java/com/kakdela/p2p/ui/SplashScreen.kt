@@ -16,23 +16,39 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
+/**
+ * SplashScreen — экран приветствия при запуске приложения.
+ * Выполняет плавное появление текста и индикатора загрузки.
+ * После задержки вызывает [onTimeout] для навигации дальше.
+ */
 @Composable
 fun SplashScreen(onTimeout: () -> Unit) {
+    // Анимация прозрачности текста и индикатора
     val alpha = remember { Animatable(0f) }
 
+    // Эффект при монтировании Composable
     LaunchedEffect(Unit) {
-        alpha.animateTo(1f, animationSpec = tween(800))
+        // Анимация появления текста
+        alpha.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 800)
+        )
+        // Задержка перед переходом на следующий экран
         delay(1200)
         onTimeout()
     }
 
+    // Основной контейнер экрана
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black),
         contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Название приложения / приветствие
             Text(
                 text = "Как дела?",
                 color = Color.Cyan,
@@ -40,7 +56,10 @@ fun SplashScreen(onTimeout: () -> Unit) {
                 fontWeight = FontWeight.ExtraBold,
                 modifier = Modifier.alpha(alpha.value)
             )
+
             Spacer(modifier = Modifier.height(16.dp))
+
+            // Линейный индикатор прогресса
             LinearProgressIndicator(
                 modifier = Modifier
                     .width(120.dp)
