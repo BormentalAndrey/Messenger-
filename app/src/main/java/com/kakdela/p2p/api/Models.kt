@@ -2,9 +2,6 @@ package com.kakdela.p2p.api
 
 import com.google.gson.annotations.SerializedName
 
-/**
- * Основная модель данных пользователя/узла в сети.
- */
 data class UserPayload(
     @SerializedName("hash") val hash: String,
     @SerializedName("phone_hash") val phone_hash: String?,
@@ -17,17 +14,14 @@ data class UserPayload(
 )
 
 /**
- * Обертка для регистрации или обновления данных узла на сервере.
- * Исправляет ошибки: No value passed for parameter 'data'
+ * Обертка для запросов. 
+ * Параметр data сделан необязательным (= null), чтобы исправить ошибки компиляции.
  */
 data class UserRegistrationWrapper(
     @SerializedName("hash") val hash: String,
     @SerializedName("data") val data: UserPayload? = null
 )
 
-/**
- * Стандартный ответ сервера на запросы поиска и синхронизации.
- */
 data class ServerResponse(
     @SerializedName("success") val success: Boolean = false,
     @SerializedName("users") val users: List<UserPayload>? = null,
