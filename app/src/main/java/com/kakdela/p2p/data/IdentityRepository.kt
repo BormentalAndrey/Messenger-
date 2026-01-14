@@ -51,7 +51,7 @@ class IdentityRepository(private val context: Context) {
 
     private val SERVICE_TYPE = "_kakdela_p2p._udp."
     private val PORT = 8888
-    private val PEPPER = "7fb8a1d2c3e4f5a6"
+    private val PEPPER = "7fb8a1d2c3e4f5a6b7c8d9e0f1a2b3c4"
     private val SYNC_INTERVAL = 300_000L // 5 минут
     private val CACHE_FRESHNESS_MS = 300_000L // 5 минут
 
@@ -124,10 +124,6 @@ class IdentityRepository(private val context: Context) {
         prefs.edit().putString("local_avatar_uri", uri).apply()
     }
 
-    /**
-     * Ручное добавление узла по хешу.
-     * Гарантировано возвращает Boolean.
-     */
     suspend fun addNodeByHash(hash: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val response = api.getAllNodes()
@@ -187,8 +183,7 @@ class IdentityRepository(private val context: Context) {
             } catch (e: Exception) {
                 Log.e(TAG, "Server sync error: ${e.message}")
             }
-
-            Unit // <- Важно для Kotlin release
+            Unit
         }
     }
 
@@ -196,7 +191,6 @@ class IdentityRepository(private val context: Context) {
         try {
             val response = api.getAllNodes()
             val users = response.users.orEmpty()
-
             if (users.isNotEmpty()) {
                 nodeDao.upsertAll(users.map {
                     NodeEntity(
@@ -254,16 +248,13 @@ class IdentityRepository(private val context: Context) {
         var delivered = false
         runBlocking(Dispatchers.IO) {
             var ip = wifiPeers[targetHash] ?: swarmPeers[targetHash]
-
             if (ip == null) {
                 val serverPeer = findPeerOnServer(targetHash)
                 ip = serverPeer?.ip
             }
-
             if (!ip.isNullOrBlank() && ip != "0.0.0.0") {
                 delivered = sendUdp(ip, "CHAT", message)
             }
-
             if (!delivered && !phone.isNullOrBlank()) {
                 sendAsSms(phone, message)
                 delivered = true
@@ -303,7 +294,6 @@ class IdentityRepository(private val context: Context) {
                 }
                 udpSocket = socket
                 Log.i(TAG, "UDP Listener started on port $PORT")
-
                 val buffer = ByteArray(65507)
                 while (isRunning) {
                     try {
@@ -347,7 +337,6 @@ class IdentityRepository(private val context: Context) {
                 CryptoManager.savePeerPublicKey(fromHash, pubKey)
 
                 val content = json.getString("data")
-
                 if (type == "CHAT" || type == "CHAT_FILE") {
                     messageRepository.handleIncoming(type, content, fromHash)
                 }
@@ -368,13 +357,10 @@ class IdentityRepository(private val context: Context) {
                 put("pubkey", CryptoManager.getMyPublicKeyStr())
                 put("timestamp", System.currentTimeMillis())
             }
-
             val sig = CryptoManager.sign(json.toString().toByteArray())
             json.put("signature", Base64.encodeToString(sig, Base64.NO_WRAP))
-
             val bytes = json.toString().toByteArray()
             val addr = InetAddress.getByName(ip)
-
             DatagramSocket().use {
                 it.soTimeout = 2000
                 it.send(DatagramPacket(bytes, bytes.size, addr, PORT))
@@ -399,7 +385,6 @@ class IdentityRepository(private val context: Context) {
         override fun onServiceFound(s: NsdServiceInfo) {
             if (s.serviceType != SERVICE_TYPE) return
             if (s.serviceName.contains(getMyId().take(8))) return
-
             nsdManager.resolveService(s, object : NsdManager.ResolveListener {
                 override fun onServiceResolved(r: NsdServiceInfo) {
                     val host = r.host?.hostAddress ?: return
@@ -410,9 +395,7 @@ class IdentityRepository(private val context: Context) {
                 override fun onResolveFailed(s: NsdServiceInfo, e: Int) {}
             })
         }
-        override fun onServiceLost(s: NsdServiceInfo) {
-            wifiPeers.entries.removeIf { it.value == s.host?.hostAddress }
-        }
+        override fun onServiceLost(s: NsdServiceInfo) { wifiPeers.entries.removeIf { it.value == s.host?.hostAddress } }
         override fun onDiscoveryStarted(t: String) {}
         override fun onDiscoveryStopped(t: String) {}
         override fun onStartDiscoveryFailed(t: String, e: Int) {}
