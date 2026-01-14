@@ -26,11 +26,13 @@ import kotlin.coroutines.resumeWithException
 object WebViewApiClient {
 
     private const val TAG = "WebViewApiClient"
-    private const val BASE_URL = "https://webhook.site/356b0a2f-8512-48c0-bca7-b94a76c30f63"
+
+    // Основной URL для WebView и тестовой инициализации
+    private const val BASE_URL = "http://kakdela.infinityfree.me/api.php"
     
-    // ВСТАВЛЕН ВАШ ТЕСТОВЫЙ URL
+    // Основной API endpoint (можно заменить на свой продакшн URL)
     private const val API_ENDPOINT = "http://kakdela.infinityfree.me/api.php"
-    
+
     private const val PAGE_LOAD_TIMEOUT_MS = 30_000L
     private const val REQUEST_TIMEOUT_MS   = 20_000L
     private const val MAX_RETRIES          = 3
@@ -40,7 +42,9 @@ object WebViewApiClient {
     private val mutex = Mutex()
     private val gson = Gson()
 
-    // Аннотация теперь на уровне функции, что разрешено в Kotlin
+    /**
+     * Инициализация WebView для выполнения JS fetch-запросов.
+     */
     @SuppressLint("SetJavaScriptEnabled")
     fun init(context: Context) {
         if (webView != null) return
@@ -82,17 +86,26 @@ object WebViewApiClient {
         }
     }
 
+    /**
+     * Анонсирует локального пользователя на сервере.
+     */
     suspend fun announceSelf(payload: UserPayload): ServerResponse {
         val bodyJson = gson.toJson(payload)
         val url = "$API_ENDPOINT?action=add_user"
         return executeRequest(url, "POST", bodyJson)
     }
 
+    /**
+     * Получает список всех узлов с сервера.
+     */
     suspend fun getAllNodes(): ServerResponse {
         val url = "$API_ENDPOINT?action=list_users"
         return executeRequest(url, "GET", null)
     }
 
+    /**
+     * Универсальный метод выполнения запроса через JS fetch внутри WebView.
+     */
     private suspend fun executeRequest(url: String, method: String, bodyJson: String?): ServerResponse = mutex.withLock {
         repeat(MAX_RETRIES) { attempt ->
             try {
@@ -117,37 +130,45 @@ object WebViewApiClient {
         return@withLock ServerResponse(success = false, error = "Connection failed")
     }
 
+    /**
+     * Ждём готовности WebView к выполнению запросов.
+     */
     private suspend fun waitForReady() {
         withTimeout(PAGE_LOAD_TIMEOUT_MS) {
             while (!isReady.get()) delay(500)
         }
     }
 
+    /**
+     * Выполняет JS fetch запрос внутри WebView и возвращает результат.
+     */
     private suspend fun performJsFetch(url: String, method: String, bodyJson: String?): String = withContext(Dispatchers.Main) {
         suspendCancellableCoroutine { cont ->
             val bridgeName = "JSBridge_${System.currentTimeMillis()}"
-            
+
             val bridge = object {
                 @JavascriptInterface
                 fun onSuccess(result: String) {
                     cleanup()
                     if (cont.isActive) cont.resume(result)
                 }
+
                 @JavascriptInterface
                 fun onError(error: String) {
                     cleanup()
                     if (cont.isActive) cont.resumeWithException(Exception(error))
                 }
+
                 fun cleanup() {
-                    Handler(Looper.getMainLooper()).post { 
-                         webView?.removeJavascriptInterface(bridgeName) 
+                    Handler(Looper.getMainLooper()).post {
+                        webView?.removeJavascriptInterface(bridgeName)
                     }
                 }
             }
 
             webView?.addJavascriptInterface(bridge, bridgeName)
-            
-            // Важно: передаем JSON как строку, которую потом распарсим в JS
+
+            // Передаем JSON как строку
             val jsData = bodyJson ?: "null"
 
             val js = """
@@ -161,10 +182,8 @@ object WebViewApiClient {
                             body: rawData ? JSON.stringify(rawData) : null
                         })
                         .then(r => r.text())
-                        .then(t => {
-                            window.$bridgeName.onSuccess(t);
-                        })
-                        .catch(e => window.$bridgeName.onError(e.toString()));
+                        .then(t => { window.$bridgeName.onSuccess(t); })
+                        .catch(e => { window.$bridgeName.onError(e.toString()); });
                     } catch(e) { window.$bridgeName.onError(e.toString()); }
                 })();
             """.trimIndent()
@@ -173,6 +192,9 @@ object WebViewApiClient {
         }
     }
 
+    /**
+     * Очистка ресурсов WebView.
+     */
     fun destroy() {
         Handler(Looper.getMainLooper()).post {
             webView?.destroy()
