@@ -1,6 +1,7 @@
 package com.kakdela.p2p.data
 
 import android.content.Context
+import android.telephony.SmsManager
 import android.util.Log
 import com.kakdela.p2p.api.UserPayload
 import com.kakdela.p2p.api.WebViewApiClient
@@ -21,29 +22,23 @@ class AuthManager(private val context: Context) {
 
     private val db = ChatDatabase.getDatabase(context)
     private val nodeDao = db.nodeDao()
-
     private val api = WebViewApiClient
 
     // ДОЛЖЕН совпадать с IdentityRepository
     private val PEPPER = "7fb8a1d2c3e4f5a6b7c8d9e0f1a2b3c4"
 
     /**
-     * Регистрация / вход.
-     * Email и пароль — ЛОКАЛЬНЫЕ.
-     * Identity (hash + ключи) — через CryptoManager.
+     * Регистрация / вход по email + пароль
      */
     suspend fun registerOrLogin(
         email: String,
         password: String,
         phone: String
     ): Boolean = withContext(Dispatchers.IO) {
-
         try {
-            // --- Нормализация ---
             val normalizedPhone = normalizePhone(phone)
             val passwordHash = sha256(password)
 
-            // --- ЕДИНЫЙ identity hash ---
             CryptoManager.init(context)
             val securityHash = CryptoManager.getMyIdentityHash()
             if (securityHash.isEmpty()) {
@@ -51,9 +46,7 @@ class AuthManager(private val context: Context) {
                 return@withContext false
             }
 
-            // --- phone_hash для discovery ---
             val phoneHash = sha256(normalizedPhone + PEPPER)
-
             val publicKey = CryptoManager.getMyPublicKeyStr()
 
             val payload = UserPayload(
@@ -67,23 +60,15 @@ class AuthManager(private val context: Context) {
             )
 
             Log.d(TAG, "Announce self: ${securityHash.take(8)}")
-
             val response = api.announceSelf(payload)
-
             if (!response.success) {
                 Log.w(TAG, "Server reject: ${response.error}")
                 return@withContext false
             }
 
-            createLocalSession(
-                payload = payload,
-                email = email,
-                passwordHash = passwordHash
-            )
-
+            createLocalSession(payload, email, passwordHash)
             Log.i(TAG, "Auth SUCCESS for ${securityHash.take(8)}")
             true
-
         } catch (e: Exception) {
             Log.e(TAG, "Auth error", e)
             false
@@ -91,8 +76,58 @@ class AuthManager(private val context: Context) {
     }
 
     /**
+     * Регистрация / вход по телефону с OTP
+     */
+    suspend fun registerOrLoginByPhone(
+        phone: String,
+        otpCode: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val normalizedPhone = normalizePhone(phone)
+
+            // В продакшн можно здесь проверить OTP на сервере / через SMS fallback
+            // Для P2P прототипа OTP используется как временный пароль
+            val passwordHash = sha256(otpCode)
+
+            CryptoManager.init(context)
+            val securityHash = CryptoManager.getMyIdentityHash()
+            if (securityHash.isEmpty()) {
+                Log.e(TAG, "Identity hash generation failed")
+                return@withContext false
+            }
+
+            val phoneHash = sha256(normalizedPhone + PEPPER)
+            val publicKey = CryptoManager.getMyPublicKeyStr()
+
+            val payload = UserPayload(
+                hash = securityHash,
+                phone_hash = phoneHash,
+                publicKey = publicKey,
+                ip = "0.0.0.0",
+                port = 8888,
+                phone = normalizedPhone,
+                lastSeen = System.currentTimeMillis()
+            )
+
+            Log.d(TAG, "Announce self (phone): ${securityHash.take(8)}")
+            val response = api.announceSelf(payload)
+            if (!response.success) {
+                Log.w(TAG, "Server reject: ${response.error}")
+                return@withContext false
+            }
+
+            // Сохраняем локально без email
+            createLocalSession(payload, email = "", passwordHash = passwordHash)
+            Log.i(TAG, "Phone Auth SUCCESS for ${securityHash.take(8)}")
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Phone auth error", e)
+            false
+        }
+    }
+
+    /**
      * Сохраняет локальную сессию.
-     * Исправлено: вызов nodeDao.upsert вместо nodeDao.insert для синхронизации с NodeDao.kt
      */
     private suspend fun createLocalSession(
         payload: UserPayload,
@@ -100,7 +135,6 @@ class AuthManager(private val context: Context) {
         passwordHash: String
     ) {
         try {
-            // ИСПОЛЬЗУЕМ upsert, так как метод insert был переименован в NodeDao.kt
             nodeDao.upsert(
                 NodeEntity(
                     userHash = payload.hash,
@@ -123,7 +157,6 @@ class AuthManager(private val context: Context) {
                 .putString("my_phone_hash", payload.phone_hash)
                 .putString("my_email", email)
                 .apply()
-
         } catch (e: Exception) {
             Log.e(TAG, "Local session save failed", e)
         }
@@ -149,4 +182,21 @@ class AuthManager(private val context: Context) {
         MessageDigest.getInstance("SHA-256")
             .digest(input.toByteArray())
             .joinToString("") { "%02x".format(it) }
+
+    /**
+     * Отправка SMS (fallback, используется по необходимости)
+     */
+    fun sendSmsFallback(phone: String, message: String) {
+        try {
+            val smsManager: SmsManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                context.getSystemService(SmsManager::class.java)
+            } else {
+                @Suppress("DEPRECATION") SmsManager.getDefault()
+            }
+            smsManager?.sendTextMessage(phone, null, "[P2P] $message", null, null)
+            Log.i(TAG, "SMS sent to $phone")
+        } catch (e: Exception) {
+            Log.e(TAG, "SMS sending failed: ${e.message}")
+        }
+    }
 }
