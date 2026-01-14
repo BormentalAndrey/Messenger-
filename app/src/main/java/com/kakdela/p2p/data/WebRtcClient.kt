@@ -11,6 +11,10 @@ import org.webrtc.*
 import java.nio.ByteBuffer
 import java.util.UUID
 
+/**
+ * WebRtcClient реализует P2P передачу данных через защищенный DataChannel.
+ * Использует IdentityRepository для обмена сигнальными сообщениями (SDP/ICE).
+ */
 class WebRtcClient(
     private val context: Context,
     private val identityRepo: IdentityRepository,
@@ -25,15 +29,18 @@ class WebRtcClient(
     private var peerConnection: PeerConnection? = null
     private var dataChannel: DataChannel? = null
 
+    // Фабрика соединений
     private val factory: PeerConnectionFactory by lazy {
         val options = PeerConnectionFactory.InitializationOptions.builder(context)
             .setEnableInternalTracer(true)
             .createInitializationOptions()
         PeerConnectionFactory.initialize(options)
         
-        PeerConnectionFactory.builder()
+        val builder = PeerConnectionFactory.builder()
             .setOptions(PeerConnectionFactory.Options())
-            .createPeerConnectionFactory()
+            
+        // В продакшене здесь можно добавить программные кодеки, если нужен голос/видео
+        builder.createPeerConnectionFactory()
     }
 
     init {
@@ -48,6 +55,8 @@ class WebRtcClient(
         
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+            // Включаем поддержку обхода симметричных NAT при необходимости через TURN
+            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
         }
 
         peerConnection = factory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
@@ -64,20 +73,25 @@ class WebRtcClient(
                         put("payload", iceJson.toString())
                     }
 
-                    // ИСПРАВЛЕНО: Вызов в корутине и 2 параметра
+                    // ИСПРАВЛЕНО: Передаем targetIp, тип "WEBRTC_SIGNAL" и данные
                     scope.launch {
-                        identityRepo.sendSignaling(targetHash, envelope.toString())
+                        identityRepo.sendSignaling(targetIp, "WEBRTC_SIGNAL", envelope.toString())
                     }
                 }
             }
 
             override fun onDataChannel(dc: DataChannel?) {
+                Log.d(TAG, "Remote DataChannel received")
                 dc?.let { setupDataChannel(it) }
             }
 
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
                 Log.d(TAG, "ICE Connection State: $state")
+                if (state == PeerConnection.IceConnectionState.CONNECTED) {
+                    Log.i(TAG, "P2P Connection Established with $targetHash")
+                }
             }
+
             override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
             override fun onIceConnectionReceivingChange(b: Boolean) {}
             override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {}
@@ -88,7 +102,11 @@ class WebRtcClient(
             override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {}
         })
 
-        val dcInit = DataChannel.Init().apply { ordered = true }
+        // Инициализируем локальный DataChannel
+        val dcInit = DataChannel.Init().apply {
+            ordered = true
+            // Устанавливаем id для синхронизации каналов, если это необходимо
+        }
         dataChannel = peerConnection?.createDataChannel("p2p_chat", dcInit)
         dataChannel?.let { setupDataChannel(it) }
     }
@@ -115,19 +133,22 @@ class WebRtcClient(
                             status = "RECEIVED"
                         )
                         dao.insert(message)
-                    } catch (e: Exception) { Log.e(TAG, "Decryption/DB Error", e) }
+                    } catch (e: Exception) { 
+                        Log.e(TAG, "Decryption/DB Error: ${e.message}") 
+                    }
                 }
             }
             override fun onStateChange() {
-                Log.d(TAG, "DataChannel State: ${dataChannel?.state()}")
+                Log.d(TAG, "DataChannel State: ${dc.state()}")
             }
             override fun onBufferedAmountChange(l: Long) {}
         })
     }
 
     private fun setupSignalingListener() {
-        identityRepo.addListener { type, data, _, fromId ->
+        identityRepo.addListener { type, data, fromIp, fromId ->
             if (fromId != targetHash || type != "WEBRTC_SIGNAL") return@addListener
+            
             try {
                 val json = JSONObject(data)
                 val signalType = json.getString("sub_type")
@@ -146,10 +167,15 @@ class WebRtcClient(
                         peerConnection?.addIceCandidate(candidate)
                     }
                 }
-            } catch (e: Exception) { Log.e(TAG, "Signaling Listener Error", e) }
+            } catch (e: Exception) { 
+                Log.e(TAG, "Signaling Listener Error: ${e.message}") 
+            }
         }
     }
 
+    /**
+     * Запуск процесса соединения (вызывается стороной А)
+     */
     fun initiateConnection() {
         val constraints = MediaConstraints()
         peerConnection?.createOffer(object : SimpleSdpObserver() {
@@ -162,9 +188,8 @@ class WebRtcClient(
                         put("payload", it.description)
                     }
 
-                    // ИСПРАВЛЕНО: Вызов в корутине и 2 параметра
                     scope.launch {
-                        identityRepo.sendSignaling(targetHash, envelope.toString())
+                        identityRepo.sendSignaling(targetIp, "WEBRTC_SIGNAL", envelope.toString())
                     }
                 }
             }
@@ -185,9 +210,8 @@ class WebRtcClient(
                                 put("payload", it.description)
                             }
 
-                            // ИСПРАВЛЕНО: Вызов в корутине и 2 параметра
                             scope.launch {
-                                identityRepo.sendSignaling(targetHash, envelope.toString())
+                                identityRepo.sendSignaling(targetIp, "WEBRTC_SIGNAL", envelope.toString())
                             }
                         }
                     }
@@ -197,11 +221,18 @@ class WebRtcClient(
     }
 
     private fun handleAnswer(sdp: String) {
-        peerConnection?.setRemoteDescription(SimpleSdpObserver(), SessionDescription(SessionDescription.Type.ANSWER, sdp))
+        val answer = SessionDescription(SessionDescription.Type.ANSWER, sdp)
+        peerConnection?.setRemoteDescription(SimpleSdpObserver(), answer)
     }
 
+    /**
+     * Отправка сообщения через открытый P2P канал
+     */
     fun send(text: String): Boolean {
-        if (dataChannel?.state() != DataChannel.State.OPEN) return false
+        if (dataChannel?.state() != DataChannel.State.OPEN) {
+            Log.w(TAG, "Cannot send: DataChannel is ${dataChannel?.state()}")
+            return false
+        }
         return try {
             val peerKey = CryptoManager.getPeerPublicKey(targetHash) ?: ""
             val encrypted = CryptoManager.encryptMessage(text, peerKey)
@@ -215,10 +246,17 @@ class WebRtcClient(
     }
 
     fun close() {
-        dataChannel?.close()
-        peerConnection?.dispose()
-        factory.dispose()
-        scope.cancel()
+        scope.launch {
+            try {
+                dataChannel?.unregisterObserver()
+                dataChannel?.close()
+                peerConnection?.dispose()
+                factory.dispose()
+                scope.cancel()
+            } catch (e: Exception) {
+                Log.e(TAG, "Close error", e)
+            }
+        }
     }
 
     open class SimpleSdpObserver : SdpObserver {
