@@ -26,7 +26,7 @@ import kotlin.coroutines.resumeWithException
 object WebViewApiClient {
 
     private const val TAG = "WebViewApiClient"
-    private private const val BASE_URL = "http://kakdela.infinityfree.me/api.php"
+    private const val BASE_URL = "http://kakdela.infinityfree.me/api.php"
     
     // ВСТАВЛЕН ВАШ ТЕСТОВЫЙ URL
     private const val API_ENDPOINT = "http://kakdela.infinityfree.me/api.php"
