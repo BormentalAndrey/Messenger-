@@ -14,7 +14,9 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.lifecycleScope
 import com.kakdela.p2p.MyApplication
 import com.kakdela.p2p.data.IdentityRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.webrtc.*
 import java.util.concurrent.CopyOnWriteArrayList
@@ -36,21 +38,20 @@ class CallActivity : ComponentActivity() {
     private var videoCapturer: VideoCapturer? = null
 
     // State
-    private var targetHash: String = "" // Используем Hash для адресации
+    private var targetHash: String = "" 
     private var isIncoming by mutableStateOf(false)
     private val pendingIce = CopyOnWriteArrayList<IceCandidate>()
     @Volatile private var isRemoteSdpSet = false
 
-    private val signalingListener: (String, String, String, String) -> Unit = { type, data, _, fromId ->
-        // Проверяем, что сигнал от нужного абонента и имеет правильный тип
+    private val signalingListener: (String, String, String, String) -> Unit = { type, data, fromIp, fromId ->
         if (fromId == targetHash && type == "WEBRTC_SIGNAL") {
             try {
                 val json = JSONObject(data)
-                val signalSubtype = json.getString("sub_type") // Синхронизировано с FileTransferWorker
-                val payload = json.getString("payload")
+                val signalSubtype = json.optString("sub_type")
+                val payload = json.optString("payload")
 
                 when (signalSubtype) {
-                    "OFFER" -> if (isIncoming) handleIncomingOffer(payload)
+                    "OFFER" -> handleIncomingOffer(payload)
                     "ANSWER" -> handleAnswer(payload)
                     "ICE" -> handleRemoteIce(payload)
                     "HANGUP" -> finish()
@@ -73,7 +74,6 @@ class CallActivity : ComponentActivity() {
         identityRepo = app.identityRepository
         audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
-        // Получаем hash цели (id пользователя)
         targetHash = intent.getStringExtra("chatId") ?: intent.getStringExtra("targetHash") ?: ""
         isIncoming = intent.getBooleanExtra("isIncoming", false)
         val remoteSdp = intent.getStringExtra("remoteSdp")
@@ -103,7 +103,7 @@ class CallActivity : ComponentActivity() {
                 isIncoming = isIncoming,
                 onAccept = { 
                     isIncoming = false 
-                    // Если offer пришел в интенте, он уже в процессе обработки
+                    // Обработка уже запущена через startCallProcess
                 },
                 onReject = {
                     sendCallSignal("HANGUP", "rejected")
@@ -126,14 +126,30 @@ class CallActivity : ComponentActivity() {
         }
     }
 
-    // Вспомогательная функция для отправки сигналов (ИСПРАВЛЕНО: 2 параметра + корутина)
+    /**
+     * Исправленная функция отправки сигнала: теперь получает IP из репозитория
+     */
     private fun sendCallSignal(subtype: String, payload: String) {
-        val envelope = JSONObject().apply {
-            put("sub_type", subtype)
-            put("payload", payload)
-        }
-        lifecycleScope.launch {
-            identityRepo.sendSignaling(targetHash, envelope.toString())
+        lifecycleScope.launch(Dispatchers.IO) {
+            // Ищем IP по хешу в Wi-Fi peers или swarm
+            val ip = identityRepo.wifiPeers[targetHash] 
+                ?: identityRepo.swarmPeers[targetHash]
+                ?: identityRepo.fetchAllNodesFromServer().find { it.hash == targetHash }?.ip
+            
+            if (ip == null || ip == "0.0.0.0") {
+                withContext(Dispatchers.Main) {
+                    Log.e(TAG, "Cannot send signal: IP for $targetHash not found")
+                }
+                return@launch
+            }
+
+            val envelope = JSONObject().apply {
+                put("sub_type", subtype)
+                put("payload", payload)
+            }
+            
+            // Вызов метода с 3 параметрами, как в IdentityRepository
+            identityRepo.sendSignaling(ip, "WEBRTC_SIGNAL", envelope.toString())
         }
     }
 
@@ -279,7 +295,7 @@ class CallActivity : ComponentActivity() {
     private open class SdpAdapter : SdpObserver {
         override fun onCreateSuccess(desc: SessionDescription) {}
         override fun onSetSuccess() {}
-        override fun onCreateFailure(p0: String?) { Log.e("CallActivity", "SDP Create Fail: $p0") }
-        override fun onSetFailure(p0: String?) { Log.e("CallActivity", "SDP Set Fail: $p0") }
+        override fun onCreateFailure(p0: String?) { Log.e("CallActivity", "SDP Create Failure: $p0") }
+        override fun onSetFailure(p0: String?) { Log.e("CallActivity", "SDP Set Failure: $p0") }
     }
 }
