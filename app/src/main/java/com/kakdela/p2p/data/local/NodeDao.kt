@@ -11,11 +11,19 @@ interface NodeDao {
     @Query("SELECT * FROM dht_nodes ORDER BY lastSeen DESC LIMIT 2500")
     suspend fun getAllNodes(): List<NodeEntity>
 
+    /**
+     * Вставляет или обновляет узел. 
+     * Переименовано в 'upsert' для соответствия вызовам в IdentityRepository.
+     */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(node: NodeEntity)
+    suspend fun upsert(node: NodeEntity)
 
+    /**
+     * Пакетная вставка или обновление узлов.
+     * Переименовано в 'upsertAll' для соответствия вызовам в IdentityRepository.
+     */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertNodes(nodes: List<NodeEntity>)
+    suspend fun upsertAll(nodes: List<NodeEntity>)
 
     /**
      * Комплексное обновление: вставляем новые данные и сразу удаляем излишки, 
@@ -25,10 +33,10 @@ interface NodeDao {
     suspend fun updateCache(nodes: List<NodeEntity>) {
         if (nodes.isEmpty()) return
         
-        // 1. Вставляем/обновляем полученные записи
-        insertNodes(nodes)
+        // Используем переименованный метод upsertAll
+        upsertAll(nodes)
         
-        // 2. Удаляем всех, кто не попал в ТОП-2500 по времени последнего визита
+        // Удаляем всех, кто не попал в ТОП-2500 по времени последнего визита
         trimCache()
     }
 
