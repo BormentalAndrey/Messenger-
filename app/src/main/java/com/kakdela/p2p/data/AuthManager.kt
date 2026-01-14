@@ -92,7 +92,7 @@ class AuthManager(private val context: Context) {
 
     /**
      * Сохраняет локальную сессию.
-     * Совместимо с IdentityRepository.
+     * Исправлено: вызов nodeDao.upsert вместо nodeDao.insert для синхронизации с NodeDao.kt
      */
     private suspend fun createLocalSession(
         payload: UserPayload,
@@ -100,7 +100,8 @@ class AuthManager(private val context: Context) {
         passwordHash: String
     ) {
         try {
-            nodeDao.insert(
+            // ИСПОЛЬЗУЕМ upsert, так как метод insert был переименован в NodeDao.kt
+            nodeDao.upsert(
                 NodeEntity(
                     userHash = payload.hash,
                     phone_hash = payload.phone_hash ?: "",
