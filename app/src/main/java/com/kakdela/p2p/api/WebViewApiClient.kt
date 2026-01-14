@@ -27,7 +27,6 @@ object WebViewApiClient {
 
     private const val TAG = "WebViewApiClient"
     private const val BASE_URL = "http://kakdela.infinityfree.me/"
-    // Базовый API URL, к которому будем дописывать query params
     private const val API_ENDPOINT = "http://kakdela.infinityfree.me/api.php"
     
     private const val PAGE_LOAD_TIMEOUT_MS = 30_000L
@@ -45,21 +44,26 @@ object WebViewApiClient {
         Handler(Looper.getMainLooper()).post {
             try {
                 webView = WebView(context.applicationContext).apply {
+                    @SuppressLint("SetJavaScriptEnabled")
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
                         databaseEnabled = true
                         cacheMode = WebSettings.LOAD_DEFAULT
+                        // Использование актуального User-Agent, чтобы сервер не считал нас ботом
                         userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
                     }
 
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             val cookies = CookieManager.getInstance().getCookie(url)
-                            if (url != null && url.contains("infinityfree")) {
+                            Log.d(TAG, "Page loaded: $url, Cookies: $cookies")
+                            
+                            // Проверка на наличие защитной куки InfinityFree
+                            if (url != null && url.contains("kakdela")) {
                                 if (cookies != null && cookies.contains("__test")) {
                                     isReady.set(true)
-                                    Log.i(TAG, "Protection passed. API Ready.")
+                                    Log.i(TAG, "Security bypass successful. API Ready.")
                                 }
                             }
                         }
@@ -71,6 +75,8 @@ object WebViewApiClient {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
                     cookieManager.setAcceptThirdPartyCookies(webView!!, true)
                 }
+                
+                Log.d(TAG, "Loading BASE_URL to trigger protection...")
                 webView?.loadUrl(BASE_URL)
 
             } catch (e: Exception) {
@@ -83,65 +89,75 @@ object WebViewApiClient {
 
     suspend fun announceSelf(payload: UserPayload): ServerResponse {
         val bodyJson = gson.toJson(payload)
-        // Добавляем ?action=add_user
         val url = "$API_ENDPOINT?action=add_user"
         return executeRequest(url, "POST", bodyJson)
     }
 
     suspend fun getAllNodes(): ServerResponse {
-        // Добавляем ?action=list_users
         val url = "$API_ENDPOINT?action=list_users"
         return executeRequest(url, "GET", null)
     }
 
-    // --- CORE ---
+    // --- CORE LOGIC ---
 
     private suspend fun executeRequest(url: String, method: String, bodyJson: String?): ServerResponse = mutex.withLock {
         repeat(MAX_RETRIES) { attempt ->
             try {
                 waitForReady()
+                
                 val rawResponse = withTimeout(REQUEST_TIMEOUT_MS) {
                     performJsFetch(url, method, bodyJson)
                 }
 
                 if (rawResponse.trim().startsWith("<")) {
-                    throw Exception("HTML received instead of JSON")
+                    throw Exception("Received HTML instead of JSON (likely protection redirect)")
                 }
 
                 return@withLock gson.fromJson(rawResponse, ServerResponse::class.java)
 
             } catch (e: Exception) {
                 Log.e(TAG, "Attempt ${attempt + 1} failed: ${e.message}")
+                
+                // Если ошибка, пробуем переинициализировать WebView (обновить куки)
                 isReady.set(false)
-                withContext(Dispatchers.Main) { webView?.loadUrl(BASE_URL) }
-                delay(2000)
+                withContext(Dispatchers.Main) { 
+                    webView?.loadUrl(BASE_URL) 
+                }
+                delay(3000) // Пауза перед следующей попыткой
             }
         }
-        return@withLock ServerResponse(success = false, error = "Connection failed")
+        return@withLock ServerResponse(success = false, error = "Failed after $MAX_RETRIES attempts")
     }
 
     private suspend fun waitForReady() {
         withTimeout(PAGE_LOAD_TIMEOUT_MS) {
-            while (!isReady.get()) delay(500)
+            while (!isReady.get()) {
+                delay(1000)
+            }
         }
     }
 
     private suspend fun performJsFetch(url: String, method: String, bodyJson: String?): String = withContext(Dispatchers.Main) {
         suspendCancellableCoroutine { cont ->
-            val bridgeName = "Bridge_${System.currentTimeMillis()}"
+            // Уникальное имя моста для каждой операции, чтобы избежать конфликтов
+            val bridgeName = "JSBridge_${System.currentTimeMillis()}"
             
             val bridge = object {
                 @JavascriptInterface
                 fun onSuccess(result: String) {
+                    Log.d(TAG, "JS Fetch Success")
                     cleanup()
                     if (cont.isActive) cont.resume(result)
                 }
+                
                 @JavascriptInterface
                 fun onError(error: String) {
+                    Log.e(TAG, "JS Fetch Error: $error")
                     cleanup()
                     if (cont.isActive) cont.resumeWithException(Exception(error))
                 }
-                fun cleanup() {
+
+                private fun cleanup() {
                     Handler(Looper.getMainLooper()).post { 
                          webView?.removeJavascriptInterface(bridgeName) 
                     }
@@ -149,25 +165,44 @@ object WebViewApiClient {
             }
 
             webView?.addJavascriptInterface(bridge, bridgeName)
-            val payloadScript = if (bodyJson != null) "const payload = $bodyJson;" else "const payload = null;"
 
+            // Экранирование JSON для корректной вставки в JS строку
+            val safePayload = bodyJson ?: "null"
+            
             val js = """
                 (function() {
                     try {
-                        $payloadScript
-                        fetch('$url', {
+                        const payloadData = $safePayload;
+                        const options = {
                             method: '$method',
                             headers: { 'Content-Type': 'application/json' },
-                            credentials: 'include',
-                            body: payload ? JSON.stringify(payload) : null
+                            credentials: 'include'
+                        };
+                        
+                        if (payloadData && '$method' !== 'GET') {
+                            options.body = JSON.stringify(payloadData);
+                        }
+
+                        fetch('$url', options)
+                        .then(r => {
+                            if (!r.ok) throw new Error('HTTP status ' + r.status);
+                            return r.text();
                         })
-                        .then(r => r.text())
-                        .then(t => {
-                            try { JSON.parse(t); $bridgeName.onSuccess(t); }
-                            catch(e) { $bridgeName.onError('NOT_JSON: ' + t.substring(0,50)); }
+                        .then(text => {
+                            // Проверяем, что это JSON, а не HTML страница ошибки
+                            try {
+                                JSON.parse(text);
+                                window.$bridgeName.onSuccess(text);
+                            } catch(e) {
+                                window.$bridgeName.onError('Response is not JSON: ' + text.substring(0, 100));
+                            }
                         })
-                        .catch(e => $bridgeName.onError(e.toString()));
-                    } catch(e) { $bridgeName.onError(e.toString()); }
+                        .catch(err => {
+                            window.$bridgeName.onError(err.toString());
+                        });
+                    } catch(err) {
+                        window.$bridgeName.onError(err.toString());
+                    }
                 })();
             """.trimIndent()
 
@@ -179,6 +214,7 @@ object WebViewApiClient {
         Handler(Looper.getMainLooper()).post {
             webView?.destroy()
             webView = null
+            isReady.set(false)
         }
     }
 }
