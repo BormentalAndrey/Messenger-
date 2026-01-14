@@ -47,7 +47,7 @@ class IdentityRepository(private val context: Context) {
 
     private val SERVICE_TYPE = "_kakdela_p2p._udp."
     private val PORT = 8888
-    private val PEPPER = "7fb8a1d2c3e4f5a6b7c8d9e0f1a2b3c4" // Полная версия, совпадает с AuthManager
+    private val PEPPER = "7fb8a1d2c3e4f5a6b7c8d9e0f1a2b3c4" // Совпадает с AuthManager
     private val SYNC_INTERVAL = 300_000L // 5 минут
     private val CACHE_FRESHNESS_MS = 300_000L // 5 минут
 
@@ -389,13 +389,12 @@ class IdentityRepository(private val context: Context) {
     private val discoveryListener = object : NsdManager.DiscoveryListener {
         override fun onServiceFound(s: NsdServiceInfo) {
             if (s.serviceType != SERVICE_TYPE) return
-            if (s.serviceName.contains(getMyId().take(8))) return
             nsdManager.resolveService(s, object : NsdManager.ResolveListener {
                 override fun onServiceResolved(r: NsdServiceInfo) {
                     val host = r.host?.hostAddress ?: return
                     val peerHash = r.serviceName.split("-").getOrNull(1) ?: return
                     wifiPeers[peerHash] = host
-                    Log.i(TAG, "NSD Found Peer: ${peerHash.take(8)}... at $host")
+                    Log.i(TAG, "NSD Found Peer (including self): ${peerHash.take(8)}... at $host")
                 }
                 override fun onResolveFailed(s: NsdServiceInfo, e: Int) {}
             })
