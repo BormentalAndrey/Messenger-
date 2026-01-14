@@ -32,11 +32,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.kakdela.p2p.data.IdentityRepository
-// ИСПРАВЛЕННЫЕ ИМПОРТЫ:
-import com.kakdela.p2p.ui.* import com.kakdela.p2p.ui.auth.*
+import com.kakdela.p2p.ui.*
+import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
+import com.kakdela.p2p.ui.ChatViewModel
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
 @Composable
@@ -94,17 +95,19 @@ fun NavGraph(
             }
 
             composable(Routes.AUTH_PHONE) {
-                PhoneAuthScreen(identityRepository) {
-                    navController.navigate(Routes.CHATS) {
-                        popUpTo(Routes.CHOICE) { inclusive = true }
+                // Исправлено: PhoneAuthScreen получает identityRepository и лямбду onSuccess
+                PhoneAuthScreen(
+                    identityRepository = identityRepository,
+                    onSuccess = {
+                        navController.navigate(Routes.CHATS) {
+                            popUpTo(Routes.CHOICE) { inclusive = true }
+                        }
                     }
-                }
+                )
             }
 
             // --- Главные экраны ---
-            composable(Routes.CHATS) {
-                ChatsListScreen(navController = navController)
-            }
+            composable(Routes.CHATS) { ChatsListScreen(navController = navController) }
 
             composable(Routes.CONTACTS) {
                 ContactsScreen(identityRepository) { contact ->
@@ -120,8 +123,6 @@ fun NavGraph(
                 val chatId = entry.arguments?.getString("chatId") ?: ""
                 val app = context.applicationContext as Application
 
-                // Так как ChatViewModel находится в пакете com.kakdela.p2p.ui, 
-                // импорт import com.kakdela.p2p.ui.* его подхватит.
                 val vm: ChatViewModel = viewModel(
                     factory = ChatViewModelFactory(identityRepository, app)
                 )
@@ -145,12 +146,12 @@ fun NavGraph(
             // --- Разделы ---
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
-            
-            // ИСПРАВЛЕНО: Передан navController в SettingsScreen
-            composable(Routes.SETTINGS) { 
-                SettingsScreen(navController = navController, identityRepository = identityRepository) 
+            composable(Routes.SETTINGS) {
+                SettingsScreen(
+                    navController = navController,
+                    identityRepository = identityRepository
+                )
             }
-            
             composable(Routes.MUSIC) { MusicPlayerScreen() }
 
             // --- WebView ---
@@ -168,13 +169,11 @@ fun NavGraph(
 
             // --- Инструменты и Игры ---
             composable(Routes.CALCULATOR) { CalculatorScreen() }
-            composable(Routes.TEXT_EDITOR) { 
-                // Если экрана еще нет, можно оставить временную заглушку:
+            composable(Routes.TEXT_EDITOR) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("Редактор в разработке", color = Color.White)
                 }
             }
-            
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
