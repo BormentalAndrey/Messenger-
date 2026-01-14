@@ -74,6 +74,16 @@ interface NodeDao {
     )
 
     /**
+     * Отметка узла как успешно синхронизированного с сервером.
+     */
+    @Query("""
+        UPDATE dht_nodes
+        SET isSynced = 1
+        WHERE userHash = :hash
+    """)
+    suspend fun markSynced(hash: String)
+
+    /**
      * Удаление старых записей, даже если их меньше 2500.
      * timestampThreshold — порог в миллисекундах (например, System.currentTimeMillis() - 30 дней).
      */
