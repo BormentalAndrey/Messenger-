@@ -25,7 +25,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Репозиторий идентификации и сетевого обнаружения.
- * Реализует гибридную схему: Wi-Fi (NSD) + Центральный сервер (WebView Discovery) + UDP P2P + SMS Fallback.
+ * Реализует гибридную схему: Wi-Fi (NSD) + Центральный сервер + UDP P2P + SMS Fallback.
  */
 class IdentityRepository(private val context: Context) {
 
@@ -94,7 +94,9 @@ class IdentityRepository(private val context: Context) {
         try {
             nsdManager.unregisterService(registrationListener)
             nsdManager.stopServiceDiscovery(discoveryListener)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(TAG, "NSD shutdown cleanup warning: ${e.message}")
+        }
         scope.coroutineContext.cancelChildren()
         Log.i(TAG, "Network stopped")
     }
@@ -124,7 +126,7 @@ class IdentityRepository(private val context: Context) {
 
     /**
      * Ручное добавление узла по хешу.
-     * ИСПРАВЛЕНО: Добавлена ветка else для корректного возврата Boolean из withContext.
+     * Гарантировано возвращает Boolean.
      */
     suspend fun addNodeByHash(hash: String): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -167,7 +169,7 @@ class IdentityRepository(private val context: Context) {
                 val myPayload = UserPayload(
                     hash = myId,
                     phone_hash = prefs.getString("my_phone_hash", null),
-                    ip = null, 
+                    ip = null,
                     port = PORT,
                     publicKey = CryptoManager.getMyPublicKeyStr(),
                     phone = prefs.getString("my_phone", null),
@@ -177,14 +179,16 @@ class IdentityRepository(private val context: Context) {
                 val response = api.announceSelf(myPayload)
                 if (response.success) {
                     Log.d(TAG, "Server announce successful")
-                    wifiPeers.values.forEach { ip -> 
-                        launch { sendUdp(ip, "PRESENCE", "ONLINE") } 
+                    wifiPeers.values.forEach { ip ->
+                        launch { sendUdp(ip, "PRESENCE", "ONLINE") }
                     }
                     fetchAllNodesFromServer()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Server sync error: ${e.message}")
             }
+
+            Unit // <- Важно для Kotlin release
         }
     }
 
