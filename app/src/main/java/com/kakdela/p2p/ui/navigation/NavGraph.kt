@@ -95,9 +95,8 @@ fun NavGraph(
             }
 
             composable(Routes.AUTH_PHONE) {
-                // Исправлено: PhoneAuthScreen получает identityRepository и лямбду onSuccess
+                // Исправлено: PhoneAuthScreen не требует identityRepository
                 PhoneAuthScreen(
-                    identityRepository = identityRepository,
                     onSuccess = {
                         navController.navigate(Routes.CHATS) {
                             popUpTo(Routes.CHOICE) { inclusive = true }
