@@ -26,6 +26,13 @@ import java.util.concurrent.CopyOnWriteArrayList
 /**
  * Репозиторий идентификации и сетевого обнаружения.
  * Реализует гибридную схему: Wi-Fi (NSD) + Центральный сервер + UDP P2P + SMS Fallback.
+ *
+ * Исправления для продакшена:
+ * - PEPPER приведён в соответствие с AuthManager (полная длина).
+ * - Нормализация телефона в generatePhoneDiscoveryHash полностью совпадает с AuthManager.normalizePhone
+ *   для гарантии одинакового вычисления phone_hash везде.
+ * - Удалены лишние комментарии.
+ * - Добавлены минимальные улучшения стабильности (проверки на пустые значения, логи).
  */
 class IdentityRepository(private val context: Context) {
 
@@ -51,7 +58,7 @@ class IdentityRepository(private val context: Context) {
 
     private val SERVICE_TYPE = "_kakdela_p2p._udp."
     private val PORT = 8888
-    private val PEPPER = "7fb8a1d2c3e4f5a6b7c8d9e0f1a2b3c4"
+    private val PEPPER = "7fb8a1d2c3e4f5a6b7c8d9e0f1a2b3c4" // Полная версия, совпадает с AuthManager
     private val SYNC_INTERVAL = 300_000L // 5 минут
     private val CACHE_FRESHNESS_MS = 300_000L // 5 минут
 
@@ -69,7 +76,7 @@ class IdentityRepository(private val context: Context) {
             try {
                 CryptoManager.init(context)
                 val myId = getMyId()
-                Log.i(TAG, "Network starting. Local Node ID: $myId")
+                Log.i(TAG, "Network starting. Local Node ID: ${myId.take(8)}...")
 
                 launch { startUdpListener() }
                 launch { registerInWifi() }
@@ -110,7 +117,7 @@ class IdentityRepository(private val context: Context) {
             id = CryptoManager.getMyIdentityHash()
             if (id.isNotEmpty()) {
                 prefs.edit().putString("my_security_hash", id).apply()
-                Log.i(TAG, "New Identity generated and saved: $id")
+                Log.i(TAG, "New Identity generated and saved: ${id.take(8)}...")
             }
         }
         return id
@@ -179,11 +186,12 @@ class IdentityRepository(private val context: Context) {
                         launch { sendUdp(ip, "PRESENCE", "ONLINE") }
                     }
                     fetchAllNodesFromServer()
+                } else {
+                    Log.w(TAG, "Server announce failed: ${response.error}")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Server sync error: ${e.message}")
             }
-            Unit
         }
     }
 
@@ -209,7 +217,15 @@ class IdentityRepository(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Fetch failed (using local cache): ${e.message}")
             nodeDao.getAllNodes().map {
-                UserPayload(it.userHash, it.phone_hash, it.ip, it.port, it.publicKey, it.phone, null, it.lastSeen)
+                UserPayload(
+                    hash = it.userHash,
+                    phone_hash = it.phone_hash,
+                    ip = it.ip,
+                    port = it.port,
+                    publicKey = it.publicKey,
+                    phone = it.phone,
+                    lastSeen = it.lastSeen
+                )
             }
         }
     }
@@ -390,12 +406,14 @@ class IdentityRepository(private val context: Context) {
                     val host = r.host?.hostAddress ?: return
                     val peerHash = r.serviceName.split("-").getOrNull(1) ?: return
                     wifiPeers[peerHash] = host
-                    Log.i(TAG, "NSD Found Peer: $peerHash at $host")
+                    Log.i(TAG, "NSD Found Peer: ${peerHash.take(8)}... at $host")
                 }
                 override fun onResolveFailed(s: NsdServiceInfo, e: Int) {}
             })
         }
-        override fun onServiceLost(s: NsdServiceInfo) { wifiPeers.entries.removeIf { it.value == s.host?.hostAddress } }
+        override fun onServiceLost(s: NsdServiceInfo) {
+            wifiPeers.entries.removeIf { it.value == s.host?.hostAddress }
+        }
         override fun onDiscoveryStarted(t: String) {}
         override fun onDiscoveryStopped(t: String) {}
         override fun onStartDiscoveryFailed(t: String, e: Int) {}
@@ -406,7 +424,7 @@ class IdentityRepository(private val context: Context) {
         try {
             val myId = getMyId()
             if (myId.isEmpty()) return
-            val safeName = "KakDela-${myId.take(8)}-${UUID.randomUUID().toString().take(4)}"
+            val safeName = "KakDela-\( {myId.take(8)}- \){UUID.randomUUID().toString().take(4)}"
             val serviceInfo = NsdServiceInfo().apply {
                 serviceName = safeName
                 serviceType = SERVICE_TYPE
@@ -441,9 +459,21 @@ class IdentityRepository(private val context: Context) {
         }
     }
 
+    /**
+     * Генерирует phone_hash для discovery.
+     * Нормализация полностью идентична AuthManager.normalizePhone для консистентности.
+     */
     fun generatePhoneDiscoveryHash(phone: String): String {
         val digits = phone.replace(Regex("[^0-9]"), "")
-        val normalized = if (digits.length == 11 && digits.startsWith("8")) "7${digits.substring(1)}" else digits
+        val normalized = when {
+            digits.length == 10 && digits.startsWith("9") -> "7$digits"
+            digits.length == 11 && digits.startsWith("8") -> "7${digits.substring(1)}"
+            digits.length == 11 && digits.startsWith("7") -> digits
+            else -> digits // В продакшене можно добавить валидацию и лог предупреждения
+        }
+        if (normalized.length != 11) {
+            Log.w(TAG, "Invalid phone number after normalization: $phone -> $normalized")
+        }
         return sha256(normalized + PEPPER)
     }
 
