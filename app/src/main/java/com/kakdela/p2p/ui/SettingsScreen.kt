@@ -57,7 +57,7 @@ fun SettingsScreen(
     // Данные текущего пользователя
     val myP2PId = remember { identityRepository.getMyId() }
     val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
-    val myPhone = remember { prefs.getString("my_phone", "Не указан") }
+    val myPhone: String = remember { prefs.getString("my_phone", "Не указан") ?: "Не указан" }
 
     // Состояние UI
     var avatarUri by remember { mutableStateOf(identityRepository.getLocalAvatarUri()) }
@@ -82,18 +82,10 @@ fun SettingsScreen(
         scope.launch {
             isSyncing = true
             try {
-                // 1. Анонсируем себя (обновляем lastSeen на сервере)
-                // identityRepository.startNetwork() вызовет performServerSync внутри,
-                // но здесь мы явно обновляем список
-                
-                // 2. Скачиваем всех пользователей
                 val serverUsers = identityRepository.fetchAllNodesFromServer()
-                
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, "Обновлено: ${serverUsers.size} узлов", Toast.LENGTH_SHORT).show()
                 }
-                
-                // 3. Обновляем UI
                 loadLocalNodes()
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -106,9 +98,7 @@ fun SettingsScreen(
     }
 
     // Загрузка при старте
-    LaunchedEffect(Unit) {
-        loadLocalNodes()
-    }
+    LaunchedEffect(Unit) { loadLocalNodes() }
 
     // Пикер аватара
     val avatarPicker = rememberLauncherForActivityResult(
@@ -117,7 +107,6 @@ fun SettingsScreen(
         uri?.let {
             isUploading = true
             scope.launch(Dispatchers.IO) {
-                // Сохраняем URI локально. В реальном проде лучше копировать файл во внутреннее хранилище.
                 identityRepository.saveLocalAvatar(it.toString())
                 withContext(Dispatchers.Main) {
                     avatarUri = it.toString()
@@ -134,7 +123,7 @@ fun SettingsScreen(
                 title = { Text("Настройки узла", color = Color.Cyan, fontWeight = FontWeight.Bold) },
                 actions = {
                     IconButton(onClick = { loadLocalNodes() }) {
-                        Icon(Icons.Default.Refresh, null, tint = Color.Cyan)
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Cyan)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
@@ -153,7 +142,7 @@ fun SettingsScreen(
 
             // ===== 1. Блок Аватара =====
             Box(contentAlignment = Alignment.BottomEnd) {
-                if (avatarUri != null) {
+                if (!avatarUri.isNullOrEmpty()) {
                     AsyncImage(
                         model = avatarUri,
                         contentDescription = "Avatar",
@@ -172,7 +161,7 @@ fun SettingsScreen(
                             .clickable { avatarPicker.launch("image/*") },
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.Person, null, tint = Color.Gray, modifier = Modifier.size(48.dp))
+                        Icon(Icons.Default.Person, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(48.dp))
                     }
                 }
 
@@ -199,7 +188,7 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(24.dp))
 
-            // ===== 2. Блок ID и Данных =====
+            // ===== 2. Блок ID =====
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF111111)),
@@ -234,9 +223,7 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // ===== 3. Синхронизация и Ручное добавление =====
-            
-            // Кнопка синхронизации
+            // ===== 3. Кнопка синхронизации =====
             Button(
                 onClick = performFullSync,
                 modifier = Modifier.fillMaxWidth(),
@@ -253,10 +240,10 @@ fun SettingsScreen(
                     Text("Синхронизировать с сервером", color = Color.Cyan)
                 }
             }
-            
+
             Spacer(Modifier.height(12.dp))
 
-            // Поле ручного добавления
+            // ===== 4. Поле ручного добавления =====
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF111111)),
@@ -311,29 +298,17 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(20.dp))
 
-            // ===== 4. Список контактов (Локальная база) =====
-            Text(
-                "Ваша сеть (${nodes.size})",
-                color = Color.Gray,
-                fontSize = 12.sp,
-                modifier = Modifier.align(Alignment.Start)
-            )
-            
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) {
+            // ===== 5. Список контактов =====
+            Text("Ваша сеть (${nodes.size})", color = Color.Gray, fontSize = 12.sp, modifier = Modifier.align(Alignment.Start))
+
+            LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 items(nodes) { node ->
-                    // Если пользователь был замечен менее 5 минут назад, считаем его онлайн
                     val isOnline = System.currentTimeMillis() - node.lastSeen < 300_000
-                    
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 12.dp)
                             .clickable {
-                                // При клике копируем ID
                                 clipboard.setText(AnnotatedString(node.userHash))
                                 Toast.makeText(context, "ID скопирован", Toast.LENGTH_SHORT).show()
                             },
@@ -348,27 +323,15 @@ fun SettingsScreen(
                         ) {
                             Text(node.userHash.take(1).uppercase(), color = Color.Cyan, fontWeight = FontWeight.Bold)
                         }
-                        
+
                         Spacer(Modifier.width(12.dp))
-                        
+
                         Column(Modifier.weight(1f)) {
-                            // Показываем телефон если есть, иначе часть хеша
-                            val displayName = if (node.phone.isNotEmpty()) node.phone else "User ${node.userHash.take(4)}"
-                            Text(
-                                text = displayName,
-                                color = Color.White,
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 14.sp
-                            )
-                            Text(
-                                text = node.userHash.take(16) + "...",
-                                fontFamily = FontFamily.Monospace,
-                                color = Color.Gray,
-                                fontSize = 10.sp
-                            )
+                            val displayName = if (!node.phone.isNullOrEmpty()) node.phone else "User ${node.userHash.take(4)}"
+                            Text(displayName, color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text(node.userHash.take(16) + "...", fontFamily = FontFamily.Monospace, color = Color.Gray, fontSize = 10.sp)
                         }
-                        
-                        // Индикатор онлайна
+
                         Box(
                             modifier = Modifier
                                 .size(8.dp)
@@ -376,17 +339,17 @@ fun SettingsScreen(
                                 .background(if (isOnline) Color.Green else Color.Gray)
                         )
                     }
-                    HorizontalDivider(color = Color(0xFF1A1A1A))
+                    Divider(color = Color(0xFF1A1A1A))
                 }
             }
 
-            // ===== 5. Кнопка выхода =====
+            Spacer(Modifier.height(8.dp))
+
+            // ===== 6. Кнопка выхода =====
             TextButton(
                 onClick = {
                     identityRepository.stopNetwork()
-                    navController.navigate("choice") {
-                        popUpTo(0) { inclusive = true }
-                    }
+                    navController.navigate("choice") { popUpTo(0) { inclusive = true } }
                 },
                 modifier = Modifier.padding(vertical = 8.dp)
             ) {
