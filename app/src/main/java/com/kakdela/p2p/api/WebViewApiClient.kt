@@ -26,7 +26,7 @@ import kotlin.coroutines.resumeWithException
 object WebViewApiClient {
 
     private const val TAG = "WebViewApiClient"
-    private const val BASE_URL = "http://kakdela.infinityfree.me/api.php"
+    private const val BASE_URL = "https://webhook.site/356b0a2f-8512-48c0-bca7-b94a76c30f63"
     
     // ВСТАВЛЕН ВАШ ТЕСТОВЫЙ URL
     private const val API_ENDPOINT = "http://kakdela.infinityfree.me/api.php"
