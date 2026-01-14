@@ -23,17 +23,6 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
-/**
- * Репозиторий идентификации и сетевого обнаружения.
- * Реализует гибридную схему: Wi-Fi (NSD) + Центральный сервер + UDP P2P + SMS Fallback.
- *
- * Исправления для продакшена:
- * - PEPPER приведён в соответствие с AuthManager (полная длина).
- * - Нормализация телефона в generatePhoneDiscoveryHash полностью совпадает с AuthManager.normalizePhone
- *   для гарантии одинакового вычисления phone_hash везде.
- * - Удалены лишние комментарии.
- * - Добавлены минимальные улучшения стабильности (проверки на пустые значения, логи).
- */
 class IdentityRepository(private val context: Context) {
 
     private val TAG = "IdentityRepository"
@@ -424,7 +413,7 @@ class IdentityRepository(private val context: Context) {
         try {
             val myId = getMyId()
             if (myId.isEmpty()) return
-            val safeName = "KakDela-\( {myId.take(8)}- \){UUID.randomUUID().toString().take(4)}"
+            val safeName = "KakDela-${myId.take(8)}-${UUID.randomUUID().toString().take(4)}"
             val serviceInfo = NsdServiceInfo().apply {
                 serviceName = safeName
                 serviceType = SERVICE_TYPE
@@ -459,17 +448,13 @@ class IdentityRepository(private val context: Context) {
         }
     }
 
-    /**
-     * Генерирует phone_hash для discovery.
-     * Нормализация полностью идентична AuthManager.normalizePhone для консистентности.
-     */
     fun generatePhoneDiscoveryHash(phone: String): String {
-        val digits = phone.replace(Regex("[^0-9]"), "")
+        val digits = phone.replace(Regex("""[^0-9]"""), "")
         val normalized = when {
             digits.length == 10 && digits.startsWith("9") -> "7$digits"
             digits.length == 11 && digits.startsWith("8") -> "7${digits.substring(1)}"
             digits.length == 11 && digits.startsWith("7") -> digits
-            else -> digits // В продакшене можно добавить валидацию и лог предупреждения
+            else -> digits
         }
         if (normalized.length != 11) {
             Log.w(TAG, "Invalid phone number after normalization: $phone -> $normalized")
