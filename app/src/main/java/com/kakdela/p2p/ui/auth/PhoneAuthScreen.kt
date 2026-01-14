@@ -11,24 +11,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kakdela.p2p.auth.SmsCodeManager
 import com.kakdela.p2p.auth.SmsCodeStore
 import com.kakdela.p2p.data.AuthManager
-import com.kakdela.p2p.data.IdentityRepository
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @Composable
 fun PhoneAuthScreen(
-    identityRepository: IdentityRepository,
     onSuccess: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    // FIX: Используем AuthManager
     val authManager = remember { AuthManager(context) }
 
     var phone by remember { mutableStateOf("") }
@@ -37,6 +33,7 @@ fun PhoneAuthScreen(
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    // Запрос разрешений на SMS
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -49,6 +46,7 @@ fun PhoneAuthScreen(
         }
     }
 
+    // Автозаполнение кода при получении SMS
     LaunchedEffect(sentCode) {
         if (sentCode != null) {
             while (isActive) {
@@ -65,13 +63,20 @@ fun PhoneAuthScreen(
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(32.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text("Вход по номеру", style = MaterialTheme.typography.headlineMedium, color = Color.Cyan)
+            Text(
+                "Вход по номеру",
+                style = MaterialTheme.typography.headlineMedium,
+                color = Color.Cyan
+            )
             Spacer(Modifier.height(32.dp))
 
+            // Ввод номера телефона
             if (sentCode == null) {
                 OutlinedTextField(
                     value = phone,
@@ -89,13 +94,23 @@ fun PhoneAuthScreen(
                 Button(
                     onClick = {
                         if (phone.length >= 10) {
-                            permissionLauncher.launch(arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS))
+                            permissionLauncher.launch(
+                                arrayOf(
+                                    Manifest.permission.SEND_SMS,
+                                    Manifest.permission.RECEIVE_SMS
+                                )
+                            )
+                        } else {
+                            error = "Введите корректный номер"
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(50.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan)
-                ) { Text("Получить код", color = Color.Black) }
+                ) {
+                    Text("Получить код", color = Color.Black)
+                }
             } else {
+                // Ввод кода из SMS
                 OutlinedTextField(
                     value = inputCode,
                     onValueChange = { inputCode = it },
@@ -114,26 +129,34 @@ fun PhoneAuthScreen(
                         if (inputCode == sentCode) {
                             isLoading = true
                             scope.launch {
-                                // FIX: Вызываем AuthManager вместо ручной генерации хэшей
-                                val success = authManager.registerOrLogin(
-                                    email = "phone_user", // Заглушка для email при входе по телефону
-                                    password = inputCode, // Используем код как временный пароль
-                                    phone = phone
+                                // Новый метод AuthManager для phone-only регистрации
+                                val success = authManager.registerOrLoginByPhone(
+                                    phone = phone,
+                                    otpCode = inputCode
                                 )
                                 if (success) onSuccess() else error = "Ошибка сети или регистрации"
                                 isLoading = false
                             }
-                        } else error = "Неверный код"
+                        } else {
+                            error = "Неверный код"
+                        }
                     },
                     modifier = Modifier.fillMaxWidth().height(50.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan),
                     enabled = !isLoading
-                ) { 
-                     if (isLoading) CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
-                     else Text("Войти", color = Color.Black) 
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
+                    } else {
+                        Text("Войти", color = Color.Black)
+                    }
                 }
             }
-            error?.let { Text(it, color = Color.Red, modifier = Modifier.padding(top = 16.dp)) }
+
+            // Ошибки
+            error?.let {
+                Text(it, color = Color.Red, modifier = Modifier.padding(top = 16.dp))
+            }
         }
     }
 }
