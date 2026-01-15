@@ -331,7 +331,11 @@ class IdentityRepository(private val context: Context) {
             val sig = CryptoManager.sign(json.toString().toByteArray())
             json.put("signature", Base64.encodeToString(sig, Base64.NO_WRAP))
             val addr = InetAddress.getByName(ip)
-            DatagramSocket().use { it.soTimeout = 2000; it.send(DatagramPacket(json.toString().toByteArray(), json.toByteArray().size, addr, PORT)) }
+            val bytes = json.toString().toByteArray() // <-- исправлено
+            DatagramSocket().use {
+                it.soTimeout = 2000
+                it.send(DatagramPacket(bytes, bytes.size, addr, PORT))
+            }
             true
         } catch (e: Exception) { Log.e(TAG, "UDP Send failed to $ip: ${e.message}"); false }
     }
