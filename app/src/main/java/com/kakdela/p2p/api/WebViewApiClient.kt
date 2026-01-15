@@ -28,10 +28,10 @@ object WebViewApiClient {
     private const val TAG = "WebViewApiClient"
 
     // Основной URL для WebView и тестовой инициализации
-    private const val BASE_URL = "http://kakdela.infinityfree.me/api.php"
+    private const val BASE_URL = "http://kakdela.infinityfree.me/api.php?action=announce"
     
     // Основной API endpoint (можно заменить на свой продакшн URL)
-    private const val API_ENDPOINT = "http://kakdela.infinityfree.me/api.php"
+    private const val API_ENDPOINT = "http://kakdela.infinityfree.me/api.php?action=announce"
 
     private const val PAGE_LOAD_TIMEOUT_MS = 30_000L
     private const val REQUEST_TIMEOUT_MS   = 20_000L
