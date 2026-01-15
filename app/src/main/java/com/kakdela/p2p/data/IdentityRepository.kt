@@ -144,7 +144,8 @@ class IdentityRepository(private val context: Context) {
         withContext(Dispatchers.IO) {
             try {
                 val phone = prefs.getString("my_phone", null)
-                val phoneHash = prefs.getString("my_phone_hash", null) ?: generatePhoneDiscoveryHash(phone ?: "")
+                val phoneHash = prefs.getString("my_phone_hash", null)
+                    ?: generatePhoneDiscoveryHash(phone ?: "")
                 prefs.edit().putString("my_phone_hash", phoneHash).apply()
 
                 val ip = getLocalIpAddress() ?: "0.0.0.0"
@@ -155,7 +156,7 @@ class IdentityRepository(private val context: Context) {
                     port = PORT,
                     publicKey = CryptoManager.getMyPublicKeyStr(),
                     phone = phone,
-                    lastSeen = System.currentTimeMillis()
+                    lastSeen = System.currentTimeMillis().toString() // <--- приведение к String
                 )
 
                 Log.d(TAG, "Announce payload: $myPayload")
@@ -189,7 +190,7 @@ class IdentityRepository(private val context: Context) {
                         port = it.port,
                         publicKey = it.publicKey,
                         phone = it.phone ?: "",
-                        lastSeen = it.lastSeen ?: System.currentTimeMillis()
+                        lastSeen = it.lastSeen?.toString() ?: System.currentTimeMillis().toString() // <--- String
                     )
                 })
                 Log.d(TAG, "Fetched ${users.size} nodes from server")
@@ -220,7 +221,7 @@ class IdentityRepository(private val context: Context) {
                 port = node.port,
                 publicKey = node.publicKey,
                 phone = node.phone ?: "",
-                lastSeen = node.lastSeen ?: System.currentTimeMillis()
+                lastSeen = node.lastSeen?.toString() ?: System.currentTimeMillis().toString() // <--- String
             )
         )
     }
@@ -252,7 +253,7 @@ class IdentityRepository(private val context: Context) {
 
     private suspend fun findPeerOnServer(hash: String): UserPayload? {
         val cached = nodeDao.getNodeByHash(hash)
-        if (cached != null && System.currentTimeMillis() - cached.lastSeen < CACHE_FRESHNESS_MS) {
+        if (cached != null && System.currentTimeMillis() - (cached.lastSeen?.toLongOrNull() ?: 0L) < CACHE_FRESHNESS_MS) {
             return UserPayload(cached.userHash, cached.phone_hash, cached.ip, cached.port, cached.publicKey, cached.phone, cached.lastSeen)
         }
         return fetchAllNodesFromServer().find { it.hash == hash }
@@ -298,7 +299,7 @@ class IdentityRepository(private val context: Context) {
                     return@launch
                 }
 
-                nodeDao.updateNetworkInfo(fromHash, fromIp, PORT, pubKey, System.currentTimeMillis())
+                nodeDao.updateNetworkInfo(fromHash, fromIp, PORT, pubKey, System.currentTimeMillis().toString())
                 swarmPeers[fromHash] = fromIp
                 CryptoManager.savePeerPublicKey(fromHash, pubKey)
 
