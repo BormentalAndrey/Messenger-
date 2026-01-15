@@ -19,7 +19,7 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.security.MessageDigest
-import java.util.UUID
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -27,33 +27,26 @@ class IdentityRepository(private val context: Context) {
 
     private val TAG = "IdentityRepository"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     private val prefs: SharedPreferences =
         context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
-
     private val api = WebViewApiClient
     private val db = ChatDatabase.getDatabase(context)
     private val nodeDao = db.nodeDao()
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
 
-    private val messageRepository by lazy {
-        MessageRepository(context, db.messageDao(), this)
-    }
-
+    private val messageRepository by lazy { MessageRepository(context, db.messageDao(), this) }
     private val listeners = CopyOnWriteArrayList<(String, String, String, String) -> Unit>()
-
     val wifiPeers = ConcurrentHashMap<String, String>()
     val swarmPeers = ConcurrentHashMap<String, String>()
 
     private val SERVICE_TYPE = "_kakdela_p2p._udp."
     private val PORT = 8888
-    private val PEPPER = "7fb8a1d2c3e4f5a6b7c8d9e0f1a2b3c4" // Совпадает с AuthManager
-    private val SYNC_INTERVAL = 300_000L // 5 минут
-    private val CACHE_FRESHNESS_MS = 300_000L // 5 минут
+    private val PEPPER = "7fb8a1d2c3e4f5a6b7c8d9e0f1a2b3c4"
+    private val SYNC_INTERVAL = 300_000L
+    private val CACHE_FRESHNESS_MS = 300_000L
 
     @Volatile
     private var isRunning = false
-
     private var udpSocket: DatagramSocket? = null
 
     /* ======================= PUBLIC API ======================= */
@@ -75,7 +68,6 @@ class IdentityRepository(private val context: Context) {
                     performServerSync(myId)
                 }
                 startSyncLoop()
-
             } catch (e: Exception) {
                 Log.e(TAG, "Network start failed", e)
                 isRunning = false
@@ -112,13 +104,8 @@ class IdentityRepository(private val context: Context) {
         return id
     }
 
-    /* ======================= UI HELPERS ======================= */
-
     fun getLocalAvatarUri(): String? = prefs.getString("local_avatar_uri", null)
-
-    fun saveLocalAvatar(uri: String) {
-        prefs.edit().putString("local_avatar_uri", uri).apply()
-    }
+    fun saveLocalAvatar(uri: String) { prefs.edit().putString("local_avatar_uri", uri).apply() }
 
     suspend fun addNodeByHash(hash: String): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -144,9 +131,7 @@ class IdentityRepository(private val context: Context) {
             while (isRunning) {
                 try {
                     val myId = getMyId()
-                    if (myId.isNotEmpty()) {
-                        performServerSync(myId)
-                    }
+                    if (myId.isNotEmpty()) performServerSync(myId)
                 } catch (e: Exception) {
                     Log.e(TAG, "Sync loop iteration failed: ${e.message}")
                 }
@@ -158,22 +143,29 @@ class IdentityRepository(private val context: Context) {
     private suspend fun performServerSync(myId: String) {
         withContext(Dispatchers.IO) {
             try {
+                val phone = prefs.getString("my_phone", null)
+                val phoneHash = prefs.getString("my_phone_hash", null) ?: generatePhoneDiscoveryHash(phone ?: "")
+                prefs.edit().putString("my_phone_hash", phoneHash).apply()
+
+                val ip = getLocalIpAddress() ?: "0.0.0.0"
                 val myPayload = UserPayload(
                     hash = myId,
-                    phone_hash = prefs.getString("my_phone_hash", null),
-                    ip = null,
+                    phone_hash = phoneHash,
+                    ip = ip,
                     port = PORT,
                     publicKey = CryptoManager.getMyPublicKeyStr(),
-                    phone = prefs.getString("my_phone", null),
+                    phone = phone,
                     lastSeen = System.currentTimeMillis()
                 )
 
+                Log.d(TAG, "Announce payload: $myPayload")
                 val response = api.announceSelf(myPayload)
+                Log.d(TAG, "Server response: $response")
+
                 if (response.success) {
                     Log.d(TAG, "Server announce successful")
-                    wifiPeers.values.forEach { ip ->
-                        launch { sendUdp(ip, "PRESENCE", "ONLINE") }
-                    }
+                    saveNodeToDb(myPayload)
+                    wifiPeers.values.forEach { ipAddr -> launch { sendUdp(ipAddr, "PRESENCE", "ONLINE") } }
                     fetchAllNodesFromServer()
                 } else {
                     Log.w(TAG, "Server announce failed: ${response.error}")
@@ -243,9 +235,7 @@ class IdentityRepository(private val context: Context) {
                     put("payload", data)
                 }
                 sendUdp(targetIp, "WEBRTC_SIGNAL", json.toString())
-            } catch (e: Exception) {
-                Log.e(TAG, "Signaling error to $targetIp", e)
-            }
+            } catch (e: Exception) { Log.e(TAG, "Signaling error to $targetIp", e) }
         }
     }
 
@@ -253,17 +243,9 @@ class IdentityRepository(private val context: Context) {
         var delivered = false
         runBlocking(Dispatchers.IO) {
             var ip = wifiPeers[targetHash] ?: swarmPeers[targetHash]
-            if (ip == null) {
-                val serverPeer = findPeerOnServer(targetHash)
-                ip = serverPeer?.ip
-            }
-            if (!ip.isNullOrBlank() && ip != "0.0.0.0") {
-                delivered = sendUdp(ip, "CHAT", message)
-            }
-            if (!delivered && !phone.isNullOrBlank()) {
-                sendAsSms(phone, message)
-                delivered = true
-            }
+            if (ip == null) ip = findPeerOnServer(targetHash)?.ip
+            if (!ip.isNullOrBlank() && ip != "0.0.0.0") delivered = sendUdp(ip, "CHAT", message)
+            if (!delivered && !phone.isNullOrBlank()) { sendAsSms(phone, message); delivered = true }
         }
         return delivered
     }
@@ -271,32 +253,19 @@ class IdentityRepository(private val context: Context) {
     private suspend fun findPeerOnServer(hash: String): UserPayload? {
         val cached = nodeDao.getNodeByHash(hash)
         if (cached != null && System.currentTimeMillis() - cached.lastSeen < CACHE_FRESHNESS_MS) {
-            return UserPayload(
-                hash = cached.userHash,
-                phone_hash = cached.phone_hash,
-                ip = cached.ip,
-                port = cached.port,
-                publicKey = cached.publicKey,
-                phone = cached.phone,
-                lastSeen = cached.lastSeen
-            )
+            return UserPayload(cached.userHash, cached.phone_hash, cached.ip, cached.port, cached.publicKey, cached.phone, cached.lastSeen)
         }
         return fetchAllNodesFromServer().find { it.hash == hash }
     }
 
-    suspend fun getPeerPublicKey(hash: String): String? = withContext(Dispatchers.IO) {
-        nodeDao.getNodeByHash(hash)?.publicKey
-    }
+    suspend fun getPeerPublicKey(hash: String) = withContext(Dispatchers.IO) { nodeDao.getNodeByHash(hash)?.publicKey }
 
     /* ======================= UDP CORE ======================= */
 
     private fun startUdpListener() {
         scope.launch {
             try {
-                val socket = DatagramSocket(null).apply {
-                    reuseAddress = true
-                    bind(InetSocketAddress(PORT))
-                }
+                val socket = DatagramSocket(null).apply { reuseAddress = true; bind(InetSocketAddress(PORT)) }
                 udpSocket = socket
                 Log.i(TAG, "UDP Listener started on port $PORT")
                 val buffer = ByteArray(65507)
@@ -305,18 +274,11 @@ class IdentityRepository(private val context: Context) {
                         val packet = DatagramPacket(buffer, buffer.size)
                         socket.receive(packet)
                         val ip = packet.address.hostAddress ?: continue
-                        val dataString = String(packet.data, 0, packet.length)
-                        handleIncoming(dataString, ip)
-                    } catch (e: Exception) {
-                        if (isRunning) Log.e(TAG, "Packet receive error: ${e.message}")
-                    }
+                        handleIncoming(String(packet.data, 0, packet.length), ip)
+                    } catch (e: Exception) { if (isRunning) Log.e(TAG, "Packet receive error: ${e.message}") }
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "UDP Bind failed: ${e.message}")
-            } finally {
-                udpSocket?.close()
-                udpSocket = null
-            }
+            } catch (e: Exception) { Log.e(TAG, "UDP Bind failed: ${e.message}") }
+            finally { udpSocket?.close(); udpSocket = null }
         }
     }
 
@@ -331,7 +293,6 @@ class IdentityRepository(private val context: Context) {
 
                 val signature = Base64.decode(sigBase64, Base64.NO_WRAP)
                 val unsignedJson = JSONObject(raw).apply { remove("signature") }.toString()
-
                 if (!CryptoManager.verify(signature, unsignedJson.toByteArray(), pubKey)) {
                     Log.w(TAG, "SECURITY ALERT: Invalid signature from $fromIp")
                     return@launch
@@ -342,14 +303,9 @@ class IdentityRepository(private val context: Context) {
                 CryptoManager.savePeerPublicKey(fromHash, pubKey)
 
                 val content = json.getString("data")
-                if (type == "CHAT" || type == "CHAT_FILE") {
-                    messageRepository.handleIncoming(type, content, fromHash)
-                }
-
+                if (type == "CHAT" || type == "CHAT_FILE") messageRepository.handleIncoming(type, content, fromHash)
                 listeners.forEach { it(type, content, fromIp, fromHash) }
-            } catch (e: Exception) {
-                Log.e(TAG, "Malformed packet: ${e.message}")
-            }
+            } catch (e: Exception) { Log.e(TAG, "Malformed packet: ${e.message}") }
         }
     }
 
@@ -364,17 +320,10 @@ class IdentityRepository(private val context: Context) {
             }
             val sig = CryptoManager.sign(json.toString().toByteArray())
             json.put("signature", Base64.encodeToString(sig, Base64.NO_WRAP))
-            val bytes = json.toString().toByteArray()
             val addr = InetAddress.getByName(ip)
-            DatagramSocket().use {
-                it.soTimeout = 2000
-                it.send(DatagramPacket(bytes, bytes.size, addr, PORT))
-            }
+            DatagramSocket().use { it.soTimeout = 2000; it.send(DatagramPacket(json.toString().toByteArray(), json.toString().toByteArray().size, addr, PORT)) }
             true
-        } catch (e: Exception) {
-            Log.e(TAG, "UDP Send failed to $ip: ${e.message}")
-            false
-        }
+        } catch (e: Exception) { Log.e(TAG, "UDP Send failed to $ip: ${e.message}"); false }
     }
 
     /* ======================= NSD & WI-FI ======================= */
@@ -394,14 +343,12 @@ class IdentityRepository(private val context: Context) {
                     val host = r.host?.hostAddress ?: return
                     val peerHash = r.serviceName.split("-").getOrNull(1) ?: return
                     wifiPeers[peerHash] = host
-                    Log.i(TAG, "NSD Found Peer (including self): ${peerHash.take(8)}... at $host")
+                    Log.i(TAG, "NSD Found Peer: ${peerHash.take(8)} at $host")
                 }
                 override fun onResolveFailed(s: NsdServiceInfo, e: Int) {}
             })
         }
-        override fun onServiceLost(s: NsdServiceInfo) {
-            wifiPeers.entries.removeIf { it.value == s.host?.hostAddress }
-        }
+        override fun onServiceLost(s: NsdServiceInfo) { wifiPeers.entries.removeIf { it.value == s.host?.hostAddress } }
         override fun onDiscoveryStarted(t: String) {}
         override fun onDiscoveryStopped(t: String) {}
         override fun onStartDiscoveryFailed(t: String, e: Int) {}
@@ -413,23 +360,14 @@ class IdentityRepository(private val context: Context) {
             val myId = getMyId()
             if (myId.isEmpty()) return
             val safeName = "KakDela-${myId.take(8)}-${UUID.randomUUID().toString().take(4)}"
-            val serviceInfo = NsdServiceInfo().apply {
-                serviceName = safeName
-                serviceType = SERVICE_TYPE
-                port = PORT
-            }
+            val serviceInfo = NsdServiceInfo().apply { serviceName = safeName; serviceType = SERVICE_TYPE; port = PORT }
             nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, registrationListener)
-        } catch (e: Exception) {
-            Log.e(TAG, "NSD Register failed", e)
-        }
+        } catch (e: Exception) { Log.e(TAG, "NSD Register failed", e) }
     }
 
     private fun discoverInWifi() {
-        try {
-            nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
-        } catch (e: Exception) {
-            Log.e(TAG, "NSD Discovery failed", e)
-        }
+        try { nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener) }
+        catch (e: Exception) { Log.e(TAG, "NSD Discovery failed", e) }
     }
 
     /* ======================= SMS & HASHING ======================= */
@@ -439,12 +377,9 @@ class IdentityRepository(private val context: Context) {
             val sms = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S)
                 context.getSystemService(SmsManager::class.java)
             else @Suppress("DEPRECATION") SmsManager.getDefault()
-
             sms?.sendTextMessage(phone, null, "[P2P] $message", null, null)
             Log.i(TAG, "Message sent via SMS to $phone")
-        } catch (e: Exception) {
-            Log.e(TAG, "SMS failed: ${e.message}")
-        }
+        } catch (e: Exception) { Log.e(TAG, "SMS failed: ${e.message}") }
     }
 
     fun generatePhoneDiscoveryHash(phone: String): String {
@@ -455,12 +390,25 @@ class IdentityRepository(private val context: Context) {
             digits.length == 11 && digits.startsWith("7") -> digits
             else -> digits
         }
-        if (normalized.length != 11) {
-            Log.w(TAG, "Invalid phone number after normalization: $phone -> $normalized")
-        }
+        if (normalized.length != 11) Log.w(TAG, "Invalid phone number after normalization: $phone -> $normalized")
         return sha256(normalized + PEPPER)
     }
 
-    private fun sha256(s: String): String =
-        MessageDigest.getInstance("SHA-256").digest(s.toByteArray()).joinToString("") { "%02x".format(it) }
+    private fun sha256(s: String) = MessageDigest.getInstance("SHA-256").digest(s.toByteArray())
+        .joinToString("") { "%02x".format(it) }
+
+    private fun getLocalIpAddress(): String? {
+        return try {
+            val en = java.net.NetworkInterface.getNetworkInterfaces()
+            while (en.hasMoreElements()) {
+                val intf = en.nextElement()
+                val addrs = intf.inetAddresses
+                while (addrs.hasMoreElements()) {
+                    val addr = addrs.nextElement()
+                    if (!addr.isLoopbackAddress && addr.hostAddress.indexOf(':') < 0) return addr.hostAddress
+                }
+            }
+            null
+        } catch (e: Exception) { null }
+    }
 }
