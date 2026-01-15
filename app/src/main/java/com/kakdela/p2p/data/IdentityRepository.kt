@@ -149,6 +149,7 @@ class IdentityRepository(private val context: Context) {
                 prefs.edit().putString("my_phone_hash", phoneHash).apply()
 
                 val ip = getLocalIpAddress() ?: "0.0.0.0"
+                val now = System.currentTimeMillis()
                 val myPayload = UserPayload(
                     hash = myId,
                     phone_hash = phoneHash,
@@ -156,7 +157,7 @@ class IdentityRepository(private val context: Context) {
                     port = PORT,
                     publicKey = CryptoManager.getMyPublicKeyStr(),
                     phone = phone,
-                    lastSeen = System.currentTimeMillis().toString() // <--- приведение к String
+                    lastSeen = now
                 )
 
                 Log.d(TAG, "Announce payload: $myPayload")
@@ -190,7 +191,7 @@ class IdentityRepository(private val context: Context) {
                         port = it.port,
                         publicKey = it.publicKey,
                         phone = it.phone ?: "",
-                        lastSeen = it.lastSeen?.toString() ?: System.currentTimeMillis().toString() // <--- String
+                        lastSeen = it.lastSeen ?: System.currentTimeMillis()
                     )
                 })
                 Log.d(TAG, "Fetched ${users.size} nodes from server")
@@ -221,10 +222,28 @@ class IdentityRepository(private val context: Context) {
                 port = node.port,
                 publicKey = node.publicKey,
                 phone = node.phone ?: "",
-                lastSeen = node.lastSeen?.toString() ?: System.currentTimeMillis().toString() // <--- String
+                lastSeen = node.lastSeen ?: System.currentTimeMillis()
             )
         )
     }
+
+    private suspend fun findPeerOnServer(hash: String): UserPayload? {
+        val cached = nodeDao.getNodeByHash(hash)
+        if (cached != null && System.currentTimeMillis() - cached.lastSeen < CACHE_FRESHNESS_MS) {
+            return UserPayload(
+                hash = cached.userHash,
+                phone_hash = cached.phone_hash,
+                ip = cached.ip,
+                port = cached.port,
+                publicKey = cached.publicKey,
+                phone = cached.phone,
+                lastSeen = cached.lastSeen
+            )
+        }
+        return fetchAllNodesFromServer().find { it.hash == hash }
+    }
+
+    suspend fun getPeerPublicKey(hash: String) = withContext(Dispatchers.IO) { nodeDao.getNodeByHash(hash)?.publicKey }
 
     /* ======================= ROUTING & MESSAGING ======================= */
 
@@ -250,16 +269,6 @@ class IdentityRepository(private val context: Context) {
         }
         return delivered
     }
-
-    private suspend fun findPeerOnServer(hash: String): UserPayload? {
-        val cached = nodeDao.getNodeByHash(hash)
-        if (cached != null && System.currentTimeMillis() - (cached.lastSeen?.toLongOrNull() ?: 0L) < CACHE_FRESHNESS_MS) {
-            return UserPayload(cached.userHash, cached.phone_hash, cached.ip, cached.port, cached.publicKey, cached.phone, cached.lastSeen)
-        }
-        return fetchAllNodesFromServer().find { it.hash == hash }
-    }
-
-    suspend fun getPeerPublicKey(hash: String) = withContext(Dispatchers.IO) { nodeDao.getNodeByHash(hash)?.publicKey }
 
     /* ======================= UDP CORE ======================= */
 
@@ -299,7 +308,7 @@ class IdentityRepository(private val context: Context) {
                     return@launch
                 }
 
-                nodeDao.updateNetworkInfo(fromHash, fromIp, PORT, pubKey, System.currentTimeMillis().toString())
+                nodeDao.updateNetworkInfo(fromHash, fromIp, PORT, pubKey, System.currentTimeMillis())
                 swarmPeers[fromHash] = fromIp
                 CryptoManager.savePeerPublicKey(fromHash, pubKey)
 
@@ -322,7 +331,7 @@ class IdentityRepository(private val context: Context) {
             val sig = CryptoManager.sign(json.toString().toByteArray())
             json.put("signature", Base64.encodeToString(sig, Base64.NO_WRAP))
             val addr = InetAddress.getByName(ip)
-            DatagramSocket().use { it.soTimeout = 2000; it.send(DatagramPacket(json.toString().toByteArray(), json.toString().toByteArray().size, addr, PORT)) }
+            DatagramSocket().use { it.soTimeout = 2000; it.send(DatagramPacket(json.toString().toByteArray(), json.toByteArray().size, addr, PORT)) }
             true
         } catch (e: Exception) { Log.e(TAG, "UDP Send failed to $ip: ${e.message}"); false }
     }
