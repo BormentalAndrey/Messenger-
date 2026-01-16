@@ -24,7 +24,7 @@ class MessageRepository(
     private val job = SupervisorJob()
     private val repositoryScope = CoroutineScope(job + Dispatchers.IO)
     
-    // Лимит для хранения в SQLite. Файлы больше 1МБ лучше хранить только в файловой системе.
+    // Лимит для хранения в SQLite во избежание CursorWindow exceptions (1МБ)
     private val MAX_DB_BLOB_SIZE = 1024 * 1024 
 
     /* ============================================================
@@ -36,7 +36,7 @@ class MessageRepository(
             val myId = identityRepo.getMyId()
             val msgId = UUID.randomUUID().toString()
             
-            // Получаем данные узла для SMS-резерва
+            // Исправлено: getCachedNode — это suspend функция, вызываем внутри корутины
             val peer = identityRepo.getCachedNode(toHash)
             val receiverPhone = peer?.phone
 
@@ -58,8 +58,15 @@ class MessageRepository(
             dao.insert(entity)
 
             if (isScheduled) {
-                // Регистрация в WorkManager для отложенной отправки
-                scheduleMessageWork(context, msgId, toHash, text, scheduledTime!!, receiverPhone)
+                // Исправлено: передаем 5 аргументов согласно ScheduleMessage.kt
+                // Номер телефона воркер получит сам из БД для актуальности данных
+                scheduleMessageWork(
+                    context, 
+                    msgId, 
+                    toHash, 
+                    text, 
+                    scheduledTime!!
+                )
             } else {
                 performNetworkSend(toHash, msgId, text, receiverPhone)
             }
@@ -75,12 +82,13 @@ class MessageRepository(
             try {
                 val bytes = readBytes(uri) ?: return@launch
                 
-                // Проверка на безумный размер (UDP не потянет больше 60КБ без чанков)
-                // Но так как мы используем sendMessageSmart, мы полагаемся на его логику
                 val base64Data = Base64.encodeToString(bytes, Base64.NO_WRAP)
                 val msgId = UUID.randomUUID().toString()
                 val myId = identityRepo.getMyId()
+                
+                // Исправлено: извлекаем данные пира для сетевой отправки
                 val peer = identityRepo.getCachedNode(toHash)
+                val receiverPhone = peer?.phone
                 
                 // Протокол упаковки: FILEV1:длина_имени:имя:данные
                 val payload = "FILEV1:${fileName.length}:$fileName:$base64Data"
@@ -96,19 +104,19 @@ class MessageRepository(
                     status = "PENDING",
                     messageType = type,
                     fileName = fileName,
-                    // Храним в БД только если файл небольшой, чтобы не тормозить UI
+                    // Сохраняем только если размер позволяет прочитать это потом из БД без краша
                     fileBytes = if (bytes.size <= MAX_DB_BLOB_SIZE) bytes else null
                 )
 
                 dao.insert(entity)
 
                 if (bytes.size > MAX_DB_BLOB_SIZE) {
-                    Log.i("MessageRepo", "Large file detected: $fileName. Stored reference only.")
+                    Log.i("MessageRepo", "Файл $fileName слишком велик для БД, отправка только по сети")
                 }
 
-                performNetworkSend(toHash, msgId, payload, peer?.phone)
+                performNetworkSend(toHash, msgId, payload, receiverPhone)
             } catch (e: Exception) {
-                Log.e("MessageRepo", "File processing failed", e)
+                Log.e("MessageRepo", "Ошибка обработки файла", e)
             }
         }
     }
@@ -124,25 +132,25 @@ class MessageRepository(
         phone: String?
     ): Boolean = withContext(Dispatchers.IO) {
         try {
-            // 1. Шифрование E2EE
+            // 1. Получение публичного ключа для E2EE
             val pubKey = identityRepo.getPeerPublicKey(chatId)
             val encryptedPayload = if (!pubKey.isNullOrBlank()) {
                 CryptoManager.encryptMessage(payload, pubKey)
             } else {
-                Log.w("MessageRepo", "Insecure send: No public key for $chatId")
+                Log.w("MessageRepo", "Отправка без шифрования: нет ключа для $chatId")
                 payload
             }
 
-            // 2. Умная отправка (P2P -> SMS)
+            // 2. Умная отправка через IdentityRepository (UDP -> SMS fallback)
             val delivered = identityRepo.sendMessageSmart(chatId, phone, encryptedPayload)
             
-            // 3. Обновление статуса
+            // 3. Обновление статуса в БД
             val finalStatus = if (delivered) "SENT" else "FAILED"
             dao.updateStatus(messageId, finalStatus)
             
             delivered
         } catch (e: Exception) {
-            Log.e("MessageRepo", "Network execution error", e)
+            Log.e("MessageRepo", "Ошибка сетевой отправки $messageId", e)
             dao.updateStatus(messageId, "FAILED")
             false
         }
@@ -154,11 +162,11 @@ class MessageRepository(
 
     fun handleIncoming(type: String, data: String, fromHash: String) {
         repositoryScope.launch {
-            // 1. Дешифровка
+            // 1. Дешифровка входящего сообщения
             val decrypted = try {
                 CryptoManager.decryptMessage(data)
             } catch (e: Exception) {
-                Log.e("MessageRepo", "Decryption failed from $fromHash", e)
+                Log.e("MessageRepo", "Ошибка расшифровки от $fromHash", e)
                 "[Зашифрованное сообщение]"
             }
 
@@ -167,10 +175,10 @@ class MessageRepository(
             var incomingFileName: String? = null
             var incomingFileBytes: ByteArray? = null
 
-            // 2. Проверка протокола FILEV1
+            // 2. Обработка протокола файлов
             if (decrypted.startsWith("FILEV1:")) {
                 try {
-                    val content = decrypted.substring(7) // убираем FILEV1:
+                    val content = decrypted.substring(7)
                     val firstColon = content.indexOf(':')
                     
                     if (firstColon != -1) {
@@ -181,17 +189,19 @@ class MessageRepository(
                         incomingFileName = content.substring(nameStart, nameEnd)
                         val base64Part = content.substring(nameEnd + 1)
                         
-                        incomingFileBytes = Base64.decode(base64Part, Base64.NO_WRAP)
+                        val bytes = Base64.decode(base64Part, Base64.NO_WRAP)
+                        incomingFileBytes = if (bytes.size <= MAX_DB_BLOB_SIZE) bytes else null
+                        
                         displayText = "[Файл: $incomingFileName]"
                         msgType = "FILE"
                     }
                 } catch (e: Exception) {
-                    Log.e("MessageRepo", "Protocol parse error", e)
+                    Log.e("MessageRepo", "Ошибка парсинга файла", e)
                     displayText = "[Поврежденный файл]"
                 }
             }
 
-            // 3. Сохранение в локальную БД
+            // 3. Сохранение в локальную базу данных
             dao.insert(
                 MessageEntity(
                     messageId = UUID.randomUUID().toString(),
@@ -204,9 +214,7 @@ class MessageRepository(
                     status = "DELIVERED",
                     messageType = msgType,
                     fileName = incomingFileName,
-                    // Ограничиваем запись в BLOB, чтобы не раздувать БД
-                    fileBytes = if (incomingFileBytes != null && incomingFileBytes.size <= MAX_DB_BLOB_SIZE) 
-                        incomingFileBytes else null
+                    fileBytes = incomingFileBytes
                 )
             )
         }
@@ -216,19 +224,13 @@ class MessageRepository(
        УТИЛИТЫ И ЖИЗНЕННЫЙ ЦИКЛ
        ============================================================ */
 
-    /**
-     * Читает байты из Uri. Используется для подготовки файлов к отправке.
-     */
     private fun readBytes(uri: Uri): ByteArray? = try {
         context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
     } catch (e: Exception) {
-        Log.e("MessageRepo", "IO Error reading URI: $uri", e)
+        Log.e("MessageRepo", "Ошибка чтения Uri: $uri", e)
         null
     }
 
-    /**
-     * Очистка ресурсов при уничтожении ViewModel/Activity
-     */
     fun clear() {
         job.cancel()
     }
