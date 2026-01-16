@@ -22,10 +22,6 @@ import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
-/**
- * IdentityRepository — центральный узел P2P логики.
- * Управляет идентификацией, обнаружением в Wi-Fi (NSD), маршрутизацией и синхронизацией.
- */
 class IdentityRepository(private val context: Context) {
 
     private val TAG = "IdentityRepository"
@@ -34,7 +30,6 @@ class IdentityRepository(private val context: Context) {
     private val db = ChatDatabase.getDatabase(context)
     private val nodeDao = db.nodeDao()
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
-
     private val messageRepository by lazy { MessageRepository(context, db.messageDao(), this) }
 
     private val listeners = CopyOnWriteArrayList<(String, String, String, String) -> Unit>()
@@ -124,7 +119,6 @@ class IdentityRepository(private val context: Context) {
                 delivered = sendUdp(ip, "CHAT_MSG", message)
             }
 
-            // ✅ Исправлено: if как блок, не выражение
             if (!delivered) {
                 if (!phone.isNullOrBlank()) {
                     sendAsSms(phone, message)
@@ -133,7 +127,7 @@ class IdentityRepository(private val context: Context) {
                 }
             }
 
-            delivered
+            return@withContext delivered
         }
 
     /* ======================= СЕРВЕРНАЯ СИНХРОНИЗАЦИЯ ======================= */
