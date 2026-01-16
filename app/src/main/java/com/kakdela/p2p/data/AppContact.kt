@@ -1,8 +1,15 @@
 package com.kakdela.p2p.data
 
 /**
- * Единая модель контакта.
- * isRegistered добавлен в конструктор для совместимости с ContactP2PManager.
+ * Единая модель контакта приложения.
+ *
+ * @param name отображаемое имя контакта
+ * @param phoneNumber номер телефона (E.164 или локальный)
+ * @param userHash хэш пользователя в P2P-сети (null, если не зарегистрирован)
+ * @param publicKey публичный ключ для шифрования
+ * @param lastKnownIp последний известный IP (LAN / WAN)
+ * @param isOnline признак онлайн-статуса
+ * @param isRegistered зарегистрирован ли пользователь в P2P-сети
  */
 data class AppContact(
     val name: String,
@@ -11,7 +18,13 @@ data class AppContact(
     val publicKey: String? = null,
     val lastKnownIp: String? = null,
     val isOnline: Boolean = false,
-    val isRegistered: Boolean = false 
+    val isRegistered: Boolean = false
 ) {
+
+    /**
+     * Уникальный идентификатор контакта:
+     * - userHash, если контакт зарегистрирован
+     * - иначе phoneNumber
+     */
     fun getIdentifier(): String = userHash ?: phoneNumber
 }
