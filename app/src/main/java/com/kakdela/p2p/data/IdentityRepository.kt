@@ -65,9 +65,7 @@ class IdentityRepository(private val context: Context) {
                 launch { registerInWifi() }
                 launch { discoverInWifi() }
 
-                if (myId.isNotEmpty()) {
-                    performServerSync(myId)
-                }
+                if (myId.isNotEmpty()) performServerSync(myId)
                 startSyncLoop()
             } catch (e: Exception) {
                 Log.e(TAG, "Critical startNetwork failure", e)
@@ -117,9 +115,11 @@ class IdentityRepository(private val context: Context) {
             val ip = wifiPeers[targetHash] ?: swarmPeers[targetHash] ?: getCachedNode(targetHash)?.ip
             var delivered = false
 
-            // P2P
+            // P2P UDP
             if (!ip.isNullOrBlank() && ip != "0.0.0.0") {
                 delivered = sendUdp(ip, "CHAT_MSG", message)
+            } else {
+                delivered = false
             }
 
             // SMS fallback
