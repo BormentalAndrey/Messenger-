@@ -24,7 +24,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * IdentityRepository — центральный узел P2P логики.
- * Управляет идентификацией, Wi-Fi обнаружением (NSD), UDP/SMS маршрутизацией и серверной синхронизацией.
+ * Управляет идентификацией, обнаружением в Wi-Fi (NSD), маршрутизацией и синхронизацией.
  */
 class IdentityRepository(private val context: Context) {
 
@@ -53,7 +53,7 @@ class IdentityRepository(private val context: Context) {
     private var udpSocket: DatagramSocket? = null
     private var networkScope: CoroutineScope? = null
 
-    /* ======================= NETWORK LIFECYCLE ======================= */
+    /* ======================= ЖИЗНЕННЫЙ ЦИКЛ СЕТИ ======================= */
 
     fun startNetwork() {
         if (isRunning) return
@@ -93,7 +93,7 @@ class IdentityRepository(private val context: Context) {
         Log.i(TAG, "Network services stopped")
     }
 
-    /* ======================= PROFILE & IDENTITY ======================= */
+    /* ======================= ПРОФИЛЬ И ИДЕНТИЧНОСТЬ ======================= */
 
     fun getMyId(): String {
         var id = prefs.getString("my_security_hash", "") ?: ""
@@ -113,7 +113,7 @@ class IdentityRepository(private val context: Context) {
     suspend fun getPeerPublicKey(hash: String): String? =
         withContext(Dispatchers.IO) { nodeDao.getNodeByHash(hash)?.publicKey }
 
-    /* ======================= SMART MESSAGE SEND ======================= */
+    /* ======================= УМНАЯ ОТПРАВКА ======================= */
 
     suspend fun sendMessageSmart(targetHash: String, phone: String?, message: String): Boolean =
         withContext(Dispatchers.IO) {
@@ -133,7 +133,7 @@ class IdentityRepository(private val context: Context) {
             delivered
         }
 
-    /* ======================= SERVER SYNC ======================= */
+    /* ======================= СЕРВЕРНАЯ СИНХРОНИЗАЦИЯ ======================= */
 
     private fun startSyncLoop() = networkScope?.launch {
         while (isRunning) {
@@ -192,7 +192,7 @@ class IdentityRepository(private val context: Context) {
             }
             users
         } catch (e: Exception) {
-            Log.w(TAG, "API error, returning local DB fallback")
+            Log.w(TAG, "API error, fallback to local DB")
             nodeDao.getAllNodes().map { entity ->
                 UserPayload(
                     hash = entity.userHash,
@@ -229,7 +229,7 @@ class IdentityRepository(private val context: Context) {
         )
     )
 
-    /* ======================= UDP TRANSPORT ======================= */
+    /* ======================= UDP ТРАНСПОРТ ======================= */
 
     private fun startUdpListener() = networkScope?.launch {
         try {
@@ -360,7 +360,7 @@ class IdentityRepository(private val context: Context) {
         catch (e: Exception) { Log.e(TAG, "NSD Discovery error", e) }
     }
 
-    /* ======================= SMS FALLBACK & UTIL ======================= */
+    /* ======================= УТИЛИТЫ ======================= */
 
     private fun sendAsSms(phone: String, message: String) {
         try {
