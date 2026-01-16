@@ -6,7 +6,8 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Утилитарная функция для регистрации отложенной отправки сообщения в WorkManager.
- * Гарантирует доставку даже после перезагрузки устройства или закрытия приложения.
+ * Гарантирует запуск задачи даже после перезагрузки устройства (Persistence).
+ * * Исправлено: использование актуальной константы MIN_BACKOFF_MILLIS из WorkRequest.
  */
 fun scheduleMessageWork(
     context: Context,
@@ -15,14 +16,15 @@ fun scheduleMessageWork(
     text: String,
     scheduledTime: Long
 ) {
-    // 1. Вычисляем задержку
-    val delay = scheduledTime - System.currentTimeMillis()
+    // 1. Вычисляем задержку перед выполнением
+    val currentTime = System.currentTimeMillis()
+    val delay = scheduledTime - currentTime
     
-    // Если время уже прошло, отправка должна была произойти немедленно (обработка в Repository)
+    // Если время уже наступило или в прошлом, воркер не нужен (отправка идет через Repository напрямую)
     if (delay <= 0) return
 
-    // 2. Формируем входные данные для воркера
-    // Используем строковые ключи, которые гарантированно распознает ScheduledMessageWorker
+    // 2. Формируем входные данные (Input Data)
+    // Ключи строго соответствуют тем, что считывает ScheduledMessageWorker
     val data = Data.Builder()
         .putString("messageId", messageId)
         .putString("chatId", chatId)
@@ -31,38 +33,39 @@ fun scheduleMessageWork(
         .build()
 
     // 3. Устанавливаем ограничения (Constraints)
-    // Сообщение должно отправляться только при наличии интернет-соединения
+    // Не пытаемся отправить, если нет доступа к сети
     val constraints = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
         .build()
 
-    // 4. Создаем запрос на выполнение задачи
+    // 4. Создаем запрос на выполнение задачи (OneTimeWorkRequest)
     val request = OneTimeWorkRequestBuilder<ScheduledMessageWorker>()
         .setInitialDelay(delay, TimeUnit.MILLISECONDS)
         .setInputData(data)
         .setConstraints(constraints)
-        // Добавляем экспоненциальную политику отката при неудаче (если сеть пропала в момент отправки)
+        // Экспоненциальная стратегия повтора при сбоях (например, если пир внезапно ушел в оффлайн)
         .setBackoffCriteria(
             BackoffPolicy.EXPONENTIAL,
-            OneTimeWorkRequest.MIN_BACKOFF_MILLIS,
+            WorkRequest.MIN_BACKOFF_MILLIS, // Исправленная ссылка на константу
             TimeUnit.MILLISECONDS
         )
-        .addTag("scheduled_msg_tag") // Общий тег для мониторинга
-        .addTag(messageId)           // Уникальный тег для возможности отмены конкретного сообщения
+        .addTag("scheduled_msg_tag") // Общий тег для массовых операций
+        .addTag(messageId)           // Индивидуальный тег для точечного управления
         .build()
 
-    // 5. Постановка в очередь
-    // Используем UniqueWork с политикой REPLACE, чтобы избежать дубликатов при редактировании времени
+    // 5. Постановка в очередь уникальной задачи
+    // ExistingWorkPolicy.REPLACE позволяет обновить время отправки, если пользователь его изменил
     WorkManager.getInstance(context)
         .enqueueUniqueWork(
-            messageId, // Уникальное имя задачи — это ID сообщения
+            messageId, // Уникальный идентификатор задачи привязан к ID сообщения
             ExistingWorkPolicy.REPLACE,
             request
         )
 }
 
 /**
- * Функция для отмены запланированного сообщения (если пользователь удалил его до отправки)
+ * Функция для отмены запланированного сообщения.
+ * Вызывается, если пользователь удалил сообщение или отредактировал его, превратив в немедленное.
  */
 fun cancelScheduledMessage(context: Context, messageId: String) {
     WorkManager.getInstance(context).cancelUniqueWork(messageId)
