@@ -117,14 +117,13 @@ class IdentityRepository(private val context: Context) {
 
     suspend fun sendMessageSmart(targetHash: String, phone: String?, message: String): Boolean =
         withContext(Dispatchers.IO) {
-            val ip = wifiPeers[targetHash] ?: swarmPeers[targetHash] ?: getCachedNode(targetHash)?.ip
+            val cachedIp = getCachedNode(targetHash)?.ip
+            val ip = wifiPeers[targetHash] ?: swarmPeers[targetHash] ?: cachedIp
             var delivered = false
 
             if (!ip.isNullOrBlank() && ip != "0.0.0.0") {
                 delivered = sendUdp(ip, "CHAT_MSG", message)
-            }
-
-            if (!delivered && !phone.isNullOrBlank()) {
+            } else if (!phone.isNullOrBlank()) {  // ✔ Исправлено: else если P2P не доставлено
                 sendAsSms(phone, message)
                 delivered = true
                 Log.i(TAG, "P2P failed, message sent via SMS to $phone")
