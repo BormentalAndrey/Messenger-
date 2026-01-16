@@ -33,8 +33,8 @@ class IdentityRepository(private val context: Context) {
     private val messageRepository by lazy { MessageRepository(context, db.messageDao(), this) }
 
     private val listeners = CopyOnWriteArrayList<(String, String, String, String) -> Unit>()
-    val wifiPeers = ConcurrentHashMap<String, String>()   // Hash -> Local IP
-    val swarmPeers = ConcurrentHashMap<String, String>()  // Hash -> Last known IP
+    val wifiPeers = ConcurrentHashMap<String, String>()
+    val swarmPeers = ConcurrentHashMap<String, String>()
 
     private companion object {
         const val SERVICE_TYPE = "_kakdela_p2p._udp."
@@ -119,6 +119,7 @@ class IdentityRepository(private val context: Context) {
                 delivered = sendUdp(ip, "CHAT_MSG", message)
             }
 
+            // ✅ if оформлен как блок с явным присвоением
             if (!delivered) {
                 if (!phone.isNullOrBlank()) {
                     sendAsSms(phone, message)
@@ -127,7 +128,7 @@ class IdentityRepository(private val context: Context) {
                 }
             }
 
-            return@withContext delivered
+            delivered
         }
 
     /* ======================= СЕРВЕРНАЯ СИНХРОНИЗАЦИЯ ======================= */
