@@ -336,9 +336,7 @@ class IdentityRepository(private val context: Context) {
         }
         override fun onServiceLost(s: NsdServiceInfo) {
             val hostAddress = s.host?.hostAddress
-            if (hostAddress != null) {
-                wifiPeers.values.removeAll { it == hostAddress }
-            }
+            if (hostAddress != null) wifiPeers.values.removeAll { it == hostAddress }
         }
         override fun onDiscoveryStarted(t: String) {}
         override fun onDiscoveryStopped(t: String) {}
