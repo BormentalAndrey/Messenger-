@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.Base64
 import android.util.Log
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
@@ -26,8 +27,6 @@ import kotlin.coroutines.resumeWithException
 object WebViewApiClient {
 
     private const val TAG = "WebViewApiClient"
-
-    // Оставляем только чистый путь к файлу
     private const val API_URL = "http://kakdela.infinityfree.me/api.php"
 
     private const val PAGE_LOAD_TIMEOUT_MS = 30_000L
@@ -51,13 +50,16 @@ object WebViewApiClient {
                         domStorageEnabled = true
                         databaseEnabled = true
                         cacheMode = WebSettings.LOAD_DEFAULT
+                        // Устанавливаем современный UserAgent, чтобы хостинг не считал нас ботом
                         userAgentString = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
                     }
 
                     webViewClient = object : WebViewClient() {
                         override fun onPageFinished(view: WebView?, url: String?) {
                             val cookies = CookieManager.getInstance().getCookie(url)
-                            // Проверка куки __test для обхода защиты InfinityFree
+                            Log.d(TAG, "Page loaded: $url, Cookies present: ${cookies != null}")
+                            
+                            // InfinityFree требует прохождения проверки JS и получения куки __test
                             if (url != null && url.contains("kakdela")) {
                                 if (cookies != null && cookies.contains("__test")) {
                                     isReady.set(true)
@@ -68,13 +70,10 @@ object WebViewApiClient {
                     }
                 }
 
-                val cookieManager = CookieManager.getInstance()
-                cookieManager.setAcceptCookie(true)
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                    cookieManager.setAcceptThirdPartyCookies(webView!!, true)
-                }
+                CookieManager.getInstance().setAcceptCookie(true)
+                CookieManager.getInstance().setAcceptThirdPartyCookies(webView!!, true)
                 
-                // Загружаем главную страницу API для получения куки защиты
+                // Загружаем скрипт, чтобы "прогреть" куки защиты
                 webView?.loadUrl(API_URL)
 
             } catch (e: Exception) {
@@ -83,18 +82,12 @@ object WebViewApiClient {
         }
     }
 
-    /**
-     * Соответствует action=announce в api.php
-     */
     suspend fun announceSelf(payload: UserPayload): ServerResponse {
         val bodyJson = gson.toJson(payload)
         val url = "$API_URL?action=announce" 
         return executeRequest(url, "POST", bodyJson)
     }
 
-    /**
-     * Соответствует action=get_nodes в api.php
-     */
     suspend fun getAllNodes(): ServerResponse {
         val url = "$API_URL?action=get_nodes"
         return executeRequest(url, "GET", null)
@@ -108,8 +101,9 @@ object WebViewApiClient {
                     performJsFetch(url, method, bodyJson)
                 }
 
+                // Если сервер вернул HTML вместо JSON (например, страницу ошибки хостинга)
                 if (rawResponse.trim().startsWith("<")) {
-                    throw Exception("HTML received (possibly protection page)")
+                    throw Exception("HTML received instead of JSON. Possible session timeout.")
                 }
 
                 return@withLock gson.fromJson(rawResponse, ServerResponse::class.java)
@@ -117,8 +111,9 @@ object WebViewApiClient {
             } catch (e: Exception) {
                 Log.e(TAG, "Attempt ${attempt + 1} failed: ${e.message}")
                 isReady.set(false)
+                // Перезагружаем страницу для обновления куки __test
                 withContext(Dispatchers.Main) { webView?.loadUrl(API_URL) }
-                delay(2000)
+                delay(3000)
             }
         }
         return@withLock ServerResponse(success = false, error = "Connection failed after $MAX_RETRIES retries")
@@ -147,7 +142,7 @@ object WebViewApiClient {
                     if (cont.isActive) cont.resumeWithException(Exception(error))
                 }
 
-                fun cleanup() {
+                private fun cleanup() {
                     Handler(Looper.getMainLooper()).post {
                         webView?.removeJavascriptInterface(bridgeName)
                     }
@@ -156,26 +151,39 @@ object WebViewApiClient {
 
             webView?.addJavascriptInterface(bridge, bridgeName)
 
-            // Важно: экранируем JSON для передачи в JS
-            val jsData = bodyJson ?: "null"
+            // Используем Base64 для безопасной передачи JSON в JavaScript
+            val base64Data = bodyJson?.let { 
+                Base64.encodeToString(it.toByteArray(), Base64.NO_WRAP) 
+            } ?: ""
+
+            
 
             val js = """
                 (function() {
                     try {
-                        const data = $jsData;
+                        let bodyStr = null;
+                        const b64 = '$base64Data';
+                        if (b64 !== '') {
+                            // Декодируем Base64 обратно в строку корректно (поддержка UTF-8)
+                            bodyStr = decodeURIComponent(escape(window.atob(b64)));
+                        }
+
                         fetch('$url', {
                             method: '$method',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: { 
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json'
+                            },
                             credentials: 'include',
-                            body: data ? JSON.stringify(data) : null
+                            body: bodyStr
                         })
                         .then(r => {
-                            if(!r.ok) throw new Error('HTTP ' + r.status);
+                            if(!r.ok) throw new Error('HTTP Status ' + r.status);
                             return r.text();
                         })
                         .then(t => { window.$bridgeName.onSuccess(t); })
                         .catch(e => { window.$bridgeName.onError(e.toString()); });
-                    } catch(e) { window.$bridgeName.onError(e.toString()); }
+                    } catch(e) { window.$bridgeName.onError('JS Error: ' + e.toString()); }
                 })();
             """.trimIndent()
 
