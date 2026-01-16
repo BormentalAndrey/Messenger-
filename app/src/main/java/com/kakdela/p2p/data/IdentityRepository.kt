@@ -85,6 +85,9 @@ class IdentityRepository(private val context: Context) {
         try { nsdManager.unregisterService(registrationListener) } catch (_: Exception) {}
         try { nsdManager.stopServiceDiscovery(discoveryListener) } catch (_: Exception) {}
 
+        wifiPeers.clear()
+        swarmPeers.clear()
+
         Log.i(TAG, "Network services stopped")
     }
 
@@ -167,6 +170,8 @@ class IdentityRepository(private val context: Context) {
             if (response.success) {
                 saveNodeToDb(payload)
                 fetchAllNodesFromServer()
+            } else {
+                Log.w(TAG, "Server announce failed (success=false)")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Server sync failed", e)
@@ -272,12 +277,19 @@ class IdentityRepository(private val context: Context) {
             }
 
             CryptoManager.savePeerPublicKey(fromHash, pubKey)
-            nodeDao.updateNetworkInfo(fromHash, fromIp, PORT, pubKey, System.currentTimeMillis())
+
+            // Предполагаем, что updateNetworkInfo — suspend-функция Room DAO
+            withContext(Dispatchers.IO) {
+                nodeDao.updateNetworkInfo(fromHash, fromIp, PORT, pubKey, System.currentTimeMillis())
+            }
+
             swarmPeers[fromHash] = fromIp
 
             if (type.startsWith("CHAT")) messageRepository.handleIncoming(type, data, fromHash)
             listeners.forEach { it(type, data, fromIp, fromHash) }
-        } catch (e: Exception) { Log.e(TAG, "Malformed packet: ${e.message}") }
+        } catch (e: Exception) {
+            Log.e(TAG, "Malformed packet: ${e.message}")
+        }
     }
 
     suspend fun sendUdp(ip: String, type: String, data: String): Boolean = withContext(Dispatchers.IO) {
@@ -310,32 +322,57 @@ class IdentityRepository(private val context: Context) {
     /* ======================= WI-FI NSD ======================= */
 
     private val registrationListener = object : NsdManager.RegistrationListener {
-        override fun onServiceRegistered(s: NsdServiceInfo) { Log.i(TAG, "NSD Service Registered") }
-        override fun onRegistrationFailed(s: NsdServiceInfo, e: Int) { Log.e(TAG, "NSD Reg failed: $e") }
-        override fun onServiceUnregistered(s: NsdServiceInfo) {}
-        override fun onUnregistrationFailed(s: NsdServiceInfo, e: Int) {}
+        override fun onServiceRegistered(s: NsdServiceInfo) {
+            Log.i(TAG, "NSD Service Registered: ${s.serviceName}")
+        }
+        override fun onRegistrationFailed(s: NsdServiceInfo, e: Int) {
+            Log.e(TAG, "NSD Registration failed: $e")
+        }
+        override fun onServiceUnregistered(s: NsdServiceInfo) {
+            Log.i(TAG, "NSD Service Unregistered: ${s.serviceName}")
+        }
+        override fun onUnregistrationFailed(s: NsdServiceInfo, e: Int) {
+            Log.e(TAG, "NSD Unregistration failed: $e")
+        }
     }
 
     private val discoveryListener = object : NsdManager.DiscoveryListener {
         override fun onServiceFound(s: NsdServiceInfo) {
             if (s.serviceType != SERVICE_TYPE) return
+            Log.i(TAG, "NSD Service found: ${s.serviceName}")
             nsdManager.resolveService(s, object : NsdManager.ResolveListener {
                 override fun onServiceResolved(r: NsdServiceInfo) {
                     val host = r.host?.hostAddress ?: return
                     val peerHash = r.serviceName.split("-").getOrNull(1) ?: return
-                    if (peerHash != getMyId()) wifiPeers[peerHash] = host
+                    if (peerHash != getMyId()) {
+                        wifiPeers[peerHash] = host
+                        Log.i(TAG, "Resolved peer $peerHash at $host")
+                    }
                 }
-                override fun onResolveFailed(s: NsdServiceInfo, e: Int) {}
+                override fun onResolveFailed(s: NsdServiceInfo, e: Int) {
+                    Log.w(TAG, "NSD Resolve failed for ${s.serviceName}: $e")
+                }
             })
         }
         override fun onServiceLost(s: NsdServiceInfo) {
             val hostAddress = s.host?.hostAddress
-            if (hostAddress != null) wifiPeers.values.removeAll { it == hostAddress }
+            if (hostAddress != null) {
+                wifiPeers.values.removeAll { it == hostAddress }
+                Log.i(TAG, "NSD Service lost: ${s.serviceName} ($hostAddress)")
+            }
         }
-        override fun onDiscoveryStarted(t: String) {}
-        override fun onDiscoveryStopped(t: String) {}
-        override fun onStartDiscoveryFailed(t: String, e: Int) {}
-        override fun onStopDiscoveryFailed(t: String, e: Int) {}
+        override fun onDiscoveryStarted(t: String) {
+            Log.i(TAG, "NSD Discovery started")
+        }
+        override fun onDiscoveryStopped(t: String) {
+            Log.i(TAG, "NSD Discovery stopped")
+        }
+        override fun onStartDiscoveryFailed(t: String, e: Int) {
+            Log.e(TAG, "NSD Start discovery failed: $e")
+        }
+        override fun onStopDiscoveryFailed(t: String, e: Int) {
+            Log.e(TAG, "NSD Stop discovery failed: $e")
+        }
     }
 
     private fun registerInWifi() {
@@ -346,13 +383,21 @@ class IdentityRepository(private val context: Context) {
             serviceType = SERVICE_TYPE
             port = PORT
         }
-        try { nsdManager.registerService(info, NsdManager.PROTOCOL_DNS_SD, registrationListener) }
-        catch (e: Exception) { Log.e(TAG, "NSD Registration error", e) }
+        try {
+            nsdManager.registerService(info, NsdManager.PROTOCOL_DNS_SD, registrationListener)
+            Log.i(TAG, "NSD Registration attempted for ${info.serviceName}")
+        } catch (e: Exception) {
+            Log.e(TAG, "NSD Registration error", e)
+        }
     }
 
     private fun discoverInWifi() {
-        try { nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener) }
-        catch (e: Exception) { Log.e(TAG, "NSD Discovery error", e) }
+        try {
+            nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+            Log.i(TAG, "NSD Discovery started")
+        } catch (e: Exception) {
+            Log.e(TAG, "NSD Discovery error", e)
+        }
     }
 
     /* ======================= УТИЛИТЫ ======================= */
@@ -363,7 +408,9 @@ class IdentityRepository(private val context: Context) {
                 context.getSystemService(SmsManager::class.java)
             else @Suppress("DEPRECATION") SmsManager.getDefault()
             smsManager?.sendTextMessage(phone, null, "[P2P] $message", null, null)
-        } catch (e: Exception) { Log.e(TAG, "SMS failed", e) }
+        } catch (e: Exception) {
+            Log.e(TAG, "SMS failed", e)
+        }
     }
 
     fun generatePhoneDiscoveryHash(phone: String): String {
@@ -384,7 +431,8 @@ class IdentityRepository(private val context: Context) {
         try {
             java.net.NetworkInterface.getNetworkInterfaces().asSequence()
                 .flatMap { it.inetAddresses.asSequence() }
-                .firstOrNull { !it.isLoopbackAddress && it.hostAddress.indexOf(':') < 0 }
+                .filter { !it.isLoopbackAddress && it is java.net.Inet4Address }
+                .firstOrNull()
                 ?.hostAddress
         } catch (_: Exception) { null }
 
