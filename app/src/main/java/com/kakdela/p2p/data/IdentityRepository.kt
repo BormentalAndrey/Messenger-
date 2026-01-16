@@ -115,20 +115,19 @@ class IdentityRepository(private val context: Context) {
             val ip = wifiPeers[targetHash] ?: swarmPeers[targetHash] ?: getCachedNode(targetHash)?.ip
             var delivered = false
 
-            // 1. Попытка через UDP (P2P)
             if (!ip.isNullOrBlank() && ip != "0.0.0.0") {
                 delivered = sendUdp(ip, "CHAT_MSG", message)
             }
 
-            // 2. Попытка через SMS, если P2P не сработал
-            if (!delivered && !phone.isNullOrBlank()) {
-                sendAsSms(phone, message)
-                delivered = true
-                Log.i(TAG, "P2P failed, message sent via SMS to $phone")
+            if (!delivered) {
+                if (!phone.isNullOrBlank()) {
+                    sendAsSms(phone, message)
+                    delivered = true
+                    Log.i(TAG, "P2P failed, message sent via SMS to $phone")
+                }
             }
 
-            // Явный возврат результата, чтобы компилятор не путался
-            return@withContext delivered
+            delivered // явный возврат, чтобы компилятор не ругался
         }
 
     /* ======================= СЕРВЕРНАЯ СИНХРОНИЗАЦИЯ ======================= */
