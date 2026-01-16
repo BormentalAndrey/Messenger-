@@ -17,22 +17,31 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Unzip into dedicated folder (avoid conflicts)
+      - name: Unzip and flatten into bypass folder
         run: |
-          # Создаём папку bypass, чтобы не конфликтовать с существующими android/, ios/ и т.д.
+          # Создаём папку bypass
           mkdir -p bypass
           
-          # Распаковываем архив прямо в bypass/
+          # Распаковываем архив в bypass/
           unzip -o infinityfree-dio-bypass-flutter-main.zip -d bypass
           
-          # Сплющиваем структуру: перемещаем содержимое внутренней папки в bypass/
-          mv bypass/infinityfree-dio-bypass-flutter-main/* bypass/
-          rmdir bypass/infinityfree-dio-bypass-flutter-main
+          # Переходим в bypass для удобства
+          cd bypass
           
-          # Удаляем оригинальный ZIP
+          # Включаем захват скрытых файлов (.*) в *
+          shopt -s dotglob
+          
+          # Перемещаем ВСЁ содержимое внутренней папки в bypass/
+          mv infinityfree-dio-bypass-flutter-main/* . || true
+          
+          # Удаляем теперь пустую внутреннюю папку (рекурсивно на всякий случай)
+          rm -rf infinityfree-dio-bypass-flutter-main
+          
+          # Возвращаемся в корень
+          cd ..
+          
+          # Удаляем оригинальный ZIP-файл
           rm -f infinityfree-dio-bypass-flutter-main.zip
 
       - name: Commit and push extracted files
@@ -41,5 +50,5 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
           git add bypass/
-          git commit -m "Auto: Unzipped infinityfree-dio-bypass-flutter into bypass/ folder (flattened)" || echo "No changes to commit"
+          git commit -m "Auto: Unzipped and flattened infinityfree-dio-bypass-flutter into bypass/ folder" || echo "No changes to commit"
           git push origin HEAD:main
