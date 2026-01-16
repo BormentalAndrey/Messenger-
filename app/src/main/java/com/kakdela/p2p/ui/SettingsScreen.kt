@@ -14,14 +14,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CloudSync
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.ExitToApp
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+// ВАЖНЫЕ ИМПОРТЫ ДЛЯ РАБОТЫ ДЕЛЕГАТОВ 'by'
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,7 +54,7 @@ fun SettingsScreen(
 
     // Данные текущего пользователя
     val myP2PId = remember { identityRepository.getMyId() }
-    val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
+    val prefs = remember { context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE) }
     val myPhone: String = remember { prefs.getString("my_phone", "Не указан") ?: "Не указан" }
 
     // Состояние UI
@@ -68,7 +66,7 @@ fun SettingsScreen(
     var isAdding by remember { mutableStateOf(false) }
 
     // Функция обновления списка узлов из локальной БД
-    val loadLocalNodes = {
+    val loadLocalNodes: () -> Unit = {
         scope.launch(Dispatchers.IO) {
             val list = db.nodeDao().getAllNodes()
             withContext(Dispatchers.Main) {
@@ -177,7 +175,7 @@ fun SettingsScreen(
                             strokeWidth = 2.dp
                         )
                     } else {
-                        Text("+", color = Color.Black, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black)
                     }
                 }
             }
@@ -290,7 +288,7 @@ fun SettingsScreen(
                             modifier = Modifier.width(50.dp)
                         ) {
                             if (isAdding) CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.Black)
-                            else Text("+", color = Color.Black, fontSize = 20.sp)
+                            else Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black)
                         }
                     }
                 }
@@ -339,7 +337,7 @@ fun SettingsScreen(
                                 .background(if (isOnline) Color.Green else Color.Gray)
                         )
                     }
-                    Divider(color = Color(0xFF1A1A1A))
+                    HorizontalDivider(color = Color(0xFF1A1A1A))
                 }
             }
 
