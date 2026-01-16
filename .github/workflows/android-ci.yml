@@ -1,54 +1,48 @@
-name: Unzip InfinityFree Bypass Archive
+name: Build Kakdela APK
 
 on:
-  workflow_dispatch:  # Ручной запуск
   push:
-    branches:
-      - main
-    paths:
-      - 'infinityfree-dio-bypass-flutter-main.zip'
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
-  unzip-archive:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
-      - name: Checkout repository
+      # 1. Клонируем репозиторий
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Unzip and flatten into bypass folder
-        run: |
-          # Создаём папку bypass
-          mkdir -p bypass
-          
-          # Распаковываем архив в bypass/
-          unzip -o infinityfree-dio-bypass-flutter-main.zip -d bypass
-          
-          # Переходим в bypass для удобства
-          cd bypass
-          
-          # Включаем захват скрытых файлов (.*) в *
-          shopt -s dotglob
-          
-          # Перемещаем ВСЁ содержимое внутренней папки в bypass/
-          mv infinityfree-dio-bypass-flutter-main/* . || true
-          
-          # Удаляем теперь пустую внутреннюю папку (рекурсивно на всякий случай)
-          rm -rf infinityfree-dio-bypass-flutter-main
-          
-          # Возвращаемся в корень
-          cd ..
-          
-          # Удаляем оригинальный ZIP-файл
-          rm -f infinityfree-dio-bypass-flutter-main.zip
+      # 2. Устанавливаем JDK 17
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
 
-      - name: Commit and push extracted files
+      # 3. Настройка Gradle
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # 4. Даём права на выполнение Gradle wrapper
+      - name: Grant permissions
+        run: chmod +x ./gradlew
+
+      # 5. Сборка только Release APK
+      - name: Build Release APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-          git add bypass/
-          git commit -m "Auto: Unzipped and flattened infinityfree-dio-bypass-flutter into bypass/ folder" || echo "No changes to commit"
-          git push origin HEAD:main
+          ./gradlew clean
+          ./gradlew assembleRelease --stacktrace
+
+      # 6. Загружаем только Release APK как артефакт
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kakdela-Release-APK
+          path: app/build/outputs/apk/release/*.apk
