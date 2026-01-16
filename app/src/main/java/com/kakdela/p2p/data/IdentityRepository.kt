@@ -193,15 +193,15 @@ class IdentityRepository(private val context: Context) {
             users
         } catch (e: Exception) {
             Log.w(TAG, "API error, returning local DB fallback")
-            nodeDao.getAllNodes().map {
+            nodeDao.getAllNodes().map { entity ->
                 UserPayload(
-                    hash = it.userHash,
-                    phone_hash = it.phone_hash,
-                    ip = it.ip,
-                    port = it.port,
-                    publicKey = it.publicKey,
-                    phone = it.phone,
-                    lastSeen = it.lastSeen
+                    hash = entity.userHash,
+                    phone_hash = entity.phone_hash,
+                    ip = entity.ip,
+                    port = entity.port,
+                    publicKey = entity.publicKey,
+                    phone = entity.phone,
+                    lastSeen = entity.lastSeen
                 )
             }
         }
