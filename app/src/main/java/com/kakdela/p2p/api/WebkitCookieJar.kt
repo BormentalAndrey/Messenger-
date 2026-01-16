@@ -21,7 +21,6 @@ class WebkitCookieJar : CookieJar {
         val cookieHeader = cookieManager.getCookie(urlString) ?: return emptyList()
 
         val cookies = mutableListOf<Cookie>()
-        // Разбиваем строку кук (key=value; key2=value2) на отдельные объекты
         val splitCookies = cookieHeader.split(";")
         for (cookieStr in splitCookies) {
             Cookie.parse(url, cookieStr.trim())?.let { cookies.add(it) }
