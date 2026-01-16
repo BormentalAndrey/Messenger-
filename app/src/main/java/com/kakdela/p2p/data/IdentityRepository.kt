@@ -208,10 +208,13 @@ class IdentityRepository(private val context: Context) {
     }
 
     suspend fun addNodeByHash(hash: String): Boolean = withContext(Dispatchers.IO) {
-        fetchAllNodesFromServer().find { it.hash == hash }?.let {
-            saveNodeToDb(it)
+        val node = fetchAllNodesFromServer().find { it.hash == hash }
+        if (node != null) {
+            saveNodeToDb(node)
             true
-        } ?: false
+        } else {
+            false
+        }
     }
 
     private suspend fun saveNodeToDb(node: UserPayload) = nodeDao.upsert(
@@ -239,9 +242,13 @@ class IdentityRepository(private val context: Context) {
 
             while (isRunning) {
                 val packet = DatagramPacket(buffer, buffer.size)
-                udpSocket?.receive(packet) ?: break
+                try {
+                    udpSocket?.receive(packet)
+                } catch (e: Exception) {
+                    if (!isRunning) break else throw e
+                }
 
-                val fromIp = packet.address.hostAddress ?: continue
+                val fromIp = packet.address?.hostAddress ?: continue
                 val rawString = String(packet.data, 0, packet.length, Charsets.UTF_8)
                 handleIncoming(rawString, fromIp)
             }
@@ -324,7 +331,12 @@ class IdentityRepository(private val context: Context) {
                 override fun onResolveFailed(s: NsdServiceInfo, e: Int) {}
             })
         }
-        override fun onServiceLost(s: NsdServiceInfo) { wifiPeers.entries.removeIf { it.value == s.host?.hostAddress } }
+        override fun onServiceLost(s: NsdServiceInfo) {
+            val hostAddress = s.host?.hostAddress
+            if (hostAddress != null) {
+                wifiPeers.values.removeAll { it == hostAddress }
+            }
+        }
         override fun onDiscoveryStarted(t: String) {}
         override fun onDiscoveryStopped(t: String) {}
         override fun onStartDiscoveryFailed(t: String, e: Int) {}
