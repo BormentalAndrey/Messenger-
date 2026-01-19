@@ -13,7 +13,7 @@ import java.util.UUID
 
 /**
  * WebRtcClient реализует P2P передачу данных через защищенный DataChannel.
- * Использует IdentityRepository для обмена сигнальными сообщениями (SDP/ICE).
+ * Использует IdentityRepository для обмена сигнальными сообщениями (SDP/ICE) через UDP.
  */
 class WebRtcClient(
     private val context: Context,
@@ -39,7 +39,6 @@ class WebRtcClient(
         val builder = PeerConnectionFactory.builder()
             .setOptions(PeerConnectionFactory.Options())
             
-        // В продакшене здесь можно добавить программные кодеки, если нужен голос/видео
         builder.createPeerConnectionFactory()
     }
 
@@ -55,7 +54,6 @@ class WebRtcClient(
         
         val rtcConfig = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-            // Включаем поддержку обхода симметричных NAT при необходимости через TURN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
         }
 
@@ -73,9 +71,9 @@ class WebRtcClient(
                         put("payload", iceJson.toString())
                     }
 
-                    // ИСПРАВЛЕНО: Передаем targetIp, тип "WEBRTC_SIGNAL" и данные
+                    // Используем sendUdp для отправки сигнала, так как sendSignaling может быть недоступен
                     scope.launch {
-                        identityRepo.sendSignaling(targetIp, "WEBRTC_SIGNAL", envelope.toString())
+                        identityRepo.sendUdp(targetIp, "WEBRTC_SIGNAL", envelope.toString())
                     }
                 }
             }
@@ -105,7 +103,6 @@ class WebRtcClient(
         // Инициализируем локальный DataChannel
         val dcInit = DataChannel.Init().apply {
             ordered = true
-            // Устанавливаем id для синхронизации каналов, если это необходимо
         }
         dataChannel = peerConnection?.createDataChannel("p2p_chat", dcInit)
         dataChannel?.let { setupDataChannel(it) }
@@ -173,9 +170,6 @@ class WebRtcClient(
         }
     }
 
-    /**
-     * Запуск процесса соединения (вызывается стороной А)
-     */
     fun initiateConnection() {
         val constraints = MediaConstraints()
         peerConnection?.createOffer(object : SimpleSdpObserver() {
@@ -189,7 +183,7 @@ class WebRtcClient(
                     }
 
                     scope.launch {
-                        identityRepo.sendSignaling(targetIp, "WEBRTC_SIGNAL", envelope.toString())
+                        identityRepo.sendUdp(targetIp, "WEBRTC_SIGNAL", envelope.toString())
                     }
                 }
             }
@@ -211,7 +205,7 @@ class WebRtcClient(
                             }
 
                             scope.launch {
-                                identityRepo.sendSignaling(targetIp, "WEBRTC_SIGNAL", envelope.toString())
+                                identityRepo.sendUdp(targetIp, "WEBRTC_SIGNAL", envelope.toString())
                             }
                         }
                     }
@@ -225,9 +219,6 @@ class WebRtcClient(
         peerConnection?.setRemoteDescription(SimpleSdpObserver(), answer)
     }
 
-    /**
-     * Отправка сообщения через открытый P2P канал
-     */
     fun send(text: String): Boolean {
         if (dataChannel?.state() != DataChannel.State.OPEN) {
             Log.w(TAG, "Cannot send: DataChannel is ${dataChannel?.state()}")
