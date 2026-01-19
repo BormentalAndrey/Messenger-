@@ -1,80 +1,78 @@
 package com.kakdela.p2p.data.local
 
-import androidx.room.*
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Transaction
 
 @Dao
 interface NodeDao {
 
     /**
-     * Получение узла по хэшу.
+     * Получение узла по userHash (основной идентификатор).
      */
     @Query("SELECT * FROM dht_nodes WHERE userHash = :hash LIMIT 1")
     suspend fun getNodeByHash(hash: String): NodeEntity?
 
     /**
-     * Получение всех узлов, упорядоченных по времени последнего визита.
-     * Лимит 2500 для оптимизации.
+     * Получение узла по номеру телефона (если есть).
+     * Используется для быстрого локального поиска контактов.
+     */
+    @Query("SELECT * FROM dht_nodes WHERE phone = :phone LIMIT 1")
+    suspend fun getNodeByPhone(phone: String): NodeEntity?
+
+    /**
+     * Получение ограниченного списка самых свежих узлов.
+     * Используется для bootstrap / gossip / UI.
+     */
+    @Query("SELECT * FROM dht_nodes ORDER BY lastSeen DESC LIMIT :limit")
+    suspend fun getRecentNodes(limit: Int): List<NodeEntity>
+
+    /**
+     * Получение всех узлов (жёсткий лимит 2500).
+     * Гарантирует, что база не разрастётся.
      */
     @Query("SELECT * FROM dht_nodes ORDER BY lastSeen DESC LIMIT 2500")
     suspend fun getAllNodes(): List<NodeEntity>
 
     /**
      * Вставка или обновление одного узла.
-     * Используется для upsert операций.
+     * Используется при прямом контакте или серверной синхронизации.
      */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(node: NodeEntity)
 
     /**
      * Пакетная вставка или обновление узлов.
+     * Основной метод при синхронизации с сервером или DHT.
      */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(nodes: List<NodeEntity>)
 
     /**
-     * Комплексное обновление кэша узлов.
-     * Сохраняет новые узлы и удаляет старые, оставляя только 2500 самых свежих.
-     */
-    @Transaction
-    suspend fun updateCache(nodes: List<NodeEntity>) {
-        if (nodes.isEmpty()) return
-
-        upsertAll(nodes)
-        trimCache()
-    }
-
-    /**
-     * Удаление "хвоста" базы: оставляет только 2500 самых свежих записей.
-     */
-    @Query("""
-        DELETE FROM dht_nodes 
-        WHERE userHash NOT IN (
-            SELECT userHash FROM dht_nodes 
-            ORDER BY lastSeen DESC 
-            LIMIT 2500
-        )
-    """)
-    suspend fun trimCache()
-
-    /**
-     * Обновление сетевых данных узла при прямом контакте (UDP/NSD).
-     * Если узла нет, он будет добавлен при следующей синхронизации с сервером.
+     * Обновление сетевых данных узла при прямом контакте (UDP / NSD / LAN).
+     * Обновляет lastSeen всегда.
      */
     @Query("""
         UPDATE dht_nodes 
-        SET ip = :newIp, port = :newPort, publicKey = :pubKey, lastSeen = :timestamp 
+        SET ip = :newIp,
+            port = :newPort,
+            publicKey = :pubKey,
+            lastSeen = :timestamp
         WHERE userHash = :hash
     """)
     suspend fun updateNetworkInfo(
-        hash: String, 
-        newIp: String, 
-        newPort: Int, 
-        pubKey: String, 
+        hash: String,
+        newIp: String,
+        newPort: Int,
+        pubKey: String,
         timestamp: Long
     )
 
     /**
-     * Отметка узла как успешно синхронизированного с сервером.
+     * Помечает узел как успешно синхронизированный с сервером.
+     * Используется для оптимизации повторных sync-запросов.
      */
     @Query("""
         UPDATE dht_nodes
@@ -84,8 +82,37 @@ interface NodeDao {
     suspend fun markSynced(hash: String)
 
     /**
-     * Удаление старых записей, даже если их меньше 2500.
-     * timestampThreshold — порог в миллисекундах (например, System.currentTimeMillis() - 30 дней).
+     * Комплексное обновление кэша узлов.
+     *
+     * 1. Сохраняет новые данные (upsert)
+     * 2. Очищает базу, оставляя только 2500 самых свежих
+     *
+     * Выполняется атомарно.
+     */
+    @Transaction
+    suspend fun updateCache(nodes: List<NodeEntity>) {
+        if (nodes.isEmpty()) return
+        upsertAll(nodes)
+        trimCache()
+    }
+
+    /**
+     * Удаление "хвоста" базы.
+     * Оставляет только 2500 самых свежих записей по lastSeen.
+     */
+    @Query("""
+        DELETE FROM dht_nodes 
+        WHERE userHash NOT IN (
+            SELECT userHash FROM dht_nodes
+            ORDER BY lastSeen DESC
+            LIMIT 2500
+        )
+    """)
+    suspend fun trimCache()
+
+    /**
+     * Удаление устаревших узлов по времени.
+     * Используется для периодической очистки (например, старше 30 дней).
      */
     @Query("DELETE FROM dht_nodes WHERE lastSeen < :timestampThreshold")
     suspend fun deleteStaleNodes(timestampThreshold: Long)
