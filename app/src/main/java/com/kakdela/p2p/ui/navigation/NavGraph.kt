@@ -32,6 +32,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.kakdela.p2p.data.IdentityRepository
+import com.kakdela.p2p.data.MessageRepository
+import com.kakdela.p2p.data.local.ChatDatabase
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
@@ -50,6 +52,12 @@ fun NavGraph(
     val isOnline by rememberIsOnline()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+
+    // Создаем MessageRepository для передачи в фабрики ViewModel
+    val db = remember { ChatDatabase.getDatabase(context) }
+    val messageRepository = remember { 
+        MessageRepository(context, db.messageDao(), identityRepository) 
+    }
 
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
@@ -95,7 +103,6 @@ fun NavGraph(
             }
 
             composable(Routes.AUTH_PHONE) {
-                // Исправлено: PhoneAuthScreen не требует identityRepository
                 PhoneAuthScreen(
                     onSuccess = {
                         navController.navigate(Routes.CHATS) {
@@ -109,9 +116,7 @@ fun NavGraph(
             composable(Routes.CHATS) { ChatsListScreen(navController = navController) }
 
             composable(Routes.CONTACTS) {
-                ContactsScreen(identityRepository) { contact ->
-                    contact.userHash?.let { navController.navigate(Routes.buildChatRoute(it)) }
-                }
+                ContactsScreen(navController = navController, identityRepository = identityRepository)
             }
 
             // --- Чат ---
@@ -122,11 +127,19 @@ fun NavGraph(
                 val chatId = entry.arguments?.getString("chatId") ?: ""
                 val app = context.applicationContext as Application
 
+                // Исправлено: передаем все необходимые зависимости в Factory
                 val vm: ChatViewModel = viewModel(
-                    factory = ChatViewModelFactory(identityRepository, app)
+                    factory = ChatViewModelFactory(
+                        identityRepository, 
+                        messageRepository,
+                        app
+                    )
                 )
 
-                LaunchedEffect(chatId) { vm.initChat(chatId) }
+                LaunchedEffect(chatId) { 
+                    vm.loadPeer(chatId) // Загружаем данные собеседника
+                    vm.initChat(chatId) 
+                }
 
                 val messages by vm.messages.collectAsState()
 
@@ -136,7 +149,7 @@ fun NavGraph(
                     identityRepository = identityRepository,
                     onSendMessage = { text -> vm.sendMessage(text) },
                     onSendFile = { uri, name -> vm.sendFile(uri.toString(), name) },
-                    onSendAudio = { uri, dur -> vm.sendAudio(uri.toString(), dur) },
+                    onSendAudio = { uri, dur -> vm.sendAudio(uri, dur) },
                     onScheduleMessage = { text, time -> vm.scheduleMessage(text, time.toString()) },
                     onBack = { navController.popBackStack() }
                 )
