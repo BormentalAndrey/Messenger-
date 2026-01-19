@@ -31,8 +31,8 @@ class IdentityRepository(private val context: Context) {
     private val nodeDao = db.nodeDao()
     private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
 
-    // Lazy initialization to avoid circular dependency
-    private val messageRepository by lazy { MessageRepository(context, db.messageDao(), this) }
+    // Expose messageRepository for ViewModel injection
+    val messageRepository by lazy { MessageRepository(context, db.messageDao(), this) }
     
     // Gossip protocol engine
     private val peerSyncRepository by lazy { PeerSyncRepository(this, db) }
@@ -157,6 +157,7 @@ class IdentityRepository(private val context: Context) {
         }
     }
 
+    // Explicitly public for internal use if needed
     suspend fun sendUdp(ip: String, type: String, data: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val timestamp = System.currentTimeMillis()
@@ -179,7 +180,15 @@ class IdentityRepository(private val context: Context) {
     }
 
     /**
-     * WebRTC Signaling Helper
+     * WebRTC & FileTransfer Signaling Helper (Overloaded)
+     * Direct IP signaling (used when IP is known, e.g. during ICE exchange)
+     */
+    suspend fun sendSignaling(targetIp: String, type: String, data: String): Boolean {
+         return sendUdp(targetIp, type, data)
+    }
+
+    /**
+     * Standard Signaling (Finds IP by Hash)
      */
     suspend fun sendSignaling(targetHash: String, data: String): Boolean {
         val ip = wifiPeers[targetHash] ?: swarmPeers[targetHash] ?: getCachedNode(targetHash)?.ip
@@ -265,8 +274,32 @@ class IdentityRepository(private val context: Context) {
     }
 
     /* ============================================================
-       UTILS & DISCOVERY
+       UTILS, SETTINGS & DISCOVERY
        ============================================================ */
+    
+    fun getLocalAvatarUri(): String? {
+        return prefs.getString("local_avatar_uri", null)
+    }
+
+    fun saveLocalAvatar(uri: String) {
+        prefs.edit().putString("local_avatar_uri", uri).apply()
+    }
+
+    suspend fun addNodeByHash(hash: String): Boolean = withContext(Dispatchers.IO) {
+        // Try to fetch specific node from server logic, or sync all and check
+        try {
+            val nodes = fetchAllNodesFromServer()
+            val node = nodes.find { it.hash == hash }
+            if (node != null) {
+                // Already saved in fetchAllNodesFromServer, but we can return true
+                true
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
 
     fun sendIdentityViaSms(phoneNumber: String) {
         try {
