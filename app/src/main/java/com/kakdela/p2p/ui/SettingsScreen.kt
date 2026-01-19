@@ -17,9 +17,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-// ВАЖНЫЕ ИМПОРТЫ ДЛЯ РАБОТЫ ДЕЛЕГАТОВ 'by'
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,7 +55,7 @@ fun SettingsScreen(
     val myPhone: String = remember { prefs.getString("my_phone", "Не указан") ?: "Не указан" }
 
     // Состояние UI
-    var avatarUri by remember { mutableStateOf(identityRepository.getLocalAvatarUri()) }
+    var avatarUri by remember { mutableStateOf(getLocalAvatarUri(context)) }
     var isUploading by remember { mutableStateOf(false) }
     var nodes by remember { mutableStateOf<List<NodeEntity>>(emptyList()) }
     var isSyncing by remember { mutableStateOf(false) }
@@ -105,9 +102,9 @@ fun SettingsScreen(
         uri?.let {
             isUploading = true
             scope.launch(Dispatchers.IO) {
-                identityRepository.saveLocalAvatar(it.toString())
+                saveLocalAvatar(context, it.toString())
                 withContext(Dispatchers.Main) {
-                    avatarUri = it.toString()
+                    avatarUri = it
                     isUploading = false
                 }
             }
@@ -140,7 +137,7 @@ fun SettingsScreen(
 
             // ===== 1. Блок Аватара =====
             Box(contentAlignment = Alignment.BottomEnd) {
-                if (!avatarUri.isNullOrEmpty()) {
+                if (avatarUri != null) {
                     AsyncImage(
                         model = avatarUri,
                         contentDescription = "Avatar",
@@ -269,16 +266,21 @@ fun SettingsScreen(
                             onClick = {
                                 isAdding = true
                                 scope.launch {
-                                    val ok = identityRepository.addNodeByHash(manualHash.trim())
+                                    // Прямое добавление в БД, если в репозитории нет метода
+                                    db.nodeDao().upsert(
+                                        NodeEntity(
+                                            userHash = manualHash.trim(),
+                                            ip = "0.0.0.0", // Неизвестен, будет найден через discovery
+                                            port = 8888,
+                                            publicKey = "", // Будет обновлен при контакте
+                                            lastSeen = System.currentTimeMillis()
+                                        )
+                                    )
                                     withContext(Dispatchers.Main) {
                                         isAdding = false
-                                        if (ok) {
-                                            manualHash = ""
-                                            loadLocalNodes()
-                                            Toast.makeText(context, "Контакт добавлен!", Toast.LENGTH_SHORT).show()
-                                        } else {
-                                            Toast.makeText(context, "Не найдено на сервере", Toast.LENGTH_SHORT).show()
-                                        }
+                                        manualHash = ""
+                                        loadLocalNodes()
+                                        Toast.makeText(context, "Контакт добавлен!", Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             },
@@ -357,4 +359,16 @@ fun SettingsScreen(
             }
         }
     }
+}
+
+// Helper functions placed outside since they are UI specific
+private fun getLocalAvatarUri(context: Context): Uri? {
+    val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    val str = prefs.getString("avatar_uri", null)
+    return str?.let { Uri.parse(it) }
+}
+
+private fun saveLocalAvatar(context: Context, uriString: String) {
+    val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    prefs.edit().putString("avatar_uri", uriString).apply()
 }
