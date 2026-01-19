@@ -33,7 +33,6 @@ fun ContactsScreen(
     var contacts by remember { mutableStateOf<List<AppContact>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     
-    // Список необходимых разрешений
     val requiredPermissions = arrayOf(
         Manifest.permission.READ_CONTACTS,
         Manifest.permission.SEND_SMS,
@@ -111,23 +110,13 @@ fun ContactList(
                 supportingContent = { Text(contact.phoneNumber, color = Color.Gray) },
                 trailingContent = {
                     if (contact.isRegistered) {
-                        // Если пользователь уже в сети
                         Surface(color = Color(0xFF00FFF0), shape = RoundedCornerShape(4.dp)) {
-                            Text(
-                                "P2P ONLINE", 
-                                color = Color.Black, 
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), 
-                                style = MaterialTheme.typography.labelSmall
-                            )
+                            Text("P2P ONLINE", color = Color.Black, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall)
                         }
                     } else {
-                        // Кнопка приглашения через SMS для оффлайн контактов
                         Button(
                             onClick = { onInviteClick(contact) },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF1A1A1A),
-                                contentColor = Color.Cyan
-                            ),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A1A1A), contentColor = Color.Cyan),
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.height(32.dp)
@@ -139,11 +128,21 @@ fun ContactList(
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                 modifier = Modifier.clickable { onContactClick(contact) }
             )
-            HorizontalDivider(
-                modifier = Modifier.padding(horizontal = 16.dp), 
-                thickness = 0.5.dp, 
-                color = Color(0xFF1A1A1A)
-            )
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = Color(0xFF1A1A1A))
+        }
+    }
+}
+
+// Исправлено: Добавлена отсутствующая Composable функция
+@Composable
+fun PermissionRequestUI(padding: PaddingValues, onGrant: () -> Unit) {
+    Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Для поиска друзей нужны разрешения", color = Color.White)
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = onGrant, colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan, contentColor = Color.Black)) {
+                Text("Разрешить доступ")
+            }
         }
     }
 }
