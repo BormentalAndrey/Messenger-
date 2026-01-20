@@ -1,276 +1,408 @@
-package com.kakdela.p2p.ui.navigation
+package com.kakdela.p2p.data
 
-import android.app.Application
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
-import android.net.Uri
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.PlayCircleOutline
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavHostController
-import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.navArgument
-import com.kakdela.p2p.data.IdentityRepository
-import com.kakdela.p2p.data.MessageRepository
+import android.content.SharedPreferences
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
+import android.telephony.SmsManager
+import android.util.Base64
+import android.util.Log
+import com.kakdela.p2p.api.UserPayload
+import com.kakdela.p2p.api.WebViewApiClient
 import com.kakdela.p2p.data.local.ChatDatabase
-import com.kakdela.p2p.ui.*
-import com.kakdela.p2p.ui.auth.*
-import com.kakdela.p2p.ui.chat.AiChatScreen
-import com.kakdela.p2p.ui.chat.ChatScreen
-import com.kakdela.p2p.ui.player.MusicPlayerScreen
-import com.kakdela.p2p.ui.ChatViewModel
-import com.kakdela.p2p.viewmodel.ChatViewModelFactory
+import com.kakdela.p2p.data.local.NodeEntity
+import com.kakdela.p2p.security.CryptoManager
+import kotlinx.coroutines.*
+import org.json.JSONObject
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 
-@Composable
-fun NavGraph(
-    navController: NavHostController,
-    identityRepository: IdentityRepository,
-    startDestination: String
-) {
-    val context = LocalContext.current
-    val isOnline by rememberIsOnline()
-    val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = backStackEntry?.destination?.route
+class IdentityRepository(private val context: Context) {
 
-    // Reuse the repository already inside IdentityRepository to ensure singleton-like behavior where needed
-    val messageRepository = identityRepository.messageRepository
+    private val TAG = "IdentityRepository"
+    private val prefs: SharedPreferences = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
+    private val api = WebViewApiClient
+    private val db = ChatDatabase.getDatabase(context)
+    private val nodeDao = db.nodeDao()
+    private val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
 
-    val showBottomBar = currentRoute in listOf(
-        Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
-    )
+    // Expose messageRepository for ViewModel injection
+    val messageRepository by lazy { MessageRepository(context, db.messageDao(), this) }
+    
+    // Gossip protocol engine
+    private val peerSyncRepository by lazy { PeerSyncRepository(this, db) }
 
-    Scaffold(
-        bottomBar = {
-            if (showBottomBar) AppBottomBar(currentRoute, navController)
-        },
-        containerColor = Color.Black
-    ) { paddingValues ->
-        NavHost(
-            navController = navController,
-            startDestination = startDestination,
-            modifier = Modifier
-                .padding(paddingValues)
-                .background(Color.Black)
-        ) {
-            // --- Авторизация ---
-            composable(Routes.SPLASH) {
-                SplashScreen {
-                    val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
-                    val isLoggedIn = prefs.getBoolean("is_logged_in", false)
-                    navController.navigate(if (isLoggedIn) Routes.CHATS else Routes.CHOICE) {
-                        popUpTo(Routes.SPLASH) { inclusive = true }
-                    }
+    private val listeners = CopyOnWriteArrayList<(String, String, String, String) -> Unit>()
+
+    val wifiPeers = ConcurrentHashMap<String, String>()   // hash -> ip
+    val swarmPeers = ConcurrentHashMap<String, String>()  // hash -> ip
+
+    private companion object {
+        const val SERVICE_TYPE = "_kakdela_p2p._udp."
+        const val PORT = 8888
+        const val SYNC_INTERVAL = 300_000L
+        const val PEPPER = "7fb8a1d2c3e4f5a6b7c8d9e0f1a2b3c4"
+    }
+
+    @Volatile private var isRunning = false
+    private var udpSocket: DatagramSocket? = null
+    private var networkScope: CoroutineScope? = null
+
+    /* ============================================================
+       LIFECYCLE
+       ============================================================ */
+
+    fun startNetwork() {
+        if (isRunning) return
+        isRunning = true
+        networkScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        networkScope?.launch {
+            try {
+                CryptoManager.init(context)
+                val myId = getMyId()
+                Log.i(TAG, "Network started for ${myId.take(8)}")
+
+                launch { startUdpListener() }
+                launch { registerInWifi() }
+                launch { discoverInWifi() }
+                launch { pingKnownNodes() } // Auto-discovery on startup
+                
+                peerSyncRepository.start()
+
+                if (myId.isNotEmpty()) {
+                    performServerSync(myId)
+                    startSyncLoop()
                 }
-            }
-
-            composable(Routes.CHOICE) {
-                RegistrationChoiceScreen(
-                    onPhone = { navController.navigate(Routes.AUTH_PHONE) },
-                    onEmailOnly = { navController.navigate(Routes.AUTH_EMAIL) }
-                )
-            }
-
-            composable(Routes.AUTH_EMAIL) {
-                EmailAuthScreen(identityRepository) {
-                    navController.navigate(Routes.CHATS) {
-                        popUpTo(Routes.CHOICE) { inclusive = true }
-                    }
-                }
-            }
-
-            composable(Routes.AUTH_PHONE) {
-                PhoneAuthScreen(
-                    onSuccess = {
-                        navController.navigate(Routes.CHATS) {
-                            popUpTo(Routes.CHOICE) { inclusive = true }
-                        }
-                    }
-                )
-            }
-
-            // --- Главные экраны ---
-            composable(Routes.CHATS) { ChatsListScreen(navController = navController) }
-
-            composable(Routes.CONTACTS) {
-                ContactsScreen(
-                    navController = navController, 
-                    identityRepository = identityRepository,
-                    onContactClick = { contact ->
-                        contact.userHash.let { navController.navigate(Routes.buildChatRoute(it)) }
-                    }
-                )
-            }
-
-            // --- Чат ---
-            composable(
-                route = Routes.CHAT_DIRECT,
-                arguments = listOf(navArgument("chatId") { type = NavType.StringType })
-            ) { entry ->
-                val chatId = entry.arguments?.getString("chatId") ?: ""
-                val app = context.applicationContext as Application
-
-                val vm: ChatViewModel = viewModel(
-                    factory = ChatViewModelFactory(
-                        identityRepository, 
-                        messageRepository,
-                        app
-                    )
-                )
-
-                LaunchedEffect(chatId) { 
-                    vm.initChat(chatId) 
-                }
-
-                val messages by vm.messages.collectAsState()
-
-                ChatScreen(
-                    chatPartnerId = chatId,
-                    messages = messages,
-                    identityRepository = identityRepository,
-                    onSendMessage = { text -> vm.sendMessage(text) },
-                    onSendFile = { uri, name -> vm.sendFile(uri, name) },
-                    onSendAudio = { uri, dur -> vm.sendAudioMessage(uri, dur) },
-                    onScheduleMessage = { text, time -> vm.scheduleMessage(text, time) },
-                    onBack = { navController.popBackStack() }
-                )
-            }
-
-            // --- Разделы ---
-            composable(Routes.DEALS) { DealsScreen(navController) }
-            composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
-            composable(Routes.SETTINGS) {
-                SettingsScreen(
-                    navController = navController,
-                    identityRepository = identityRepository
-                )
-            }
-            composable(Routes.MUSIC) { MusicPlayerScreen() }
-
-            // --- WebView ---
-            composable(
-                route = "webview/{url}/{title}",
-                arguments = listOf(
-                    navArgument("url") { type = NavType.StringType },
-                    navArgument("title") { type = NavType.StringType }
-                )
-            ) { navBackStackEntry ->
-                val url = navBackStackEntry.arguments?.getString("url") ?: ""
-                val title = navBackStackEntry.arguments?.getString("title") ?: ""
-                WebViewScreen(url = url, title = title, navController = navController)
-            }
-
-            // --- Инструменты и Игры ---
-            composable(Routes.CALCULATOR) { CalculatorScreen() }
-            composable(Routes.TEXT_EDITOR) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Редактор в разработке", color = Color.White)
-                }
-            }
-            composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
-            composable(Routes.CHESS) { ChessScreen() }
-            composable(Routes.PACMAN) { PacmanScreen() }
-            composable(Routes.SUDOKU) { SudokuScreen() }
-            composable(Routes.JEWELS) { JewelsBlastScreen() }
-
-            composable(Routes.AI_CHAT) {
-                if (isOnline) AiChatScreen()
-                else NoInternetScreen { navController.popBackStack() }
+            } catch (e: Exception) {
+                Log.e(TAG, "startNetwork fatal error", e)
+                stopNetwork()
             }
         }
     }
-}
 
-@Composable
-private fun AppBottomBar(currentRoute: String?, navController: NavHostController) {
-    NavigationBar(
-        containerColor = Color(0xFF010101),
-        tonalElevation = 0.dp
-    ) {
-        val items = listOf(
-            Triple(Routes.CHATS, Icons.Outlined.ChatBubbleOutline, "Чаты"),
-            Triple(Routes.DEALS, Icons.Filled.Checklist, "Дела"),
-            Triple(Routes.ENTERTAINMENT, Icons.Outlined.PlayCircleOutline, "Досуг"),
-            Triple(Routes.SETTINGS, Icons.Filled.Settings, "Опции")
-        )
-        items.forEach { (route, icon, label) ->
-            val isSelected = currentRoute == route
-            NavigationBarItem(
-                selected = isSelected,
-                onClick = {
-                    if (!isSelected) {
-                        navController.navigate(route) {
-                            popUpTo(navController.graph.startDestinationId) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    }
-                },
-                icon = { Icon(icon, contentDescription = label, tint = if (isSelected) Color.Cyan else Color.Gray) },
-                label = { Text(label, fontSize = 10.sp, color = if (isSelected) Color.Cyan else Color.Gray) },
-                colors = NavigationBarItemDefaults.colors(
-                    indicatorColor = Color(0xFF1A1A1A),
-                    selectedIconColor = Color.Cyan,
-                    unselectedIconColor = Color.Gray
+    fun stopNetwork() {
+        isRunning = false
+        peerSyncRepository.stop()
+        networkScope?.cancel()
+        networkScope = null
+        udpSocket?.close()
+        udpSocket = null
+
+        try {
+            nsdManager.unregisterService(registrationListener)
+            nsdManager.stopServiceDiscovery(discoveryListener)
+        } catch (_: Exception) {}
+
+        wifiPeers.clear()
+        swarmPeers.clear()
+    }
+
+    /* ============================================================
+       UDP & SIGNALING
+       ============================================================ */
+
+    private fun startUdpListener() = networkScope?.launch {
+        try {
+            udpSocket = DatagramSocket(null).apply {
+                reuseAddress = true
+                bind(InetSocketAddress(PORT))
+            }
+            val buffer = ByteArray(65507)
+            while (isRunning) {
+                val packet = DatagramPacket(buffer, buffer.size)
+                udpSocket?.receive(packet)
+                val fromIp = packet.address?.hostAddress ?: continue
+                val raw = String(packet.data, 0, packet.length, Charsets.UTF_8)
+                processIncomingPacket(raw, fromIp)
+            }
+        } catch (e: Exception) {
+            if (isRunning) Log.e(TAG, "UDP error", e)
+        }
+    }
+
+    private fun processIncomingPacket(raw: String, fromIp: String) {
+        networkScope?.launch(Dispatchers.Default) {
+            try {
+                val json = JSONObject(raw)
+                val type = json.getString("type")
+                val fromHash = json.getString("from")
+                val pubKey = json.getString("pubkey")
+                val timestamp = json.getLong("timestamp")
+                val data = json.getString("data")
+                val signature = Base64.decode(json.getString("signature"), Base64.NO_WRAP)
+
+                if (!CryptoManager.verify(signature, (data + timestamp).toByteArray(), pubKey)) return@launch
+
+                withContext(Dispatchers.IO) {
+                    nodeDao.updateNetworkInfo(fromHash, fromIp, PORT, pubKey, System.currentTimeMillis())
+                }
+                swarmPeers[fromHash] = fromIp
+
+                when {
+                    type == "PING" -> sendUdp(fromIp, "PONG", "alive")
+                    type == "PEER_SYNC" -> peerSyncRepository.handleIncoming(data, fromHash)
+                    type.startsWith("CHAT") -> messageRepository.handleIncoming(type, data, fromHash)
+                    // Pass everything else to listeners (CallActivity, WebRTC)
+                    else -> listeners.forEach { it(type, data, fromIp, fromHash) }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Malformed packet", e)
+            }
+        }
+    }
+
+    // Explicitly public for internal use if needed
+    suspend fun sendUdp(ip: String, type: String, data: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val timestamp = System.currentTimeMillis()
+            val signature = CryptoManager.sign((data + timestamp).toByteArray())
+            val json = JSONObject().apply {
+                put("type", type)
+                put("data", data)
+                put("from", getMyId())
+                put("pubkey", CryptoManager.getMyPublicKeyStr())
+                put("timestamp", timestamp)
+                put("signature", Base64.encodeToString(signature, Base64.NO_WRAP))
+            }
+            val bytes = json.toString().toByteArray(Charsets.UTF_8)
+            val addr = InetAddress.getByName(ip)
+            DatagramSocket().use { it.send(DatagramPacket(bytes, bytes.size, addr, PORT)) }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * WebRTC & FileTransfer Signaling Helper (Overloaded)
+     * Direct IP signaling (used when IP is known, e.g. during ICE exchange)
+     */
+    suspend fun sendSignaling(targetIp: String, type: String, data: String): Boolean {
+         return sendUdp(targetIp, type, data)
+    }
+
+    /**
+     * Standard Signaling (Finds IP by Hash)
+     */
+    suspend fun sendSignaling(targetHash: String, data: String): Boolean {
+        val ip = wifiPeers[targetHash] ?: swarmPeers[targetHash] ?: getCachedNode(targetHash)?.ip
+        if (!ip.isNullOrBlank() && ip != "0.0.0.0") {
+            return sendUdp(ip, "SIGNALING", data)
+        }
+        return false
+    }
+
+    private suspend fun pingKnownNodes() {
+        nodeDao.getAllNodes().forEach {
+            if (it.ip != "0.0.0.0" && it.userHash != getMyId()) {
+                sendUdp(it.ip, "PING", "discovery")
+            }
+        }
+    }
+
+    /* ============================================================
+       SYNC & DATA
+       ============================================================ */
+
+    suspend fun fetchAllNodesFromServer(): List<UserPayload> = withContext(Dispatchers.IO) {
+        try {
+            val response = api.getAllNodes()
+            val users = response.users ?: emptyList()
+            
+            nodeDao.upsertAll(users.map {
+                NodeEntity(
+                    userHash = it.hash,
+                    phone_hash = it.phone_hash ?: "",
+                    ip = it.ip ?: "0.0.0.0",
+                    port = it.port ?: PORT,
+                    publicKey = it.publicKey ?: "",
+                    phone = it.phone ?: "",
+                    lastSeen = it.lastSeen ?: System.currentTimeMillis()
                 )
+            })
+            // Explicitly return the mapped list converted back to Payload for API consistency
+            users
+        } catch (e: Exception) {
+            // Fallback to local DB
+            nodeDao.getAllNodes().map {
+                UserPayload(
+                    hash = it.userHash,
+                    phone_hash = it.phone_hash,
+                    ip = it.ip,
+                    port = it.port,
+                    publicKey = it.publicKey,
+                    phone = it.phone,
+                    lastSeen = it.lastSeen
+                )
+            }
+        }
+    }
+
+    private suspend fun performServerSync(myId: String) = withContext(Dispatchers.IO) {
+        try {
+            val phone = prefs.getString("my_phone", null)
+            val phoneHash = generatePhoneDiscoveryHash(phone ?: "")
+            val payload = UserPayload(
+                hash = myId,
+                phone_hash = phoneHash,
+                ip = getLocalIpAddress() ?: "0.0.0.0",
+                port = PORT,
+                publicKey = CryptoManager.getMyPublicKeyStr(),
+                phone = phone,
+                lastSeen = System.currentTimeMillis()
             )
-        }
-    }
-}
-
-@Composable
-fun rememberIsOnline(): State<Boolean> {
-    val context = LocalContext.current
-    val status = remember { mutableStateOf(true) }
-    DisposableEffect(context) {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) { status.value = true }
-            override fun onLost(network: Network) { status.value = false }
-        }
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
-        try { cm.registerNetworkCallback(request, callback) } catch (_: Exception) { status.value = true }
-        onDispose { try { cm.unregisterNetworkCallback(callback) } catch (_: Exception) {} }
-    }
-    return status
-}
-
-@Composable
-fun NoInternetScreen(onBack: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
-            Icon(Icons.Default.CloudOff, null, tint = Color.Gray, modifier = Modifier.size(64.dp))
-            Spacer(Modifier.height(16.dp))
-            Text("Офлайн-режим", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            Text("Нужен интернет для AI.", color = Color.Gray, textAlign = TextAlign.Center)
-            Spacer(Modifier.height(24.dp))
-            Button(onClick = onBack, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A1A1A))) {
-                Text("Вернуться", color = Color.Cyan)
+            val response = api.announceSelf(payload)
+            if (response.success) {
+                saveNodeToDb(payload)
+                fetchAllNodesFromServer()
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "Server sync failed", e)
         }
+    }
+
+    private suspend fun saveNodeToDb(node: UserPayload) {
+        nodeDao.upsert(
+            NodeEntity(
+                userHash = node.hash,
+                phone_hash = node.phone_hash ?: "",
+                ip = node.ip ?: "0.0.0.0",
+                port = node.port ?: PORT,
+                publicKey = node.publicKey ?: "",
+                phone = node.phone ?: "",
+                lastSeen = node.lastSeen ?: System.currentTimeMillis()
+            )
+        )
+    }
+
+    /* ============================================================
+       UTILS, SETTINGS & DISCOVERY
+       ============================================================ */
+    
+    fun getLocalAvatarUri(): String? {
+        return prefs.getString("local_avatar_uri", null)
+    }
+
+    fun saveLocalAvatar(uri: String) {
+        prefs.edit().putString("local_avatar_uri", uri).apply()
+    }
+
+    suspend fun addNodeByHash(hash: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val nodes = fetchAllNodesFromServer()
+            nodes.any { it.hash == hash }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun sendIdentityViaSms(phoneNumber: String) {
+        try {
+            val myId = getMyId()
+            val myIp = getLocalIpAddress() ?: "0.0.0.0"
+            val myPubKey = CryptoManager.getMyPublicKeyStr()
+            val smsBody = "P2P:$myId|$myIp|$PORT|$myPubKey"
+            val smsManager = if (android.os.Build.VERSION.SDK_INT >= 31) context.getSystemService(SmsManager::class.java) else @Suppress("DEPRECATION") SmsManager.getDefault()
+            smsManager?.sendTextMessage(phoneNumber, null, smsBody, null, null)
+        } catch (e: Exception) { Log.e(TAG, "SMS failed", e) }
+    }
+
+    suspend fun sendMessageSmart(targetHash: String, phone: String?, message: String): Boolean = withContext(Dispatchers.IO) {
+        val ip = wifiPeers[targetHash] ?: swarmPeers[targetHash] ?: getCachedNode(targetHash)?.ip
+        var delivered = false
+        if (!ip.isNullOrBlank() && ip != "0.0.0.0") {
+            delivered = sendUdp(ip, "CHAT_MSG", message)
+        }
+        if (!delivered && !phone.isNullOrBlank()) {
+            sendAsSms(phone!!, message)
+            delivered = true
+        }
+        delivered
+    }
+
+    private fun sendAsSms(phone: String, message: String) {
+        try {
+            val sms = if (android.os.Build.VERSION.SDK_INT >= 31) context.getSystemService(SmsManager::class.java) else @Suppress("DEPRECATION") SmsManager.getDefault()
+            sms?.sendTextMessage(phone, null, "[P2P] $message", null, null)
+        } catch (_: Exception) {}
+    }
+
+    fun getMyId(): String {
+        var id = prefs.getString("my_security_hash", "") ?: ""
+        if (id.isEmpty()) {
+            id = CryptoManager.getMyIdentityHash()
+            if (id.isNotEmpty()) prefs.edit().putString("my_security_hash", id).apply()
+        }
+        return id
+    }
+
+    suspend fun getCachedNode(hash: String): NodeEntity? = withContext(Dispatchers.IO) { nodeDao.getNodeByHash(hash) }
+    suspend fun getPeerPublicKey(hash: String): String? = withContext(Dispatchers.IO) { nodeDao.getNodeByHash(hash)?.publicKey }
+    
+    fun generatePhoneDiscoveryHash(phone: String): String {
+        val digits = phone.replace(Regex("[^0-9]"), "")
+        val normalized = when {
+            digits.length == 10 && digits.startsWith("9") -> "7$digits"
+            digits.length == 11 && digits.startsWith("8") -> "7${digits.substring(1)}"
+            else -> digits
+        }
+        return MessageDigest.getInstance("SHA-256").digest((normalized + PEPPER).toByteArray()).joinToString("") { "%02x".format(it) }
+    }
+
+    private fun getLocalIpAddress(): String? = try {
+        java.net.NetworkInterface.getNetworkInterfaces().asSequence()
+            .flatMap { it.inetAddresses.asSequence() }
+            .filter { !it.isLoopbackAddress && it is java.net.Inet4Address }
+            .firstOrNull()?.hostAddress
+    } catch (_: Exception) { null }
+
+    fun addListener(l: (String, String, String, String) -> Unit) = listeners.add(l)
+    fun removeListener(l: (String, String, String, String) -> Unit) = listeners.remove(l)
+    
+    // NSD Implementation
+    private val registrationListener = object : NsdManager.RegistrationListener {
+        override fun onServiceRegistered(s: NsdServiceInfo) {}
+        override fun onRegistrationFailed(s: NsdServiceInfo, e: Int) {}
+        override fun onServiceUnregistered(s: NsdServiceInfo) {}
+        override fun onUnregistrationFailed(s: NsdServiceInfo, e: Int) {}
+    }
+    private val discoveryListener = object : NsdManager.DiscoveryListener {
+        override fun onServiceFound(s: NsdServiceInfo) {
+            if (s.serviceType != SERVICE_TYPE) return
+            nsdManager.resolveService(s, object : NsdManager.ResolveListener {
+                override fun onServiceResolved(r: NsdServiceInfo) {
+                    val host = r.host?.hostAddress ?: return
+                    val peerHash = r.serviceName.removePrefix("KakDela-")
+                    if (peerHash != getMyId()) {
+                        wifiPeers[peerHash] = host
+                        networkScope?.launch { sendUdp(host, "PING", "discovery") }
+                    }
+                }
+                override fun onResolveFailed(s: NsdServiceInfo, e: Int) {}
+            })
+        }
+        override fun onServiceLost(s: NsdServiceInfo) { wifiPeers.remove(s.serviceName.removePrefix("KakDela-")) }
+        override fun onDiscoveryStarted(t: String) {}
+        override fun onDiscoveryStopped(t: String) {}
+        override fun onStartDiscoveryFailed(t: String, e: Int) {}
+        override fun onStopDiscoveryFailed(t: String, e: Int) {}
+    }
+    private fun registerInWifi() {
+        val id = getMyId()
+        if (id.isEmpty()) return
+        val info = NsdServiceInfo().apply { serviceName = "KakDela-$id"; serviceType = SERVICE_TYPE; port = PORT }
+        try { nsdManager.registerService(info, NsdManager.PROTOCOL_DNS_SD, registrationListener) } catch (_: Exception) {}
+    }
+    private fun discoverInWifi() {
+        try { nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener) } catch (_: Exception) {}
+    }
+    private fun startSyncLoop() = networkScope?.launch {
+        while (isRunning) { performServerSync(getMyId()); delay(SYNC_INTERVAL) }
     }
 }
