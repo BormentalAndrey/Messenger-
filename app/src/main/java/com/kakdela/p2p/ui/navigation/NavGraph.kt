@@ -151,7 +151,7 @@ fun NavGraph(
                     messages = messages,
                     identityRepository = identityRepository,
                     onSendMessage = { text -> vm.sendMessage(text) },
-                    onSendFile = { uri, name -> vm.sendFile(uri.toString(), name) },
+                    onSendFile = { uri, name -> vm.sendFile(uri, name) },
                     onSendAudio = { uri, dur -> vm.sendAudio(uri, dur) },
                     onScheduleMessage = { text, time -> vm.scheduleMessage(text, time) },
                     onBack = { navController.popBackStack() }
