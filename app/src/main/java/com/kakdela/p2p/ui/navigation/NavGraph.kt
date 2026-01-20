@@ -33,8 +33,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.kakdela.p2p.data.IdentityRepository
-import com.kakdela.p2p.data.MessageRepository
-import com.kakdela.p2p.data.local.ChatDatabase
 import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
@@ -54,19 +52,24 @@ fun NavGraph(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    // Reuse the repository already inside IdentityRepository to ensure singleton-like behavior where needed
     val messageRepository = identityRepository.messageRepository
 
     val showBottomBar = currentRoute in listOf(
-        Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
+        Routes.CHATS,
+        Routes.DEALS,
+        Routes.ENTERTAINMENT,
+        Routes.SETTINGS
     )
 
     Scaffold(
         bottomBar = {
-            if (showBottomBar) AppBottomBar(currentRoute, navController)
+            if (showBottomBar) {
+                AppBottomBar(currentRoute, navController)
+            }
         },
         containerColor = Color.Black
     ) { paddingValues ->
+
         NavHost(
             navController = navController,
             startDestination = startDestination,
@@ -74,12 +77,19 @@ fun NavGraph(
                 .padding(paddingValues)
                 .background(Color.Black)
         ) {
-            // --- Авторизация ---
+
+            /* ================= AUTH ================= */
+
             composable(Routes.SPLASH) {
                 SplashScreen {
-                    val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
-                    val isLoggedIn = prefs.getBoolean("is_logged_in", false)
-                    navController.navigate(if (isLoggedIn) Routes.CHATS else Routes.CHOICE) {
+                    val prefs =
+                        context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
+                    val isLoggedIn =
+                        prefs.getBoolean("is_logged_in", false)
+
+                    navController.navigate(
+                        if (isLoggedIn) Routes.CHATS else Routes.CHOICE
+                    ) {
                         popUpTo(Routes.SPLASH) { inclusive = true }
                     }
                 }
@@ -101,17 +111,18 @@ fun NavGraph(
             }
 
             composable(Routes.AUTH_PHONE) {
-                PhoneAuthScreen(
-                    onSuccess = {
-                        navController.navigate(Routes.CHATS) {
-                            popUpTo(Routes.CHOICE) { inclusive = true }
-                        }
+                PhoneAuthScreen {
+                    navController.navigate(Routes.CHATS) {
+                        popUpTo(Routes.CHOICE) { inclusive = true }
                     }
-                )
+                }
             }
 
-            // --- Главные экраны ---
-            composable(Routes.CHATS) { ChatsListScreen(navController = navController) }
+            /* ================= MAIN ================= */
+
+            composable(Routes.CHATS) {
+                ChatsListScreen(navController = navController)
+            }
 
             composable(Routes.CONTACTS) {
                 ContactsScreen(
@@ -124,24 +135,31 @@ fun NavGraph(
                 )
             }
 
-            // --- Чат ---
+            /* ================= CHAT ================= */
+
             composable(
                 route = Routes.CHAT_DIRECT,
-                arguments = listOf(navArgument("chatId") { type = NavType.StringType })
+                arguments = listOf(
+                    navArgument("chatId") { type = NavType.StringType }
+                )
             ) { entry ->
-                val chatId = entry.arguments?.getString("chatId") ?: ""
-                val app = context.applicationContext as Application
+
+                val chatId =
+                    entry.arguments?.getString("chatId") ?: ""
+
+                val app =
+                    context.applicationContext as Application
 
                 val vm: ChatViewModel = viewModel(
                     factory = ChatViewModelFactory(
-                        identityRepository, 
+                        identityRepository,
                         messageRepository,
                         app
                     )
                 )
 
-                LaunchedEffect(chatId) { 
-                    vm.initChat(chatId) 
+                LaunchedEffect(chatId) {
+                    vm.initChat(chatId)
                 }
 
                 val messages by vm.messages.collectAsState()
@@ -150,15 +168,32 @@ fun NavGraph(
                     chatPartnerId = chatId,
                     messages = messages,
                     identityRepository = identityRepository,
-                    onSendMessage = { text -> vm.sendMessage(text) },
-                    onSendFile = { uri, name -> vm.sendFile(uri, name) },
-                    onSendAudio = { uri, dur -> vm.sendAudio(uri, dur) },
-                    onScheduleMessage = { text, time -> vm.scheduleMessage(text, time) },
-                    onBack = { navController.popBackStack() }
+
+                    onSendMessage = { text ->
+                        vm.sendMessage(text)
+                    },
+
+                    onSendFile = { uri: Uri, fileName: String ->
+                        vm.sendFile(uri, fileName)
+                    },
+
+                    // ✅ FIX: правильная сигнатура
+                    onSendAudio = { uri: Uri, fileName: String ->
+                        vm.sendAudioMessage(uri, fileName)
+                    },
+
+                    onScheduleMessage = { text, time ->
+                        vm.scheduleMessage(text, time)
+                    },
+
+                    onBack = {
+                        navController.popBackStack()
+                    }
                 )
             }
 
-            // --- Разделы ---
+            /* ================= SECTIONS ================= */
+
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             composable(Routes.SETTINGS) {
@@ -167,28 +202,43 @@ fun NavGraph(
                     identityRepository = identityRepository
                 )
             }
+
             composable(Routes.MUSIC) { MusicPlayerScreen() }
 
-            // --- WebView ---
+            /* ================= WEBVIEW ================= */
+
             composable(
                 route = "webview/{url}/{title}",
                 arguments = listOf(
                     navArgument("url") { type = NavType.StringType },
                     navArgument("title") { type = NavType.StringType }
                 )
-            ) { navBackStackEntry ->
-                val url = navBackStackEntry.arguments?.getString("url") ?: ""
-                val title = navBackStackEntry.arguments?.getString("title") ?: ""
-                WebViewScreen(url = url, title = title, navController = navController)
+            ) { entry ->
+                val url = entry.arguments?.getString("url") ?: ""
+                val title = entry.arguments?.getString("title") ?: ""
+                WebViewScreen(
+                    url = url,
+                    title = title,
+                    navController = navController
+                )
             }
 
-            // --- Инструменты и Игры ---
+            /* ================= TOOLS ================= */
+
             composable(Routes.CALCULATOR) { CalculatorScreen() }
+
             composable(Routes.TEXT_EDITOR) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Редактор в разработке", color = Color.White)
+                Box(
+                    Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Редактор в разработке",
+                        color = Color.White
+                    )
                 }
             }
+
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
@@ -196,15 +246,25 @@ fun NavGraph(
             composable(Routes.JEWELS) { JewelsBlastScreen() }
 
             composable(Routes.AI_CHAT) {
-                if (isOnline) AiChatScreen()
-                else NoInternetScreen { navController.popBackStack() }
+                if (isOnline) {
+                    AiChatScreen()
+                } else {
+                    NoInternetScreen {
+                        navController.popBackStack()
+                    }
+                }
             }
         }
     }
 }
 
+/* ================= UI HELPERS ================= */
+
 @Composable
-private fun AppBottomBar(currentRoute: String?, navController: NavHostController) {
+private fun AppBottomBar(
+    currentRoute: String?,
+    navController: NavHostController
+) {
     NavigationBar(
         containerColor = Color(0xFF010101),
         tonalElevation = 0.dp
@@ -215,61 +275,129 @@ private fun AppBottomBar(currentRoute: String?, navController: NavHostController
             Triple(Routes.ENTERTAINMENT, Icons.Outlined.PlayCircleOutline, "Досуг"),
             Triple(Routes.SETTINGS, Icons.Filled.Settings, "Опции")
         )
+
         items.forEach { (route, icon, label) ->
-            val isSelected = currentRoute == route
+            val selected = currentRoute == route
+
             NavigationBarItem(
-                selected = isSelected,
+                selected = selected,
                 onClick = {
-                    if (!isSelected) {
+                    if (!selected) {
                         navController.navigate(route) {
-                            popUpTo(navController.graph.startDestinationId) { saveState = true }
+                            popUpTo(navController.graph.startDestinationId) {
+                                saveState = true
+                            }
                             launchSingleTop = true
                             restoreState = true
                         }
                     }
                 },
-                icon = { Icon(icon, contentDescription = label, tint = if (isSelected) Color.Cyan else Color.Gray) },
-                label = { Text(label, fontSize = 10.sp, color = if (isSelected) Color.Cyan else Color.Gray) },
-                colors = NavigationBarItemDefaults.colors(
-                    indicatorColor = Color(0xFF1A1A1A),
-                    selectedIconColor = Color.Cyan,
-                    unselectedIconColor = Color.Gray
-                )
+                icon = {
+                    Icon(
+                        icon,
+                        contentDescription = label,
+                        tint = if (selected) Color.Cyan else Color.Gray
+                    )
+                },
+                label = {
+                    Text(
+                        label,
+                        fontSize = 10.sp,
+                        color = if (selected) Color.Cyan else Color.Gray
+                    )
+                }
             )
         }
     }
 }
 
+/* ================= NETWORK ================= */
+
 @Composable
 fun rememberIsOnline(): State<Boolean> {
     val context = LocalContext.current
-    val status = remember { mutableStateOf(true) }
+    val state = remember { mutableStateOf(true) }
+
     DisposableEffect(context) {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val cm =
+            context.getSystemService(Context.CONNECTIVITY_SERVICE)
+                    as ConnectivityManager
+
         val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) { status.value = true }
-            override fun onLost(network: Network) { status.value = false }
+            override fun onAvailable(network: Network) {
+                state.value = true
+            }
+
+            override fun onLost(network: Network) {
+                state.value = false
+            }
         }
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
-        try { cm.registerNetworkCallback(request, callback) } catch (_: Exception) { status.value = true }
-        onDispose { try { cm.unregisterNetworkCallback(callback) } catch (_: Exception) {} }
+
+        val request =
+            NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+
+        try {
+            cm.registerNetworkCallback(request, callback)
+        } catch (_: Exception) {
+            state.value = true
+        }
+
+        onDispose {
+            try {
+                cm.unregisterNetworkCallback(callback)
+            } catch (_: Exception) {}
+        }
     }
-    return status
+
+    return state
 }
 
 @Composable
 fun NoInternetScreen(onBack: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
-            Icon(Icons.Default.CloudOff, null, tint = Color.Gray, modifier = Modifier.size(64.dp))
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(24.dp)
+        ) {
+            Icon(
+                Icons.Default.CloudOff,
+                null,
+                tint = Color.Gray,
+                modifier = Modifier.size(64.dp)
+            )
+
             Spacer(Modifier.height(16.dp))
-            Text("Офлайн-режим", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+
+            Text(
+                "Офлайн-режим",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+
             Spacer(Modifier.height(8.dp))
-            Text("Нужен интернет для AI.", color = Color.Gray, textAlign = TextAlign.Center)
+
+            Text(
+                "Нужен интернет для AI.",
+                color = Color.Gray,
+                textAlign = TextAlign.Center
+            )
+
             Spacer(Modifier.height(24.dp))
-            Button(onClick = onBack, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1A1A1A))) {
+
+            Button(
+                onClick = onBack,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF1A1A1A)
+                )
+            ) {
                 Text("Вернуться", color = Color.Cyan)
             }
         }
