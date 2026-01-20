@@ -122,7 +122,17 @@ class PeerSyncRepository(
 
                 if (local == null) {
                     // Новый узел -> сохраняем и пингуем
-                    nodeDao.upsert(NodeEntity(hash, "", ip, port, publicKey, "", lastSeen))
+                    nodeDao.upsert(
+                        NodeEntity(
+                            userHash = hash,
+                            phone_hash = "",
+                            ip = ip,
+                            port = port,
+                            publicKey = publicKey,
+                            phone = "",
+                            lastSeen = lastSeen
+                        )
+                    )
                     if (ip != "0.0.0.0") identityRepository.sendUdp(ip, "PING", "gossip_discovery")
                 } else {
                     // Обновляем, только если данные свежее
