@@ -115,10 +115,11 @@ fun NavGraph(
 
             composable(Routes.CONTACTS) {
                 ContactsScreen(
-                    navController = navController, 
                     identityRepository = identityRepository,
                     onContactClick = { contact ->
-                        contact.userHash.let { navController.navigate(Routes.buildChatRoute(it)) }
+                        contact.userHash?.let { hash ->
+                            navController.navigate(Routes.buildChatRoute(hash))
+                        }
                     }
                 )
             }
@@ -150,8 +151,8 @@ fun NavGraph(
                     messages = messages,
                     identityRepository = identityRepository,
                     onSendMessage = { text -> vm.sendMessage(text) },
-                    onSendFile = { uri, name -> vm.sendFile(uri, name) },
-                    onSendAudio = { uri, dur -> vm.sendAudioMessage(uri, dur) },
+                    onSendFile = { uri, name -> vm.sendFile(uri.toString(), name) },
+                    onSendAudio = { uri, dur -> vm.sendAudio(uri, dur) },
                     onScheduleMessage = { text, time -> vm.scheduleMessage(text, time) },
                     onBack = { navController.popBackStack() }
                 )
