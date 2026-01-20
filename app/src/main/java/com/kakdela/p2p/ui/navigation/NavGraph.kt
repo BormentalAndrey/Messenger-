@@ -6,6 +6,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -53,11 +54,8 @@ fun NavGraph(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
-    // Создаем MessageRepository для передачи в фабрики ViewModel
-    val db = remember { ChatDatabase.getDatabase(context) }
-    val messageRepository = remember { 
-        MessageRepository(context, db.messageDao(), identityRepository) 
-    }
+    // Reuse the repository already inside IdentityRepository to ensure singleton-like behavior where needed
+    val messageRepository = identityRepository.messageRepository
 
     val showBottomBar = currentRoute in listOf(
         Routes.CHATS, Routes.DEALS, Routes.ENTERTAINMENT, Routes.SETTINGS
@@ -116,7 +114,13 @@ fun NavGraph(
             composable(Routes.CHATS) { ChatsListScreen(navController = navController) }
 
             composable(Routes.CONTACTS) {
-                ContactsScreen(navController = navController, identityRepository = identityRepository)
+                ContactsScreen(
+                    navController = navController, 
+                    identityRepository = identityRepository,
+                    onContactClick = { contact ->
+                        contact.userHash.let { navController.navigate(Routes.buildChatRoute(it)) }
+                    }
+                )
             }
 
             // --- Чат ---
@@ -127,7 +131,6 @@ fun NavGraph(
                 val chatId = entry.arguments?.getString("chatId") ?: ""
                 val app = context.applicationContext as Application
 
-                // Исправлено: передаем все необходимые зависимости в Factory
                 val vm: ChatViewModel = viewModel(
                     factory = ChatViewModelFactory(
                         identityRepository, 
@@ -137,7 +140,6 @@ fun NavGraph(
                 )
 
                 LaunchedEffect(chatId) { 
-                    vm.loadPeer(chatId) // Загружаем данные собеседника
                     vm.initChat(chatId) 
                 }
 
@@ -148,9 +150,9 @@ fun NavGraph(
                     messages = messages,
                     identityRepository = identityRepository,
                     onSendMessage = { text -> vm.sendMessage(text) },
-                    onSendFile = { uri, name -> vm.sendFile(uri.toString(), name) },
-                    onSendAudio = { uri, dur -> vm.sendAudio(uri, dur) },
-                    onScheduleMessage = { text, time -> vm.scheduleMessage(text, time.toString()) },
+                    onSendFile = { uri, name -> vm.sendFile(uri, name) },
+                    onSendAudio = { uri, dur -> vm.sendAudioMessage(uri, dur) },
+                    onScheduleMessage = { text, time -> vm.scheduleMessage(text, time) },
                     onBack = { navController.popBackStack() }
                 )
             }
