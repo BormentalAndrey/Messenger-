@@ -231,7 +231,15 @@ class IdentityRepository(private val context: Context) {
         } catch (e: Exception) {
             // Fallback to local DB
             nodeDao.getAllNodes().map {
-                UserPayload(it.userHash, it.phone_hash, it.ip, it.port, it.publicKey, it.phone, it.lastSeen)
+                UserPayload(
+                    it.userHash, 
+                    it.phone_hash, 
+                    it.ip, 
+                    it.port, 
+                    it.publicKey, 
+                    it.phone, 
+                    it.lastSeen
+                )
             }
         }
     }
@@ -286,16 +294,9 @@ class IdentityRepository(private val context: Context) {
     }
 
     suspend fun addNodeByHash(hash: String): Boolean = withContext(Dispatchers.IO) {
-        // Try to fetch specific node from server logic, or sync all and check
         try {
             val nodes = fetchAllNodesFromServer()
-            val node = nodes.find { it.hash == hash }
-            if (node != null) {
-                // Already saved in fetchAllNodesFromServer, but we can return true
-                true
-            } else {
-                false
-            }
+            nodes.any { it.hash == hash }
         } catch (e: Exception) {
             false
         }
@@ -319,7 +320,7 @@ class IdentityRepository(private val context: Context) {
             delivered = sendUdp(ip, "CHAT_MSG", message)
         }
         if (!delivered && !phone.isNullOrBlank()) {
-            sendAsSms(phone, message)
+            sendAsSms(phone!!, message)
             delivered = true
         }
         delivered
