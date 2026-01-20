@@ -215,6 +215,7 @@ class IdentityRepository(private val context: Context) {
             val response = api.getAllNodes()
             val users = response.users ?: emptyList()
             
+            // Using Named Arguments to avoid Type Mismatch (Long vs String)
             nodeDao.upsertAll(users.map {
                 NodeEntity(
                     userHash = it.hash,
@@ -319,10 +320,14 @@ class IdentityRepository(private val context: Context) {
         if (!ip.isNullOrBlank() && ip != "0.0.0.0") {
             delivered = sendUdp(ip, "CHAT_MSG", message)
         }
+        
+        // Fix: Explicit if block for SMS fallback, separate from return
         if (!delivered && !phone.isNullOrBlank()) {
             sendAsSms(phone!!, message)
             delivered = true
         }
+        
+        // Return delivered status
         delivered
     }
 
