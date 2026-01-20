@@ -83,7 +83,7 @@ class PeerSyncRepository(
                 ?: nodeDao.getNodeByHash(targetHash)?.ip
 
             if (!ip.isNullOrBlank() && ip != "0.0.0.0") {
-                identityRepository.sendUdp(ip, PEER_SYNC_TYPE, payload)
+                identityRepository.sendUdp(ip!!, PEER_SYNC_TYPE, payload)
             }
         }
     }
@@ -112,9 +112,9 @@ class PeerSyncRepository(
                 if (hash == identityRepository.getMyId()) continue
 
                 val ip = obj.optString("ip", "0.0.0.0")
-                val port = obj.optInt("port", 8888) // Исправлено: optInt
+                val port = obj.optInt("port", 8888) 
                 val publicKey = obj.optString("publicKey", "")
-                val lastSeen = obj.optLong("lastSeen", 0L) // Исправлено: optLong
+                val lastSeen = obj.optLong("lastSeen", 0L) 
 
                 if (hash.isBlank() || publicKey.isBlank()) continue
 
