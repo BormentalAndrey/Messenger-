@@ -1,11 +1,11 @@
 package com.kakdela.p2p.ui.chat
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import android.annotation.SuppressLint
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.Context
 import android.content.Intent
+import android.database.Cursor
 import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.net.Uri
@@ -25,18 +25,15 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Pause
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.*
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.*
-import coil.compose.AsyncImage
 import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.data.local.MessageEntity
 import com.kakdela.p2p.ui.call.CallActivity
@@ -68,16 +65,16 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     var textState by remember { mutableStateOf("") }
 
-    val contactName by rememberContactName(chatPartnerId)
+    val contactName = rememberContactName(chatPartnerId)
     val displayName = remember(contactName, chatPartnerId) {
         if (contactName.isBlank() || contactName == chatPartnerId) {
-            "ID: ${chatPartnerId.take(8)}"
+            if (chatPartnerId.length > 20) "ID: ${chatPartnerId.take(8)}" else chatPartnerId
         } else {
             contactName
         }
     }
-    val contactAvatar by rememberContactAvatar(chatPartnerId)
-
+    
+    // Автопрокрутка к последнему сообщению
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
@@ -103,7 +100,7 @@ fun ChatScreen(
                 },
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        AnimatedAvatar(contactAvatar)
+                        ChatAvatar(letter = displayName.firstOrNull()?.toString() ?: "?")
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text(
@@ -114,7 +111,7 @@ fun ChatScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Text("P2P E2EE Connection", fontSize = 10.sp, color = Color.Gray)
+                            Text("Hybrid: SMS + P2P", fontSize = 10.sp, color = Color.Gray)
                         }
                     }
                 },
@@ -148,10 +145,9 @@ fun ChatScreen(
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(messages, key = { it.messageId }) { message ->
+            items(messages, key = { it.messageId + it.timestamp }) { message ->
                 ChatBubble(
                     message = message,
-                    contactAvatar = contactAvatar,
                     modifier = Modifier.animateItemPlacement()
                 )
             }
@@ -164,7 +160,11 @@ fun startCall(context: Context, id: String, isVideo: Boolean) {
         putExtra("chatId", id)
         putExtra("isVideo", isVideo)
     }
-    context.startActivity(intent)
+    try {
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        Toast.makeText(context, "Звонки пока не реализованы", Toast.LENGTH_SHORT).show()
+    }
 }
 
 @Composable
@@ -249,7 +249,7 @@ fun ChatInputArea(
                     TextField(
                         value = text,
                         onValueChange = onTextChange,
-                        placeholder = { Text("Сообщение...", color = Color.Gray, fontSize = 14.sp) },
+                        placeholder = { Text("Сообщение (SMS/P2P)...", color = Color.Gray, fontSize = 14.sp) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 48.dp)
@@ -333,7 +333,6 @@ fun ChatInputArea(
 @Composable
 fun ChatBubble(
     message: MessageEntity,
-    contactAvatar: Uri?,
     modifier: Modifier = Modifier
 ) {
     val isMe = message.isMe
@@ -344,13 +343,23 @@ fun ChatBubble(
         bottomStart = if (isMe) 16.dp else 4.dp,
         bottomEnd = if (isMe) 4.dp else 16.dp
     )
-    val bubbleColor = if (isMe) Color(0xFF003D3D).copy(alpha = 0.95f) else Color(0xFF2D1442).copy(alpha = 0.95f)
+    // Разные цвета для SMS и P2P для наглядности (опционально)
+    val isSms = message.status.contains("SMS")
+    
+    val bubbleColor = when {
+        isMe && isSms -> Color(0xFF664400) // SMS отправленные
+        isMe -> Color(0xFF003D3D).copy(alpha = 0.95f) // P2P отправленные
+        isSms -> Color(0xFF333333) // SMS полученные
+        else -> Color(0xFF2D1442).copy(alpha = 0.95f) // P2P полученные
+    }
+    
     val borderColor = if (isMe) NeonCyan.copy(alpha = 0.3f) else NeonPurple.copy(alpha = 0.3f)
 
     Column(modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp), horizontalAlignment = alignment) {
         if (!isMe) {
             Row(verticalAlignment = Alignment.Bottom) {
-                AnimatedAvatar(contactAvatar, size = 36.dp)
+                // Аватар партнера
+                Box(Modifier.size(36.dp).background(NeonPurple, CircleShape))
                 Spacer(Modifier.width(8.dp))
                 MessageBubbleContent(
                     message = message,
@@ -377,8 +386,6 @@ fun MessageBubbleContent(
     color: Color,
     borderColor: Color
 ) {
-    val context = LocalContext.current
-
     Surface(
         shape = shape,
         color = color,
@@ -404,10 +411,16 @@ fun MessageBubbleContent(
                 modifier = Modifier.align(Alignment.End).padding(top = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (message.status.contains("SMS")) {
+                   Text("SMS", fontSize = 9.sp, color = Color.Gray, fontWeight = FontWeight.Bold)
+                   Spacer(Modifier.width(4.dp))
+                }
+                
                 if (message.scheduledTime != null) {
                     Icon(Icons.Outlined.Schedule, null, tint = NeonCyan.copy(0.6f), modifier = Modifier.size(12.dp))
                     Spacer(Modifier.width(4.dp))
                 }
+                
                 Text(
                     text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(message.timestamp)),
                     fontSize = 10.sp,
@@ -429,8 +442,13 @@ fun AudioPlayerBubble(content: String) {
     val audioDir = remember { File(context.filesDir, "audios") }
     val audioFile = remember(fileName) { File(audioDir, fileName) }
 
+    // Если файл не найден локально (например, SMS без вложения), просто показываем имя
     if (!audioFile.exists()) {
-        Text("Аудио недоступно", color = Color.Red.copy(alpha = 0.8f), fontSize = 13.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Audiotrack, null, tint = Color.Gray)
+            Spacer(Modifier.width(8.dp))
+            Text("Аудио файл (не загружен)", color = Color.Gray, fontSize = 13.sp)
+        }
         return
     }
 
@@ -512,7 +530,7 @@ fun AudioPlayerBubble(content: String) {
                 colors = SliderDefaults.colors(
                     thumbColor = NeonCyan,
                     activeTrackColor = NeonCyan,
-                    inactiveTrackColor = Color.Gray.copy(alpha = 0.3f)
+                      inactiveTrackColor = Color.Gray.copy(alpha = 0.3f)
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -531,161 +549,114 @@ fun FileBubble(content: String) {
     val trimmed = content.removePrefix("FILE:").trim()
     val parts = trimmed.split(" ", limit = 2)
     val displayName = parts[0]
-    val savedName = if (parts.size > 1) parts[1] else displayName
-
+    
+    // Попытка открыть файл (просто заглушка для логики открытия, так как в SMS файлы передаются как ссылки или MMS)
+    // Здесь предполагается, что если это P2P, файл лежит локально
     val fileDir = remember { File(context.filesDir, "files").apply { mkdirs() } }
-    val file = remember(savedName) { File(fileDir, savedName) }
-    val uri = Uri.fromFile(file)
+    val file = remember(displayName) { File(fileDir, displayName) }
 
-    val extension = displayName.substringAfterLast(".", "").lowercase()
-    val imageExtensions = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic")
-    val isImage = extension in imageExtensions
-
-    if (isImage && file.exists()) {
-        AsyncImage(
-            model = uri,
-            contentDescription = displayName,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 320.dp)
-                .clip(RoundedCornerShape(12.dp)),
-            contentScale = ContentScale.Fit
-        )
-    } else {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(enabled = file.exists() && !isImage) {
-                    if (file.exists()) {
+    Row(
+        modifier = Modifier
+            .clickable {
+                // Простая логика открытия файла через Intent, если он существует
+                if (file.exists()) {
+                    try {
+                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                            context, "${context.packageName}.provider", file
+                        )
                         val intent = Intent(Intent.ACTION_VIEW).apply {
-                            setDataAndType(uri, "*/*")
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            setDataAndType(uri, "*/*") // Mime type лучше определять точнее
+                            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
                         }
-                        try {
-                            context.startActivity(intent)
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "Нет приложения для открытия", Toast.LENGTH_SHORT).show()
-                        }
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Невозможно открыть файл", Toast.LENGTH_SHORT).show()
                     }
+                } else {
+                    Toast.makeText(context, "Файл не найден локально", Toast.LENGTH_SHORT).show()
                 }
-                .padding(vertical = 4.dp)
-        ) {
-            Icon(
-                Icons.Default.Attachment,
-                contentDescription = null,
-                tint = NeonPurple,
-                modifier = Modifier.size(36.dp)
+            }
+            .padding(4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Default.Description, contentDescription = "File", tint = NeonCyan)
+        Spacer(Modifier.width(8.dp))
+        Column {
+            Text(text = displayName, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(text = "Нажмите, чтобы открыть", color = Color.Gray, fontSize = 10.sp)
+        }
+    }
+}
+
+// === HELPER COMPOSABLES AND FUNCTIONS ===
+
+@Composable
+fun ChatAvatar(letter: String) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(NeonCyan.copy(alpha = 0.2f))
+            .border(1.dp, NeonCyan, CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text = letter, color = NeonCyan, fontWeight = FontWeight.Bold)
+    }
+}
+
+@SuppressLint("Range")
+@Composable
+fun rememberContactName(phoneNumber: String): String {
+    val context = LocalContext.current
+    var displayName by remember(phoneNumber) { mutableStateOf(phoneNumber) }
+
+    LaunchedEffect(phoneNumber) {
+        if (phoneNumber.length > 20) { // Если это Hash
+            return@LaunchedEffect 
+        }
+        try {
+            val uri = Uri.withAppendedPath(
+                ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
+                Uri.encode(phoneNumber)
             )
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text(displayName, color = Color.White, fontWeight = FontWeight.Medium, fontSize = 15.sp)
-                Text(
-                    if (file.exists()) "Нажмите для открытия" else "Файл недоступен",
-                    color = Color.Gray,
-                    fontSize = 12.sp
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun formatTime(seconds: Int): String {
-    val min = seconds / 60
-    val sec = seconds % 60
-    return String.format("%02d:%02d", min, sec)
-}
-
-@Composable
-fun AnimatedAvatar(avatarUri: Uri?, size: Dp = 34.dp) {
-    val infiniteTransition = rememberInfiniteTransition()
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.1f,
-        targetValue = 0.4f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000),
-            repeatMode = RepeatMode.Reverse
-        )
-    )
-
-    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(size)) {
-        Surface(
-            modifier = Modifier.size(size),
-            shape = CircleShape,
-            color = SurfaceGray,
-            border = BorderStroke(2.dp, NeonCyan.copy(alpha = 0.5f))
-        ) {
-            if (avatarUri != null) {
-                AsyncImage(
-                    model = avatarUri,
-                    contentDescription = "Avatar",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = "Default Avatar",
-                    tint = Color.Gray,
-                    modifier = Modifier.padding(8.dp)
-                )
-            }
-        }
-
-        // Пульсирующее свечение
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .padding(4.dp)
-                .background(NeonCyan.copy(alpha = pulseAlpha), CircleShape)
-        )
-    }
-}
-@SuppressLint("Range")
-@Composable
-fun rememberContactName(id: String): State<String> {
-    val context = LocalContext.current
-    val state = remember { mutableStateOf("") }
-    LaunchedEffect(id) {
-        try {
-            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(id))
-            context.contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME), null, null, null)?.use {
-                if (it.moveToFirst()) state.value = it.getString(0) ?: ""
-            }
-        } catch (e: Exception) {
-            state.value = ""
-        }
-    }
-    return state
-}
-
-@SuppressLint("Range")
-@Composable
-fun rememberContactAvatar(id: String): State<Uri?> {
-    val context = LocalContext.current
-    val state = remember { mutableStateOf<Uri?>(null) }
-    LaunchedEffect(id) {
-        try {
-            val uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(id))
-            context.contentResolver.query(uri, arrayOf(ContactsContract.PhoneLookup.PHOTO_URI), null, null, null)?.use {
-                if (it.moveToFirst()) {
-                    val photoUri = it.getString(0)
-                    if (photoUri != null) state.value = Uri.parse(photoUri)
+            context.contentResolver.query(
+                uri,
+                arrayOf(ContactsContract.PhoneLookup.DISPLAY_NAME),
+                null, null, null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    displayName = cursor.getString(cursor.getColumnIndex(ContactsContract.PhoneLookup.DISPLAY_NAME))
                 }
             }
-        } catch (e: Exception) { }
+        } catch (_: Exception) {}
     }
-    return state
+    return displayName
 }
 
+@SuppressLint("Range")
 fun getFileName(context: Context, uri: Uri): String {
-    var name = "file_${System.currentTimeMillis()}"
-    try {
-        context.contentResolver.query(uri, null, null, null, null)?.use {
-            val idx = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            if (it.moveToFirst() && idx != -1) name = it.getString(idx)
+    var result: String? = null
+    if (uri.scheme == "content") {
+        try {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    result = cursor.getString(cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME))
+                }
+            }
+        } catch (_: Exception) {}
+    }
+    if (result == null) {
+        result = uri.path
+        val cut = result?.lastIndexOf('/')
+        if (cut != null && cut != -1) {
+            result = result?.substring(cut + 1)
         }
-    } catch (e: Exception) { }
-    return name
+    }
+    return result ?: "unknown_file"
+}
+
+fun formatTime(seconds: Int): String {
+    val m = seconds / 60
+    val s = seconds % 60
+    return String.format("%02d:%02d", m, s)
 }
