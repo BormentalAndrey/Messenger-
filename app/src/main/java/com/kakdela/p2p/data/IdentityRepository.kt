@@ -210,9 +210,9 @@ class IdentityRepository(private val context: Context) {
     suspend fun sendSignaling(targetHash: String, data: String): Boolean {
         val ip = wifiPeers[targetHash]
             ?: swarmPeers[targetHash]
-            ?: getCachedNode(targetHash)?.ip
+            ?: getCachedNode(targetHash)?.ip ?: return false
 
-        return if (!ip.isNullOrBlank() && ip != "0.0.0.0") {
+        return if (ip != "0.0.0.0") {
             sendUdp(ip, "SIGNALING", data)
         } else {
             false
