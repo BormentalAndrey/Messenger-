@@ -15,12 +15,7 @@ import kotlinx.coroutines.launch
 
 /**
  * ChatViewModel: Управляет UI-состоянием чата.
- * Использует MessageRepository для всех операций с данными.
- *
- * Исправления для совместимости с NavGraph:
- * - sendFile теперь принимает только Uri и fileName (type определяется внутри или хардкод).
- * - Добавлен sendAudioMessage(Uri, fileName) — отправка аудио как файл с type = "audio".
- * - scheduleMessage принимает timestamp: Long.
+ * Поддерживает как P2P хеши, так и номера телефонов.
  */
 class ChatViewModel(
     application: Application,
@@ -38,34 +33,31 @@ class ChatViewModel(
     val messages: StateFlow<List<MessageEntity>> = _messages.asStateFlow()
 
     /**
-     * Инициализация чата и подписка на обновления базы данных.
+     * Инициализация чата.
+     * identifier может быть хэшем пользователя или номером телефона.
      */
     fun initChat(identifier: String) {
         partnerHash = identifier
         viewModelScope.launch(Dispatchers.IO) {
+            // Подписываемся на сообщения из БД.
+            // Если это новый SMS чат, список может быть пуст, пока мы не отправим первое сообщение
+            // или пока система не импортирует SMS (реализовано в MessageRepository/IncomingReceiver).
             messageDao.observeMessages(identifier)
                 .distinctUntilChanged()
                 .collect { list ->
-                    _messages.value = list.sortedBy { it.timestamp } // Сортировка по времени для правильного порядка
+                    _messages.value = list.sortedBy { it.timestamp }
                 }
         }
     }
 
-    /**
-     * Отправка текста
-     */
     fun sendMessage(text: String) {
         if (text.isBlank() || partnerHash.isBlank()) return
+        // MessageRepository сам решит: шифровать (P2P) или нет (SMS) в зависимости от partnerHash
         messageRepo.sendText(partnerHash, text)
     }
 
-    /**
-     * Отправка файла (универсальный метод)
-     * type определяется автоматически или хардкодится ("file"/"image"/"audio" и т.д.)
-     */
     fun sendFile(uri: Uri, fileName: String) {
         if (partnerHash.isBlank()) return
-        // Здесь можно добавить определение mime-type если нужно
         val type = when {
             fileName.endsWith(".jpg", ignoreCase = true) ||
             fileName.endsWith(".jpeg", ignoreCase = true) ||
@@ -78,17 +70,11 @@ class ChatViewModel(
         messageRepo.sendFile(partnerHash, uri, type, fileName)
     }
 
-    /**
-     * Отправка аудиосообщения (использует sendFile с type = "audio")
-     */
     fun sendAudioMessage(uri: Uri, fileName: String) {
         if (partnerHash.isBlank()) return
         messageRepo.sendFile(partnerHash, uri, "audio", fileName)
     }
 
-    /**
-     * Планирование сообщения
-     */
     fun scheduleMessage(text: String, timestamp: Long) {
         if (text.isBlank() || partnerHash.isBlank()) return
         messageRepo.sendText(partnerHash, text, scheduledTime = timestamp)
