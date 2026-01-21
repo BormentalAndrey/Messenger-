@@ -21,7 +21,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -30,22 +29,23 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import com.kakdela.p2p.ui.navigation.Routes
-import java.util.*
 
 @SuppressLint("Range")
 @Composable
-fun rememberContactName(phoneNumber: String): String {
+fun rememberContactName(identifier: String): String {
     val context = LocalContext.current
-    var displayName by remember(phoneNumber) { mutableStateOf(phoneNumber) }
+    var displayName by remember(identifier) { mutableStateOf(identifier) }
 
-    // Простая валидация: если это хеш (длинный), не ищем в контактах
-    if (phoneNumber.length > 20) return "ID: ${phoneNumber.take(6)}..."
+    // Если это длинный хеш без цифр, сразу форматируем как ID
+    if (identifier.length > 20 && !identifier.any { it.isDigit() } && !identifier.startsWith("+")) {
+        return "ID: ${identifier.take(6)}..."
+    }
 
-    LaunchedEffect(phoneNumber) {
+    LaunchedEffect(identifier) {
         try {
             val uri = Uri.withAppendedPath(
                 ContactsContract.PhoneLookup.CONTENT_FILTER_URI,
-                Uri.encode(phoneNumber)
+                Uri.encode(identifier)
             )
             context.contentResolver.query(
                 uri,
@@ -69,7 +69,6 @@ fun AnimatedAvatar(
     size: Dp = 52.dp
 ) {
     val transition = rememberInfiniteTransition(label = "avatar")
-
     val glowAlpha by transition.animateFloat(
         initialValue = 0.25f,
         targetValue = if (isActive && !isSms) 0.7f else 0.25f,
@@ -80,14 +79,12 @@ fun AnimatedAvatar(
         label = "glowAlpha"
     )
 
-    val mainColor = if (isSms) Color(0xFFFFA500) else Color(0xFF00FFFF) // Оранжевый для SMS, Циан для P2P
+    val mainColor = if (isSms) Color(0xFFFFA500) else Color(0xFF00FFFF)
 
     Box(
-        modifier = Modifier
-            .size(size),
+        modifier = Modifier.size(size),
         contentAlignment = Alignment.Center
     ) {
-        // Фоновое свечение (только для P2P)
         if (!isSms) {
             Box(
                 modifier = Modifier
@@ -101,11 +98,11 @@ fun AnimatedAvatar(
                 modifier = Modifier
                     .fillMaxSize()
                     .clip(CircleShape)
-                    .background(Color.DarkGray)
-                    .border(1.dp, mainColor, CircleShape)
+                    .background(Color(0xFF1A1A1A))
+                    .border(1.dp, mainColor.copy(alpha = 0.5f), CircleShape)
             )
         }
-        
+
         Text(
             text = letter,
             fontWeight = FontWeight.ExtraBold,
@@ -120,7 +117,7 @@ fun ChatListItem(
     chat: ChatDisplay,
     onClick: () -> Unit
 ) {
-    val contactName = rememberContactName(chat.title)
+    val contactName = rememberContactName(chat.phoneNumber ?: chat.title)
 
     Row(
         modifier = Modifier
@@ -132,7 +129,7 @@ fun ChatListItem(
         AnimatedAvatar(
             letter = contactName.firstOrNull()?.uppercase() ?: "?",
             isActive = chat.lastMessage.isNotBlank(),
-            isSms = chat.isSms
+            isSms = chat.lastMessageIsSms
         )
 
         Spacer(Modifier.width(16.dp))
@@ -162,19 +159,19 @@ fun ChatListItem(
             Spacer(Modifier.height(4.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (chat.isSms) {
+                if (chat.lastMessageIsSms) {
                     Icon(
-                        Icons.Default.Sms, 
-                        contentDescription = "SMS", 
-                        tint = Color.Gray, 
+                        Icons.Default.Sms,
+                        contentDescription = "SMS",
+                        tint = Color(0xFFFFA500).copy(alpha = 0.6f),
                         modifier = Modifier.size(12.dp)
                     )
                     Spacer(Modifier.width(4.dp))
                 }
-                
+
                 Text(
                     text = chat.lastMessage,
-                    color = Color.LightGray.copy(alpha = 0.7f),
+                    color = Color.LightGray.copy(alpha = 0.6f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodyMedium
@@ -193,7 +190,6 @@ fun ChatsListScreen(
     val vm: ChatsListViewModel = viewModel()
     val chats by vm.chats.collectAsState()
 
-    // Запрос разрешений на чтение SMS для отображения системных чатов
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
@@ -201,8 +197,9 @@ fun ChatsListScreen(
     }
 
     LaunchedEffect(Unit) {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS) 
-            != PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_SMS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
             permissionLauncher.launch(Manifest.permission.READ_SMS)
         } else {
             vm.refreshSms()
@@ -214,7 +211,7 @@ fun ChatsListScreen(
             CenterAlignedTopAppBar(
                 title = {
                     Text(
-                        "Сообщения",
+                        "СООБЩЕНИЯ",
                         fontWeight = FontWeight.ExtraBold,
                         letterSpacing = 2.sp,
                         color = Color(0xFF00FFFF)
@@ -249,8 +246,7 @@ fun ChatsListScreen(
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(chats, key = { it.id + it.timestamp }) { chat ->
                         ChatListItem(chat) {
-                            // Если это SMS, ID - это номер телефона, используем его для навигации
-                            val routeId = if (chat.isSms) chat.title else chat.id
+                            val routeId = chat.phoneNumber ?: chat.p2pHash ?: chat.id
                             navController.navigate("chat/$routeId")
                         }
                         HorizontalDivider(
@@ -272,8 +268,17 @@ fun EmptyStateView() {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Список пуст", color = Color(0xFF00FFFF).copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
+        Text(
+            "Список пуст",
+            color = Color(0xFF00FFFF).copy(alpha = 0.4f),
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.headlineSmall
+        )
         Spacer(Modifier.height(8.dp))
-        Text("Нет активных чатов или SMS", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+        Text(
+            "Нет активных диалогов или SMS",
+            color = Color.Gray,
+            style = MaterialTheme.typography.bodyMedium
+        )
     }
 }
