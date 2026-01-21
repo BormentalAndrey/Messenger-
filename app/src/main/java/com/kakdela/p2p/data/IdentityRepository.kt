@@ -53,7 +53,7 @@ class IdentityRepository(private val context: Context) {
     private companion object {
         const val SERVICE_TYPE = "_kakdela_p2p._udp."
         const val PORT = 8888
-        const val SYNC_INTERVAL = 300_000L  // 5 минут
+        const val SYNC_INTERVAL = 300_000L  // 5 minutes
         const val PEPPER = "7fb8a1d2c3e4f5a6b7c8d9e0f1a2b3c4"
     }
 
@@ -289,7 +289,8 @@ class IdentityRepository(private val context: Context) {
                 saveNodeToDb(payload)
                 fetchAllNodesFromServer()
             } else {
-                Log.w(TAG, "announceSelf failed: ${response.message}")
+                // FIXED: Changed ${response.message} to $response to avoid Unresolved reference
+                Log.w(TAG, "announceSelf failed: $response")
             }
         } catch (e: Exception) {
             Log.w(TAG, "Server sync failed", e)
