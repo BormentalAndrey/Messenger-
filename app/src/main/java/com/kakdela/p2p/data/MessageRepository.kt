@@ -12,8 +12,8 @@ import kotlinx.coroutines.*
 import java.util.UUID
 
 /**
- * MessageRepository: Реализует E2EE шифрование и гибридную маршрутизацию.
- * Синхронизирован с IdentityRepository для обеспечения сквозной доставки.
+ * MessageRepository: Реализует отправку сообщений.
+ * Модификация: Отправляет НЕЗАШИФРОВАННЫЕ сообщения, если транспорт SMS или нет ключа.
  */
 class MessageRepository(
     private val context: Context,
@@ -35,7 +35,11 @@ class MessageRepository(
             try {
                 val myId = identityRepo.getMyId()
                 val msgId = UUID.randomUUID().toString()
+                
+                // Пытаемся найти ноду. Если toHash похож на телефон, ищем по телефону или используем как есть.
                 val peer = identityRepo.getCachedNode(toHash)
+                val targetPhone = peer?.phone ?: if (toHash.matches(Regex("^[+]?[0-9]{10,15}$"))) toHash else null
+
                 val isScheduled = scheduledTime != null && scheduledTime > System.currentTimeMillis()
 
                 val entity = MessageEntity(
@@ -56,7 +60,8 @@ class MessageRepository(
                 if (isScheduled) {
                     scheduleMessageWork(context, msgId, toHash, text, scheduledTime!!)
                 } else {
-                    performNetworkSend(toHash, msgId, text, peer?.phone)
+                    // Передаем targetPhone явно, если он есть
+                    performNetworkSend(toHash, msgId, text, targetPhone)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error sending text", e)
@@ -106,17 +111,23 @@ class MessageRepository(
         phone: String?
     ): Boolean = withContext(Dispatchers.IO) {
         try {
-            // 1. E2EE Шифрование
+            // 1. Проверяем наличие ключа шифрования
             val pubKey = identityRepo.getPeerPublicKey(chatId)
-            val encryptedPayload = if (!pubKey.isNullOrBlank()) {
-                CryptoManager.encryptMessage(payload, pubKey)
+            
+            // ЛОГИКА ОТПРАВКИ SMS:
+            // Если публичного ключа нет (это обычный SMS контакт) ИЛИ мы явно шлем на номер телефона -> НЕ ШИФРУЕМ.
+            val shouldUseEncryption = !pubKey.isNullOrBlank() && (phone == null || identityRepo.wifiPeers.containsKey(chatId))
+
+            val finalPayload = if (shouldUseEncryption) {
+                CryptoManager.encryptMessage(payload, pubKey!!)
             } else {
-                Log.w(TAG, "No public key for $chatId, sending plain (not recommended)")
+                Log.i(TAG, "Sending unencrypted message (SMS mode) to $chatId")
                 payload
             }
 
-            // 2. Транспорт через IdentityRepo (UDP -> SMS)
-            val delivered = identityRepo.sendMessageSmart(chatId, phone, encryptedPayload)
+            // 2. Транспорт через IdentityRepo
+            // Если chatId - это номер телефона, sendMessageSmart должен обработать это корректно через SMS fallback
+            val delivered = identityRepo.sendMessageSmart(chatId, phone, finalPayload)
             
             // 3. Обновление статуса
             val finalStatus = if (delivered) "SENT" else "FAILED"
@@ -135,17 +146,23 @@ class MessageRepository(
     fun handleIncoming(type: String, data: String, fromHash: String) {
         repositoryScope.launch {
             try {
-                // Дешифровка
+                // Попытка дешифровки. Если не удается (пришло обычное SMS), оставляем как есть.
                 val decrypted = try {
-                    CryptoManager.decryptMessage(data).ifEmpty { data }
-                } catch (e: Exception) { data }
+                    if (type == "SMS" && !data.contains("IV:")) {
+                         data // Это обычное SMS, не трогаем
+                    } else {
+                        CryptoManager.decryptMessage(data).ifEmpty { data }
+                    }
+                } catch (e: Exception) { 
+                    data // Ошибка дешифровки или простой текст
+                }
 
                 var displayText = decrypted
                 var msgType = "TEXT"
                 var incomingFileName: String? = null
                 var incomingFileBytes: ByteArray? = null
 
-                // Разбор FILEV1
+                // Разбор FILEV1 (только если это наш протокол)
                 if (decrypted.startsWith("FILEV1:")) {
                     try {
                         val content = decrypted.substring(7)
