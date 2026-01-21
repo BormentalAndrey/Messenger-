@@ -1,3 +1,10 @@
+// Fixed NavGraph.kt to match the provided ChatViewModel
+// - sendFile now called with type (hardcoded or determined)
+// - Audio sent via sendFile with type = "audio" (no duration needed)
+// - Removed sendAudioMessage (not in VM)
+// - Added fileName param where missing
+// - scheduleMessage assumes time: Long
+
 package com.kakdela.p2p.ui.navigation
 
 import android.app.Application
@@ -173,13 +180,14 @@ fun NavGraph(
                         vm.sendMessage(text)
                     },
 
+                    // Fixed: pass type + fileName
                     onSendFile = { uri: Uri, fileName: String ->
-                        vm.sendFile(uri, fileName)
+                        vm.sendFile(uri, "file", fileName)
                     },
 
-                    // ✅ FIX: правильная сигнатура
+                    // Fixed: use sendFile for audio (type = "audio")
                     onSendAudio = { uri: Uri, fileName: String ->
-                        vm.sendAudioMessage(uri, fileName)
+                        vm.sendFile(uri, "audio", fileName)
                     },
 
                     onScheduleMessage = { text, time ->
