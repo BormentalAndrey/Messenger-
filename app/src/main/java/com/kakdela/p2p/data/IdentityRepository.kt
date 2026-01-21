@@ -53,7 +53,7 @@ class IdentityRepository(private val context: Context) {
     private companion object {
         const val SERVICE_TYPE = "_kakdela_p2p._udp."
         const val PORT = 8888
-        const val SYNC_INTERVAL = 300_000L
+        const val SYNC_INTERVAL = 300_000L  // 5 минут
         const val PEPPER = "7fb8a1d2c3e4f5a6b7c8d9e0f1a2b3c4"
     }
 
@@ -139,7 +139,9 @@ class IdentityRepository(private val context: Context) {
                 processIncomingPacket(raw, fromIp)
             }
         } catch (e: Exception) {
-            if (isRunning) Log.e(TAG, "UDP error", e)
+            if (isRunning) Log.e(TAG, "UDP listener error", e)
+        } finally {
+            udpSocket?.close()
         }
     }
 
@@ -155,6 +157,7 @@ class IdentityRepository(private val context: Context) {
                 val signature = Base64.decode(json.getString("signature"), Base64.NO_WRAP)
 
                 if (!CryptoManager.verify(signature, (data + timestamp).toByteArray(), pubKey)) {
+                    Log.w(TAG, "Signature verification failed from $fromIp")
                     return@launch
                 }
 
@@ -171,7 +174,7 @@ class IdentityRepository(private val context: Context) {
                     else -> listeners.forEach { it(type, data, fromIp, fromHash) }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Malformed packet", e)
+                Log.e(TAG, "Malformed packet from $fromIp", e)
             }
         }
     }
@@ -199,7 +202,7 @@ class IdentityRepository(private val context: Context) {
                 }
                 true
             } catch (e: Exception) {
-                Log.w(TAG, "sendUdp failed to $ip", e)
+                Log.w(TAG, "sendUdp failed to $ip (type=$type)", e)
                 false
             }
         }
@@ -285,6 +288,8 @@ class IdentityRepository(private val context: Context) {
             if (response.success) {
                 saveNodeToDb(payload)
                 fetchAllNodesFromServer()
+            } else {
+                Log.w(TAG, "announceSelf failed: ${response.message}")
             }
         } catch (e: Exception) {
             Log.w(TAG, "Server sync failed", e)
@@ -321,6 +326,7 @@ class IdentityRepository(private val context: Context) {
             val nodes = fetchAllNodesFromServer()
             nodes.any { it.hash == hash }
         } catch (e: Exception) {
+            Log.w(TAG, "addNodeByHash failed", e)
             false
         }
     }
@@ -379,7 +385,9 @@ class IdentityRepository(private val context: Context) {
             }
 
             smsManager?.sendTextMessage(phone, null, "[P2P] $message", null, null)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(TAG, "SMS fallback failed", e)
+        }
     }
 
     fun getMyId(): String {
@@ -475,13 +483,17 @@ class IdentityRepository(private val context: Context) {
 
         try {
             nsdManager.registerService(info, NsdManager.PROTOCOL_DNS_SD, registrationListener)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(TAG, "NSD register failed", e)
+        }
     }
 
     private fun discoverInWifi() {
         try {
             nsdManager.discoverServices(SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.w(TAG, "NSD discover failed", e)
+        }
     }
 
     private fun startSyncLoop() = networkScope?.launch {
