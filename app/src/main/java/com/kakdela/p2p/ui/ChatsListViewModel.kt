@@ -1,8 +1,6 @@
 package com.kakdela.p2p.ui
 
 import android.app.Application
-import android.database.Cursor
-import android.net.Uri
 import android.provider.Telephony
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,7 +14,11 @@ import java.util.*
 
 /**
  * Модель отображения чата.
- * isSms - флаг, указывающий, что чат загружен из системной базы SMS.
+ *
+ * id              — основной идентификатор (hash P2P или телефон)
+ * lastMessageIsSms — тип последнего сообщения (для иконки)
+ * p2pHash         — hash P2P-чата (если есть)
+ * phoneNumber     — номер телефона (если есть)
  */
 data class ChatDisplay(
     val id: String,
@@ -24,7 +26,9 @@ data class ChatDisplay(
     val lastMessage: String,
     val time: String,
     val timestamp: Long,
-    val isSms: Boolean = false
+    val lastMessageIsSms: Boolean,
+    val p2pHash: String? = null,
+    val phoneNumber: String? = null
 )
 
 class ChatsListViewModel(application: Application) : AndroidViewModel(application) {
@@ -36,12 +40,40 @@ class ChatsListViewModel(application: Application) : AndroidViewModel(applicatio
     private val _dbChats = MutableStateFlow<List<ChatDisplay>>(emptyList())
     private val _smsChats = MutableStateFlow<List<ChatDisplay>>(emptyList())
 
-    // Объединяем локальные P2P чаты и системные SMS
-    val chats: StateFlow<List<ChatDisplay>> = combine(_dbChats, _smsChats) { dbList, smsList ->
-        (dbList + smsList)
-            .distinctBy { it.id } // Простейшая дедупликация (можно улучшить по нормализации телефона)
-            .sortedByDescending { it.timestamp }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /**
+     * Итоговый список чатов:
+     * - объединяет SMS и P2P
+     * - группирует по телефону (если есть)
+     * - выбирает самое свежее сообщение
+     */
+    val chats: StateFlow<List<ChatDisplay>> =
+        combine(_dbChats, _smsChats) { dbList, smsList ->
+            val all = dbList + smsList
+
+            all.groupBy { chat ->
+                val phone = chat.phoneNumber
+                    ?: if (isValidPhoneNumber(chat.id)) chat.id else null
+
+                phone?.let { normalizePhoneNumber(it) } ?: chat.id
+            }.map { (_, items) ->
+                val latest = items.maxByOrNull { it.timestamp }!!
+
+                val p2pHash = items.firstOrNull { it.p2pHash != null }?.p2pHash
+                val phoneNumber =
+                    items.firstOrNull { it.phoneNumber != null }?.phoneNumber
+                        ?: if (isValidPhoneNumber(latest.id)) latest.id else null
+
+                latest.copy(
+                    p2pHash = p2pHash,
+                    phoneNumber = phoneNumber,
+                    title = phoneNumber ?: latest.title
+                )
+            }.sortedByDescending { it.timestamp }
+        }.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5_000),
+            emptyList()
+        )
 
     private val timeFormatter = SimpleDateFormat("HH:mm", Locale.getDefault())
     private val dateFormatter = SimpleDateFormat("dd.MM", Locale.getDefault())
@@ -51,121 +83,138 @@ class ChatsListViewModel(application: Application) : AndroidViewModel(applicatio
         refreshSms()
     }
 
-    /**
-     * Загрузка системных SMS чатов (сразу, без ожидания синхронизации)
-     */
     fun refreshSms() {
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val smsList = loadSystemSms()
-                _smsChats.value = smsList
-            } catch (e: Exception) {
-                // Скорее всего нет разрешения READ_SMS
-                _smsChats.value = emptyList()
-            }
+            _smsChats.value = loadSystemSms()
         }
     }
 
+    /**
+     * Наблюдение за P2P чатами из Room
+     */
     private fun observeDbChats() {
         viewModelScope.launch(Dispatchers.IO) {
             messageDao.observeLastMessages()
                 .distinctUntilChanged()
                 .collect { messages ->
-                    val displayList = messages
+                    val chats = messages
                         .filter { it.chatId != "global" }
                         .map { msg ->
-                            val contact = try {
+                            val node = runCatching {
                                 nodeDao.getNodeByHash(msg.chatId)
-                            } catch (e: Exception) { null }
+                            }.getOrNull()
 
-                            val title = when {
-                                contact != null && !contact.phone.isNullOrBlank() -> contact.phone
-                                else -> msg.chatId // Если нет контакта, показываем ID (или номер телефона если это был SMS-чат)
-                            }
+                            val phone = node?.phone
 
                             ChatDisplay(
                                 id = msg.chatId,
-                                title = title ?: "Неизвестный",
+                                title = phone ?: msg.chatId,
                                 lastMessage = if (msg.isMe) "Вы: ${msg.text}" else msg.text,
                                 time = formatTimestamp(msg.timestamp),
                                 timestamp = msg.timestamp,
-                                isSms = false
+                                lastMessageIsSms = false,
+                                p2pHash = msg.chatId,
+                                phoneNumber = phone
                             )
                         }
-                    _dbChats.value = displayList
+
+                    _dbChats.value = chats
                 }
         }
     }
 
-    @Suppress("DEPRECATION")
+    /**
+     * Загрузка SMS из системной БД
+     * Один чат = один номер (берём самое свежее сообщение)
+     */
     private suspend fun loadSystemSms(): List<ChatDisplay> = withContext(Dispatchers.IO) {
         val context = getApplication<Application>()
         val result = mutableListOf<ChatDisplay>()
-        
-        // Используем contentResolver для чтения SMS
-        // Группируем по адресу, берем последнее
-        // Для простоты читаем входящие (Inbox) и исходящие (Sent) и группируем вручную или используем content://mms-sms/conversations
-        // Здесь используем упрощенный запрос к Telephony.Sms для получения последних сообщений
-        
-        val uri = Telephony.Sms.CONTENT_URI
+        val processed = HashSet<String>()
+
         val projection = arrayOf(
             Telephony.Sms.ADDRESS,
             Telephony.Sms.BODY,
-            Telephony.Sms.DATE,
-            Telephony.Sms.TYPE
+            Telephony.Sms.DATE
         )
-        // Сортируем по дате DESC
+
         val sortOrder = "${Telephony.Sms.DATE} DESC"
 
         try {
-            context.contentResolver.query(uri, projection, null, null, sortOrder)?.use { cursor ->
-                val addressIdx = cursor.getColumnIndex(Telephony.Sms.ADDRESS)
-                val bodyIdx = cursor.getColumnIndex(Telephony.Sms.BODY)
-                val dateIdx = cursor.getColumnIndex(Telephony.Sms.DATE)
-                
-                val processedNumbers = HashSet<String>()
+            context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                projection,
+                null,
+                null,
+                sortOrder
+            )?.use { cursor ->
+                val addressIdx = cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)
+                val bodyIdx = cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)
+                val dateIdx = cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)
 
                 while (cursor.moveToNext()) {
-                    val address = cursor.getString(addressIdx)
-                    if (address.isNullOrBlank()) continue
-                    
-                    // Если уже добавили чат с этим номером, пропускаем (т.к. сортировка DESC, первый - самый свежий)
-                    if (processedNumbers.contains(address)) continue
-                    
-                    processedNumbers.add(address)
+                    val address = cursor.getString(addressIdx) ?: continue
+                    val normalized = normalizePhoneNumber(address)
+
+                    if (!processed.add(normalized)) continue
 
                     val body = cursor.getString(bodyIdx)
                     val date = cursor.getLong(dateIdx)
-                    
-                    result.add(ChatDisplay(
-                        id = address, // Для SMS ID - это адрес отправителя
-                        title = address,
-                        lastMessage = body ?: "",
-                        time = formatTimestamp(date),
-                        timestamp = date,
-                        isSms = true
-                    ))
+
+                    result.add(
+                        ChatDisplay(
+                            id = address,
+                            title = address,
+                            lastMessage = body.orEmpty(),
+                            time = formatTimestamp(date),
+                            timestamp = date,
+                            lastMessageIsSms = true,
+                            phoneNumber = address
+                        )
+                    )
                 }
             }
-        } catch (e: SecurityException) {
-            // Разрешения не даны
+        } catch (_: SecurityException) {
             return@withContext emptyList()
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             return@withContext emptyList()
         }
-        
-        return@withContext result
+
+        result
     }
 
     private fun formatTimestamp(timestamp: Long?): String {
         if (timestamp == null || timestamp <= 0) return ""
+
         val now = Calendar.getInstance()
         val msgTime = Calendar.getInstance().apply { timeInMillis = timestamp }
-        return if (now.get(Calendar.YEAR) == msgTime.get(Calendar.YEAR) &&
-            now.get(Calendar.DAY_OF_YEAR) == msgTime.get(Calendar.DAY_OF_YEAR)) {
+
+        return if (
+            now.get(Calendar.YEAR) == msgTime.get(Calendar.YEAR) &&
+            now.get(Calendar.DAY_OF_YEAR) == msgTime.get(Calendar.DAY_OF_YEAR)
+        ) {
             timeFormatter.format(Date(timestamp))
         } else {
             dateFormatter.format(Date(timestamp))
         }
+    }
+
+    /**
+     * Нормализация номера:
+     * - только цифры
+     * - 8XXXXXXXXXX → 7XXXXXXXXXX
+     */
+    private fun normalizePhoneNumber(phone: String): String {
+        val digits = phone.replace(Regex("[^0-9]"), "")
+        return if (digits.length == 11 && digits.startsWith("8")) {
+            "7${digits.substring(1)}"
+        } else {
+            digits
+        }
+    }
+
+    private fun isValidPhoneNumber(input: String): Boolean {
+        val digits = input.replace(Regex("[^0-9]"), "")
+        return digits.length >= 5
     }
 }
