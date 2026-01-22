@@ -33,223 +33,289 @@ import com.kakdela.p2p.ui.player.MusicManager
 import com.kakdela.p2p.ui.player.VideoPlayerActivity
 
 enum class EntertainmentType {
-WEB, INTERNAL_CHAT, GAME, MUSIC, VIDEO
+    WEB,
+    INTERNAL_CHAT,
+    GAME,
+    MUSIC,
+    VIDEO
 }
 
 data class EntertainmentItem(
-val id: String,
-val title: String,
-val description: String,
-val type: EntertainmentType,
-val route: String? = null,
-val url: String? = null
+    val id: String,
+    val title: String,
+    val description: String,
+    val type: EntertainmentType,
+    val route: String? = null,
+    val url: String? = null
 ) {
-val iconVector: ImageVector
-get() = when (type) {
-EntertainmentType.GAME -> Icons.Filled.Gamepad
-EntertainmentType.INTERNAL_CHAT -> Icons.Filled.Chat
-EntertainmentType.WEB -> Icons.Filled.Public
-EntertainmentType.MUSIC -> Icons.Filled.MusicNote
-EntertainmentType.VIDEO -> Icons.Filled.Movie
-}
+    val iconVector: ImageVector
+        get() = when (type) {
+            EntertainmentType.GAME -> Icons.Filled.Gamepad
+            EntertainmentType.INTERNAL_CHAT -> Icons.Filled.Chat
+            EntertainmentType.WEB -> Icons.Filled.Public
+            EntertainmentType.MUSIC -> Icons.Filled.MusicNote
+            EntertainmentType.VIDEO -> Icons.Filled.Movie
+        }
 }
 
 private val entertainmentItems = listOf(
-EntertainmentItem("music", "Музыка", "MP3 проигрыватель", EntertainmentType.MUSIC, Routes.MUSIC),
-EntertainmentItem("video", "Видео", "Неоновый видео плеер", EntertainmentType.VIDEO),
-
-// ✅ ИСПРАВЛЕНО: добавлена запятая  
-EntertainmentItem("ai_chat", "AI Чат", "Умный помощник", EntertainmentType.INTERNAL_CHAT, Routes.AI_CHAT),  
-EntertainmentItem("tictactoe", "Крестики-нолики", "Игра против ИИ", EntertainmentType.GAME, Routes.TIC_TAC_TOE),  
-EntertainmentItem("pacman", "Pacman", "Классическая аркада", EntertainmentType.GAME, Routes.PACMAN),  
-EntertainmentItem("jewels", "Кристаллы", "Три в ряд", EntertainmentType.GAME, Routes.JEWELS),  
-EntertainmentItem("sudoku", "Судоку", "Головоломка 9x9", EntertainmentType.GAME, Routes.SUDOKU),  
-EntertainmentItem("tiktok", "TikTok", "Смотреть (ПК режим)", EntertainmentType.WEB, url = "https://www.tiktok.com"),  
-EntertainmentItem("pikabu", "Пикабу", "Юмор", EntertainmentType.WEB, url = "https://pikabu.ru"),  
-EntertainmentItem("crazygames", "CrazyGames", "Игры онлайн", EntertainmentType.WEB, url = "https://www.crazygames.com")
-
+    EntertainmentItem(
+        id = "music",
+        title = "Музыка",
+        description = "MP3 проигрыватель",
+        type = EntertainmentType.MUSIC,
+        route = Routes.MUSIC
+    ),
+    EntertainmentItem(
+        id = "video",
+        title = "Видео",
+        description = "Неоновый видео плеер",
+        type = EntertainmentType.VIDEO
+    ),
+    EntertainmentItem(
+        id = "ai_chat",
+        title = "AI Чат",
+        description = "Умный помощник",
+        type = EntertainmentType.INTERNAL_CHAT,
+        route = Routes.AI_CHAT
+    ),
+    EntertainmentItem(
+        id = "slots_1",
+        title = "Слоты",
+        description = "Неоновый слот-автомат",
+        type = EntertainmentType.GAME,
+        route = Routes.SLOTS_1
+    ),
+    EntertainmentItem(
+        id = "tictactoe",
+        title = "Крестики-нолики",
+        description = "Игра против ИИ",
+        type = EntertainmentType.GAME,
+        route = Routes.TIC_TAC_TOE
+    ),
+    EntertainmentItem(
+        id = "pacman",
+        title = "Pacman",
+        description = "Классическая аркада",
+        type = EntertainmentType.GAME,
+        route = Routes.PACMAN
+    ),
+    EntertainmentItem(
+        id = "jewels",
+        title = "Кристаллы",
+        description = "Три в ряд",
+        type = EntertainmentType.GAME,
+        route = Routes.JEWELS
+    ),
+    EntertainmentItem(
+        id = "sudoku",
+        title = "Судоку",
+        description = "Головоломка 9x9",
+        type = EntertainmentType.GAME,
+        route = Routes.SUDOKU
+    ),
+    EntertainmentItem(
+        id = "tiktok",
+        title = "TikTok",
+        description = "Смотреть (ПК режим)",
+        type = EntertainmentType.WEB,
+        url = "https://www.tiktok.com"
+    ),
+    EntertainmentItem(
+        id = "pikabu",
+        title = "Пикабу",
+        description = "Юмор",
+        type = EntertainmentType.WEB,
+        url = "https://pikabu.ru"
+    ),
+    EntertainmentItem(
+        id = "crazygames",
+        title = "CrazyGames",
+        description = "Игры онлайн",
+        type = EntertainmentType.WEB,
+        url = "https://www.crazygames.com"
+    )
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EntertainmentScreen(navController: NavHostController) {
-Scaffold(
-topBar = {
-CenterAlignedTopAppBar(
-title = {
-Text(
-"Развлечения",
-fontWeight = FontWeight.Black,
-color = Color.Green
-)
-},
-colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-containerColor = Color.Black
-)
-)
-}
-) { paddingValues ->
-LazyColumn(
-modifier = Modifier
-.fillMaxSize()
-.background(Color.Black)
-.padding(paddingValues)
-.padding(16.dp),
-verticalArrangement = Arrangement.spacedBy(16.dp)
-) {
-items(entertainmentItems) { item ->
-EntertainmentNeonItem(item, navController)
-}
-}
-}
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = {
+                    Text(
+                        text = "Развлечения",
+                        fontWeight = FontWeight.Black,
+                        color = Color.Green
+                    )
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = Color.Black
+                )
+            )
+        }
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .padding(paddingValues)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(entertainmentItems, key = { it.id }) { item ->
+                EntertainmentNeonItem(item, navController)
+            }
+        }
+    }
 }
 
 @Composable
 fun EntertainmentNeonItem(
-item: EntertainmentItem,
-navController: NavHostController
+    item: EntertainmentItem,
+    navController: NavHostController
 ) {
-val context = LocalContext.current
+    val context = LocalContext.current
 
-val neonColor = when (item.type) {  
-    EntertainmentType.GAME -> Color.Green  
-    EntertainmentType.INTERNAL_CHAT -> Color.Cyan  
-    EntertainmentType.WEB -> Color.Magenta  
-    EntertainmentType.MUSIC -> Color.Yellow  
-    EntertainmentType.VIDEO -> Color(0xFFBA00FF)  
-}  
+    val neonColor = when (item.type) {
+        EntertainmentType.GAME -> Color.Green
+        EntertainmentType.INTERNAL_CHAT -> Color.Cyan
+        EntertainmentType.WEB -> Color.Magenta
+        EntertainmentType.MUSIC -> Color.Yellow
+        EntertainmentType.VIDEO -> Color(0xFFBA00FF)
+    }
 
-Card(  
-    modifier = Modifier  
-        .fillMaxWidth()  
-        .height(85.dp)  
-        .shadow(8.dp, spotColor = neonColor),  
-    shape = RoundedCornerShape(12.dp),  
-    border = BorderStroke(1.dp, neonColor.copy(alpha = 0.8f)),  
-    colors = CardDefaults.cardColors(containerColor = Color(0xFF121212)),  
-    onClick = {  
-        when (item.type) {  
-            EntertainmentType.WEB -> {  
-                item.url?.let { url ->  
-                    navController.navigate(  
-                        "webview/${Uri.encode(url)}/${Uri.encode(item.title)}"  
-                    )  
-                }  
-            }  
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(85.dp)
+            .shadow(8.dp, spotColor = neonColor),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, neonColor.copy(alpha = 0.8f)),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF121212)),
+        onClick = {
+            when (item.type) {
+                EntertainmentType.WEB -> {
+                    item.url?.let { url ->
+                        navController.navigate(
+                            "webview/${Uri.encode(url)}/${Uri.encode(item.title)}"
+                        )
+                    }
+                }
 
-            EntertainmentType.VIDEO -> {  
-                context.startActivity(  
-                    Intent(context, VideoPlayerActivity::class.java)  
-                )  
-            }  
+                EntertainmentType.VIDEO -> {
+                    context.startActivity(
+                        Intent(context, VideoPlayerActivity::class.java)
+                    )
+                }
 
-            else -> {  
-                item.route?.let { navController.navigate(it) }  
-            }  
-        }  
-    }  
-) {  
-    Row(  
-        modifier = Modifier  
-            .fillMaxSize()  
-            .background(  
-                Brush.horizontalGradient(  
-                    listOf(Color.Transparent, neonColor.copy(alpha = 0.08f))  
-                )  
-            )  
-            .padding(horizontal = 12.dp),  
-        verticalAlignment = Alignment.CenterVertically  
-    ) {  
+                else -> {
+                    item.route?.let { navController.navigate(it) }
+                }
+            }
+        }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(Color.Transparent, neonColor.copy(alpha = 0.08f))
+                    )
+                )
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
 
-        if (item.type == EntertainmentType.MUSIC && MusicManager.currentTrack != null) {  
-            AsyncImage(  
-                model = MusicManager.currentTrack!!.albumArt,  
-                contentDescription = null,  
-                error = painterResource(id = R.mipmap.ic_launcher),  
-                modifier = Modifier  
-                    .size(45.dp)  
-                    .clip(RoundedCornerShape(8.dp)),  
-                contentScale = ContentScale.Crop  
-            )  
-        } else {  
-            Box(  
-                modifier = Modifier  
-                    .size(45.dp)  
-                    .background(  
-                        neonColor.copy(alpha = 0.1f),  
-                        RoundedCornerShape(8.dp)  
-                    ),  
-                contentAlignment = Alignment.Center  
-            ) {  
-                Icon(  
-                    item.iconVector,  
-                    contentDescription = null,  
-                    tint = neonColor,  
-                    modifier = Modifier.size(28.dp)  
-                )  
-            }  
-        }  
+            if (item.type == EntertainmentType.MUSIC && MusicManager.currentTrack != null) {
+                AsyncImage(
+                    model = MusicManager.currentTrack!!.albumArt,
+                    contentDescription = null,
+                    error = painterResource(id = R.mipmap.ic_launcher),
+                    modifier = Modifier
+                        .size(45.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(45.dp)
+                        .background(
+                            neonColor.copy(alpha = 0.1f),
+                            RoundedCornerShape(8.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = item.iconVector,
+                        contentDescription = null,
+                        tint = neonColor,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
 
-        Spacer(Modifier.width(12.dp))  
+            Spacer(Modifier.width(12.dp))
 
-        Column(Modifier.weight(1f)) {  
-            if (item.type == EntertainmentType.MUSIC && MusicManager.currentTrack != null) {  
-                Text(  
-                    MusicManager.currentTrack!!.title,  
-                    color = Color.White,  
-                    fontWeight = FontWeight.Bold,  
-                    maxLines = 1  
-                )  
-                Text(  
-                    "Сейчас играет",  
-                    color = neonColor,  
-                    fontSize = 10.sp  
-                )  
-            } else {  
-                Text(  
-                    item.title.uppercase(),  
-                    color = Color.White,  
-                    fontWeight = FontWeight.Bold  
-                )  
-                Text(  
-                    item.description,  
-                    color = Color.Gray,  
-                    fontSize = 11.sp  
-                )  
-            }  
-        }  
+            Column(Modifier.weight(1f)) {
+                if (item.type == EntertainmentType.MUSIC && MusicManager.currentTrack != null) {
+                    Text(
+                        text = MusicManager.currentTrack!!.title,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = "Сейчас играет",
+                        color = neonColor,
+                        fontSize = 10.sp
+                    )
+                } else {
+                    Text(
+                        text = item.title.uppercase(),
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = item.description,
+                        color = Color.Gray,
+                        fontSize = 11.sp
+                    )
+                }
+            }
 
-        if (item.type == EntertainmentType.MUSIC) {  
-            Row(verticalAlignment = Alignment.CenterVertically) {  
-                IconButton(onClick = { MusicManager.playPrevious(context) }) {  
-                    Icon(Icons.Filled.ChevronLeft, null, tint = neonColor)  
-                }  
-                IconButton(  
-                    onClick = {  
-                        if (MusicManager.currentIndex == -1)  
-                            MusicManager.playTrack(context, 0)  
-                        else  
-                            MusicManager.togglePlayPause()  
-                    }  
-                ) {  
-                    Icon(  
-                        if (MusicManager.isPlaying)  
-                            Icons.Filled.Pause  
-                        else  
-                            Icons.Filled.PlayArrow,  
-                        null,  
-                        tint = neonColor,  
-                        modifier = Modifier.size(30.dp)  
-                    )  
-                }  
-                IconButton(onClick = { MusicManager.playNext(context) }) {  
-                    Icon(Icons.Filled.ChevronRight, null, tint = neonColor)  
-                }  
-            }  
-        } else {  
-            Icon(Icons.Filled.PlayArrow, null, tint = neonColor)  
-        }  
-    }  
-}
-
+            if (item.type == EntertainmentType.MUSIC) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { MusicManager.playPrevious(context) }) {
+                        Icon(Icons.Filled.ChevronLeft, null, tint = neonColor)
+                    }
+                    IconButton(
+                        onClick = {
+                            if (MusicManager.currentIndex == -1)
+                                MusicManager.playTrack(context, 0)
+                            else
+                                MusicManager.togglePlayPause()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = if (MusicManager.isPlaying)
+                                Icons.Filled.Pause
+                            else
+                                Icons.Filled.PlayArrow,
+                            contentDescription = null,
+                            tint = neonColor,
+                            modifier = Modifier.size(30.dp)
+                        )
+                    }
+                    IconButton(onClick = { MusicManager.playNext(context) }) {
+                        Icon(Icons.Filled.ChevronRight, null, tint = neonColor)
+                    }
+                }
+            } else {
+                Icon(Icons.Filled.PlayArrow, null, tint = neonColor)
+            }
+        }
+    }
 }
