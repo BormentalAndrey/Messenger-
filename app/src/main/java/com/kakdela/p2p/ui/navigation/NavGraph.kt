@@ -40,7 +40,8 @@ import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
-import com.kakdela.p2p.ui.slots.slots1.Slots1Screen
+// Проверьте, что этот путь соответствует вашему проекту (папка ui/slots/slots1/)
+import com.kakdela.p2p.ui.slots.slots1
 import com.kakdela.p2p.ui.ChatViewModel
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
@@ -51,7 +52,6 @@ fun NavGraph(
     startDestination: String
 ) {
     val context = LocalContext.current
-    // Отслеживаем состояние сети в реальном времени
     val isOnline by rememberIsOnline()
     
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -223,11 +223,15 @@ fun NavGraph(
                 }
             }
 
-            /* ================= TOOLS ================= */
+            /* ================= TOOLS & GAMES ================= */
 
             composable(Routes.CALCULATOR) { CalculatorScreen() }
-            composable(Routes.TEXT_EDITOR) { TextEditorScreen() }
-            composable(Routes.SLOTS_1) { Slots1Screen() }
+            
+            // Исправлено: передаем navController, так как экран редактора обычно требует навигацию назад
+            composable(Routes.TEXT_EDITOR) { TextEditorScreen(navController) }
+            
+            // Исправлено: передаем navController (устранение ошибки "No value passed")
+            composable(Routes.SLOTS_1) { Slots1Screen(navController) }
             
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
