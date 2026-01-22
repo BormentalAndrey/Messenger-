@@ -289,7 +289,6 @@ class IdentityRepository(private val context: Context) {
                 saveNodeToDb(payload)
                 fetchAllNodesFromServer()
             } else {
-                // FIXED: Changed ${response.message} to $response to avoid Unresolved reference
                 Log.w(TAG, "announceSelf failed: $response")
             }
         } catch (e: Exception) {
@@ -408,13 +407,21 @@ class IdentityRepository(private val context: Context) {
     suspend fun getPeerPublicKey(hash: String): String? =
         withContext(Dispatchers.IO) { nodeDao.getNodeByHash(hash)?.publicKey }
 
-    fun generatePhoneDiscoveryHash(phone: String): String {
-        val digits = phone.replace(Regex("[^0-9]"), "")
-        val normalized = when {
+    /**
+     * Единая точка нормализации номера телефона.
+     * Преобразует локальные форматы (89...) в международный без плюса (79...).
+     */
+    fun normalizePhoneNumber(raw: String): String {
+        val digits = raw.replace(Regex("[^0-9]"), "")
+        return when {
             digits.length == 10 && digits.startsWith("9") -> "7$digits"
             digits.length == 11 && digits.startsWith("8") -> "7${digits.substring(1)}"
             else -> digits
         }
+    }
+
+    fun generatePhoneDiscoveryHash(phone: String): String {
+        val normalized = normalizePhoneNumber(phone)
         return MessageDigest.getInstance("SHA-256")
             .digest((normalized + PEPPER).toByteArray())
             .joinToString("") { "%02x".format(it) }
