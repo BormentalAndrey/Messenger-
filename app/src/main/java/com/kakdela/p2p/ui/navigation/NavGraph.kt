@@ -11,8 +11,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material3.*
@@ -48,7 +48,9 @@ fun NavGraph(
     startDestination: String
 ) {
     val context = LocalContext.current
+    // Отслеживаем состояние сети в реальном времени
     val isOnline by rememberIsOnline()
+    
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
@@ -82,10 +84,8 @@ fun NavGraph(
 
             composable(Routes.SPLASH) {
                 SplashScreen {
-                    val prefs =
-                        context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
-                    val isLoggedIn =
-                        prefs.getBoolean("is_logged_in", false)
+                    val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
+                    val isLoggedIn = prefs.getBoolean("is_logged_in", false)
 
                     navController.navigate(
                         if (isLoggedIn) Routes.CHATS else Routes.CHOICE
@@ -144,11 +144,8 @@ fun NavGraph(
                 )
             ) { entry ->
 
-                val chatId =
-                    entry.arguments?.getString("chatId") ?: ""
-
-                val app =
-                    context.applicationContext as Application
+                val chatId = entry.arguments?.getString("chatId") ?: ""
+                val app = context.applicationContext as Application
 
                 val vm: ChatViewModel = viewModel(
                     factory = ChatViewModelFactory(
@@ -173,16 +170,13 @@ fun NavGraph(
                         vm.sendMessage(text)
                     },
 
-                    // Fixed: vm.sendFile takes (Uri, String) only.
                     onSendFile = { uri: Uri, fileName: String ->
                         vm.sendFile(uri, fileName)
                     },
 
-                    // Fixed: Type mismatch (Uri, Int) and Too many arguments.
-                    // ChatScreen passes (Uri, duration: Int), but sendFile needs (Uri, fileName: String).
-                    // We generate a filename incorporating the duration.
+                    // Исправление: генерируем имя файла для аудио, так как vm.sendFile требует String, а не Int
                     onSendAudio = { uri: Uri, duration: Int ->
-                        val audioFileName = "audio_msg_$duration.mp3"
+                        val audioFileName = "audio_msg_${System.currentTimeMillis()}_${duration}s.mp3"
                         vm.sendFile(uri, audioFileName)
                     },
 
@@ -220,11 +214,19 @@ fun NavGraph(
             ) { entry ->
                 val url = entry.arguments?.getString("url") ?: ""
                 val title = entry.arguments?.getString("title") ?: ""
-                WebViewScreen(
-                    url = url,
-                    title = title,
-                    navController = navController
-                )
+
+                // WebView требует интернета, показываем заглушку, если его нет
+                if (isOnline) {
+                    WebViewScreen(
+                        url = url,
+                        title = title,
+                        navController = navController
+                    )
+                } else {
+                    NoInternetScreen {
+                        navController.popBackStack()
+                    }
+                }
             }
 
             /* ================= TOOLS ================= */
@@ -233,7 +235,7 @@ fun NavGraph(
 
             composable(Routes.TEXT_EDITOR) {
                 Box(
-                    Modifier.fillMaxSize(),
+                    Modifier.fillMaxSize().background(Color.Black),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -250,6 +252,7 @@ fun NavGraph(
             composable(Routes.JEWELS) { JewelsBlastScreen() }
 
             composable(Routes.AI_CHAT) {
+                // AI Chat требует интернета, показываем заглушку, если его нет
                 if (isOnline) {
                     AiChatScreen()
                 } else {
@@ -300,14 +303,14 @@ private fun AppBottomBar(
                     Icon(
                         icon,
                         contentDescription = label,
-                        tint = if (selected) Color.Cyan else Color.Gray
+                        tint = if (selected) Color(0xFF00FFFF) else Color.Gray // Неоновый циан
                     )
                 },
                 label = {
                     Text(
                         label,
                         fontSize = 10.sp,
-                        color = if (selected) Color.Cyan else Color.Gray
+                        color = if (selected) Color(0xFF00FFFF) else Color.Gray
                     )
                 }
             )
@@ -315,7 +318,7 @@ private fun AppBottomBar(
     }
 }
 
-/* ================= NETWORK ================= */
+/* ================= NETWORK & OFFLINE STUB ================= */
 
 @Composable
 fun rememberIsOnline(): State<Boolean> {
@@ -323,9 +326,7 @@ fun rememberIsOnline(): State<Boolean> {
     val state = remember { mutableStateOf(true) }
 
     DisposableEffect(context) {
-        val cm =
-            context.getSystemService(Context.CONNECTIVITY_SERVICE)
-                    as ConnectivityManager
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
@@ -335,17 +336,24 @@ fun rememberIsOnline(): State<Boolean> {
             override fun onLost(network: Network) {
                 state.value = false
             }
+
+            override fun onUnavailable() {
+                state.value = false
+            }
         }
 
-        val request =
-            NetworkRequest.Builder()
-                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-                .build()
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
 
         try {
             cm.registerNetworkCallback(request, callback)
+            // Проверка начального состояния
+            val activeNetwork = cm.activeNetwork
+            val caps = cm.getNetworkCapabilities(activeNetwork)
+            state.value = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
         } catch (_: Exception) {
-            state.value = true
+            state.value = true // Fallback, считаем что сеть есть, чтобы не блокировать UI ошибкой
         }
 
         onDispose {
@@ -368,41 +376,52 @@ fun NoInternetScreen(onBack: () -> Unit) {
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
             modifier = Modifier.padding(24.dp)
         ) {
             Icon(
                 Icons.Default.CloudOff,
-                null,
-                tint = Color.Gray,
-                modifier = Modifier.size(64.dp)
-            )
-
-            Spacer(Modifier.height(16.dp))
-
-            Text(
-                "Офлайн-режим",
-                color = Color.White,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            Text(
-                "Нужен интернет для AI.",
-                color = Color.Gray,
-                textAlign = TextAlign.Center
+                contentDescription = null,
+                tint = Color(0xFF00FFFF).copy(alpha = 0.6f), // Циан с прозрачностью
+                modifier = Modifier.size(80.dp)
             )
 
             Spacer(Modifier.height(24.dp))
 
-            Button(
+            Text(
+                "Нет соединения",
+                color = Color.White,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            Text(
+                "Для работы этого раздела необходим доступ к интернету. Проверьте настройки сети.",
+                color = Color.Gray,
+                textAlign = TextAlign.Center,
+                fontSize = 16.sp,
+                lineHeight = 22.sp
+            )
+
+            Spacer(Modifier.height(32.dp))
+
+            OutlinedButton(
                 onClick = onBack,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF1A1A1A)
-                )
+                border = BorderStroke(1.dp, Color(0xFF00FFFF)),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Color(0xFF00FFFF),
+                    containerColor = Color.Transparent
+                ),
+                shape = MaterialTheme.shapes.medium
             ) {
-                Text("Вернуться", color = Color.Cyan)
+                Text(
+                    "ВЕРНУТЬСЯ",
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
             }
         }
     }
