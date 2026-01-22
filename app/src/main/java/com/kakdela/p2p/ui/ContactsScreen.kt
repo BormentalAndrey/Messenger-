@@ -85,7 +85,7 @@ fun ContactsScreen(
                 ContactList(
                     padding = padding, 
                     contacts = contacts, 
-                    onContactClick = onContactClick,
+                    onContactClick = onContactClick, // Передаем callback напрямую
                     onInviteClick = { contact ->
                         identityRepository.sendIdentityViaSms(contact.phoneNumber)
                         Toast.makeText(context, "Приглашение отправлено ${contact.name}", Toast.LENGTH_SHORT).show()
@@ -126,14 +126,17 @@ fun ContactList(
                     }
                 },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                modifier = Modifier.clickable { onContactClick(contact) }
+                modifier = Modifier.clickable { 
+                    // Кликабельны ВСЕ контакты, даже если нет регистрации
+                    // Навигация решит, что делать (открыть SMS или P2P)
+                    onContactClick(contact) 
+                }
             )
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = Color(0xFF1A1A1A))
         }
     }
 }
 
-// Исправлено: Добавлена отсутствующая Composable функция
 @Composable
 fun PermissionRequestUI(padding: PaddingValues, onGrant: () -> Unit) {
     Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
