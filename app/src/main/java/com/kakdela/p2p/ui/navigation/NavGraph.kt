@@ -6,7 +6,6 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -40,8 +39,8 @@ import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
-// Проверьте, что этот путь соответствует вашему проекту (папка ui/slots/slots1/)
-import com.kakdela.p2p.ui.slots.slots1
+// ИСПРАВЛЕНО: Импортируем конкретную функцию Slots1Screen из пакета
+import com.kakdela.p2p.ui.slots.Slots1
 import com.kakdela.p2p.ui.ChatViewModel
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
@@ -52,6 +51,7 @@ fun NavGraph(
     startDestination: String
 ) {
     val context = LocalContext.current
+    // Состояние сети
     val isOnline by rememberIsOnline()
     
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -152,7 +152,6 @@ fun NavGraph(
                     navArgument("chatId") { type = NavType.StringType }
                 )
             ) { entry ->
-
                 val chatId = entry.arguments?.getString("chatId") ?: ""
                 val app = context.applicationContext as Application
 
@@ -226,12 +225,10 @@ fun NavGraph(
             /* ================= TOOLS & GAMES ================= */
 
             composable(Routes.CALCULATOR) { CalculatorScreen() }
-            
-            // Исправлено: передаем navController, так как экран редактора обычно требует навигацию назад
             composable(Routes.TEXT_EDITOR) { TextEditorScreen(navController) }
             
-            // Исправлено: передаем navController (устранение ошибки "No value passed")
-            composable(Routes.SLOTS_1) { Slots1Screen(navController) }
+            // ИСПРАВЛЕНО: Теперь Slots1Screen доступен благодаря правильному импорту
+            composable(Routes.SLOTS_1) { Slots1(navController) }
             
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
@@ -305,8 +302,6 @@ private fun AppBottomBar(
     }
 }
 
-/* ================= NETWORK & OFFLINE STUB ================= */
-
 @Composable
 fun rememberIsOnline(): State<Boolean> {
     val context = LocalContext.current
@@ -319,12 +314,7 @@ fun rememberIsOnline(): State<Boolean> {
             override fun onAvailable(network: Network) {
                 state.value = true
             }
-
             override fun onLost(network: Network) {
-                state.value = false
-            }
-
-            override fun onUnavailable() {
                 state.value = false
             }
         }
@@ -343,12 +333,9 @@ fun rememberIsOnline(): State<Boolean> {
         }
 
         onDispose {
-            try {
-                cm.unregisterNetworkCallback(callback)
-            } catch (_: Exception) {}
+            try { cm.unregisterNetworkCallback(callback) } catch (_: Exception) {}
         }
     }
-
     return state
 }
 
@@ -371,43 +358,20 @@ fun NoInternetScreen(onBack: () -> Unit) {
                 tint = Color(0xFF00FFFF).copy(alpha = 0.6f),
                 modifier = Modifier.size(80.dp)
             )
-
             Spacer(Modifier.height(24.dp))
-
             Text(
                 "Нет соединения",
                 color = Color.White,
                 fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
+                fontWeight = FontWeight.Bold
             )
-
-            Spacer(Modifier.height(12.dp))
-
-            Text(
-                "Для работы этого раздела необходим доступ к интернету. Проверьте настройки сети.",
-                color = Color.Gray,
-                textAlign = TextAlign.Center,
-                fontSize = 16.sp,
-                lineHeight = 22.sp
-            )
-
             Spacer(Modifier.height(32.dp))
-
             OutlinedButton(
                 onClick = onBack,
                 border = BorderStroke(1.dp, Color(0xFF00FFFF)),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = Color(0xFF00FFFF),
-                    containerColor = Color.Transparent
-                ),
-                shape = MaterialTheme.shapes.medium
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF00FFFF))
             ) {
-                Text(
-                    "ВЕРНУТЬСЯ",
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
+                Text("ВЕРНУТЬСЯ", fontWeight = FontWeight.Bold)
             }
         }
     }
