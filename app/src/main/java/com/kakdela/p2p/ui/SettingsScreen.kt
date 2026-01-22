@@ -34,6 +34,7 @@ import coil.compose.AsyncImage
 import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.data.local.ChatDatabase
 import com.kakdela.p2p.data.local.NodeEntity
+import com.kakdela.p2p.ui.navigation.Routes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -55,7 +56,8 @@ fun SettingsScreen(
     val myPhone: String = remember { prefs.getString("my_phone", "Не указан") ?: "Не указан" }
 
     // Состояние UI
-    var avatarUri by remember { mutableStateOf(getLocalAvatarUri(context)) }
+    var avatarUriString by remember { mutableStateOf(identityRepository.getLocalAvatarUri()) }
+    val avatarUri = avatarUriString?.let { Uri.parse(it) }
     var isUploading by remember { mutableStateOf(false) }
     var nodes by remember { mutableStateOf<List<NodeEntity>>(emptyList()) }
     var isSyncing by remember { mutableStateOf(false) }
@@ -102,9 +104,9 @@ fun SettingsScreen(
         uri?.let {
             isUploading = true
             scope.launch(Dispatchers.IO) {
-                saveLocalAvatar(context, it.toString())
+                identityRepository.saveLocalAvatar(it.toString())
                 withContext(Dispatchers.Main) {
-                    avatarUri = it
+                    avatarUriString = it.toString()
                     isUploading = false
                 }
             }
@@ -264,15 +266,24 @@ fun SettingsScreen(
                         Spacer(Modifier.width(8.dp))
                         Button(
                             onClick = {
+                                val trimmedHash = manualHash.trim()
+                                if (trimmedHash.isBlank()) {
+                                    Toast.makeText(context, "Введите валидный hash", Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
                                 isAdding = true
                                 scope.launch {
-                                    // Прямое добавление в БД, если в репозитории нет метода
+                                    // Сначала пытаемся подтянуть с сервера (если узел существует)
+                                    val fetched = identityRepository.fetchAllNodesFromServer()
+                                    val exists = fetched.any { it.hash.equals(trimmedHash, ignoreCase = true) }
+
+                                    // Вставляем/обновляем локально в любом случае
                                     db.nodeDao().upsert(
                                         NodeEntity(
-                                            userHash = manualHash.trim(),
-                                            ip = "0.0.0.0", // Неизвестен, будет найден через discovery
+                                            userHash = trimmedHash.lowercase(),
+                                            ip = "0.0.0.0",
                                             port = 8888,
-                                            publicKey = "", // Будет обновлен при контакте
+                                            publicKey = "",
                                             lastSeen = System.currentTimeMillis()
                                         )
                                     )
@@ -280,11 +291,15 @@ fun SettingsScreen(
                                         isAdding = false
                                         manualHash = ""
                                         loadLocalNodes()
-                                        Toast.makeText(context, "Контакт добавлен!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(
+                                            context,
+                                            if (exists) "Контакт обновлён с сервера!" else "Контакт добавлен локально!",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
                                     }
                                 }
                             },
-                            enabled = manualHash.length > 5 && !isAdding,
+                            enabled = manualHash.length > 10 && !isAdding, // минимальная валидация длины hash
                             colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan),
                             contentPadding = PaddingValues(0.dp),
                             modifier = Modifier.width(50.dp)
@@ -309,8 +324,8 @@ fun SettingsScreen(
                             .fillMaxWidth()
                             .padding(vertical = 12.dp)
                             .clickable {
-                                clipboard.setText(AnnotatedString(node.userHash))
-                                Toast.makeText(context, "ID скопирован", Toast.LENGTH_SHORT).show()
+                                // Открываем чат по хэшу
+                                navController.navigate(Routes.buildChatRoute(node.userHash))
                             },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -349,7 +364,12 @@ fun SettingsScreen(
             TextButton(
                 onClick = {
                     identityRepository.stopNetwork()
-                    navController.navigate("choice") { popUpTo(0) { inclusive = true } }
+                    // Очистка аватара и других данных при выходе (опционально)
+                    prefs.edit().clear().apply()
+                    navController.navigate("choice") { 
+                        popUpTo(0) { inclusive = true } 
+                        launchSingleTop = true
+                    }
                 },
                 modifier = Modifier.padding(vertical = 8.dp)
             ) {
@@ -359,16 +379,4 @@ fun SettingsScreen(
             }
         }
     }
-}
-
-// Helper functions placed outside since they are UI specific
-private fun getLocalAvatarUri(context: Context): Uri? {
-    val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-    val str = prefs.getString("avatar_uri", null)
-    return str?.let { Uri.parse(it) }
-}
-
-private fun saveLocalAvatar(context: Context, uriString: String) {
-    val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-    prefs.edit().putString("avatar_uri", uriString).apply()
 }
