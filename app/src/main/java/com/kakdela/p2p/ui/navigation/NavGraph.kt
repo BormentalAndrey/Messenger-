@@ -40,7 +40,7 @@ import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 // ИСПРАВЛЕНО: Импортируем конкретную функцию Slots1Screen из пакета
-import com.kakdela.p2p.ui.slots.Slots1
+import com.kakdela.p2p.ui.slots.slots1
 import com.kakdela.p2p.ui.ChatViewModel
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
@@ -228,7 +228,7 @@ fun NavGraph(
             composable(Routes.TEXT_EDITOR) { TextEditorScreen(navController) }
             
             // ИСПРАВЛЕНО: Теперь Slots1Screen доступен благодаря правильному импорту
-            composable(Routes.SLOTS_1) { Slots1(navController) }
+            composable(Routes.SLOTS_1) { slots1(navController) }
             
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
