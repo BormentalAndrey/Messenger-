@@ -39,8 +39,8 @@ import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
-// ИСПРАВЛЕНО: Импортируем конкретную функцию Slots1Screen из пакета
-import com.kakdela.p2p.ui.slots.slots1
+// ИСПРАВЛЕНО: Импортируем именно функцию Slots1Screen
+import com.kakdela.p2p.ui.slots.Slots1Screen
 import com.kakdela.p2p.ui.ChatViewModel
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
@@ -51,7 +51,6 @@ fun NavGraph(
     startDestination: String
 ) {
     val context = LocalContext.current
-    // Состояние сети
     val isOnline by rememberIsOnline()
     
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -227,8 +226,8 @@ fun NavGraph(
             composable(Routes.CALCULATOR) { CalculatorScreen() }
             composable(Routes.TEXT_EDITOR) { TextEditorScreen(navController) }
             
-            // ИСПРАВЛЕНО: Теперь Slots1Screen доступен благодаря правильному импорту
-            composable(Routes.SLOTS_1) { slots1(navController) }
+            // ИСПРАВЛЕНО: Теперь используем правильное имя функции Slots1Screen
+            composable(Routes.SLOTS_1) { Slots1Screen(navController) }
             
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
@@ -309,20 +308,13 @@ fun rememberIsOnline(): State<Boolean> {
 
     DisposableEffect(context) {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-
         val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                state.value = true
-            }
-            override fun onLost(network: Network) {
-                state.value = false
-            }
+            override fun onAvailable(network: Network) { state.value = true }
+            override fun onLost(network: Network) { state.value = false }
         }
-
         val request = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .build()
-
         try {
             cm.registerNetworkCallback(request, callback)
             val activeNetwork = cm.activeNetwork
@@ -331,7 +323,6 @@ fun rememberIsOnline(): State<Boolean> {
         } catch (_: Exception) {
             state.value = true 
         }
-
         onDispose {
             try { cm.unregisterNetworkCallback(callback) } catch (_: Exception) {}
         }
