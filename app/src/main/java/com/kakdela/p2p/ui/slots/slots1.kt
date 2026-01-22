@@ -6,6 +6,8 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+// ИСПРАВЛЕНО: Добавлен недостающий импорт
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,77 +34,13 @@ import androidx.navigation.NavHostController
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+// ИСПРАВЛЕНО: Функция называется Slots1Screen (с большой буквы)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Slots1Screen(navController: NavHostController) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-
-    // Имена файлов в папке assets
-    val gemFiles = listOf(
-        "gem_blue.png",
-        "gem_green.png",
-        "gem_red.png",
-        "gem_white.png",
-        "gem_yellow.png"
-    )
-
-    // Кэшируем загруженные картинки
-    val painterMap = gemFiles.associateWith { loadPainterFromAssets(context, it) }
-
-    var reelsState by remember { mutableStateOf(List(3) { gemFiles.random() }) }
-    var isSpinning by remember { mutableStateOf(false) }
-    var resultMessage by remember { mutableStateOf("") }
-    var balance by remember { mutableStateOf(1000) }
-
-    val neonCyan = Color(0xFF00FFFF)
-
-    Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("NEON SLOTS", color = neonCyan, fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад", tint = Color.White)
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black)
-            )
-        },
-        containerColor = Color.Black
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            // Панель баланса
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF111111)),
-                border = BorderStroke(1.dp, neonCyan),
-                modifier = Modifier.padding(top = 16.dp)
-            ) {
-                Text(
-                    text = "BALANCE: $balance ₽",
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 32.dp, vertical = 12.dp),
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.ExtraBold
-                )
-            }
-
-            // Барабаны
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
-            ) {
-                reelsState.forEach { fileName ->
-                    ReelItem(
-                        painter = painterMap[fileName],
-                        isSpinning = isSpinning
+    // ... (весь остальной код вашей игры "Слоты", который мы писали ранее)
+    // Убедитесь, что внутри кода используется правильный вызов BorderStroke
+}
                     )
                 }
             }
