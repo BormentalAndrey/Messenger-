@@ -7,6 +7,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -39,6 +40,7 @@ import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
+import com.kakdela.p2p.ui.slots.slots1.Slots1Screen
 import com.kakdela.p2p.ui.ChatViewModel
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
@@ -131,6 +133,12 @@ fun NavGraph(
                     onContactClick = { contact ->
                         contact.userHash?.let { hash ->
                             navController.navigate(Routes.buildChatRoute(hash))
+                        } ?: run {
+                            Toast.makeText(
+                                context,
+                                "Пользователь ещё не в P2P-сети. Пригласите его.",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                     }
                 )
@@ -166,28 +174,14 @@ fun NavGraph(
                     chatPartnerId = chatId,
                     messages = messages,
                     identityRepository = identityRepository,
-
-                    onSendMessage = { text ->
-                        vm.sendMessage(text)
-                    },
-
-                    onSendFile = { uri: Uri, fileName: String ->
-                        vm.sendFile(uri, fileName)
-                    },
-
-                    // Исправление: генерируем имя файла для аудио, так как vm.sendFile требует String, а не Int
-                    onSendAudio = { uri: Uri, duration: Int ->
+                    onSendMessage = { text -> vm.sendMessage(text) },
+                    onSendFile = { uri, fileName -> vm.sendFile(uri, fileName) },
+                    onSendAudio = { uri, duration ->
                         val audioFileName = "audio_msg_${System.currentTimeMillis()}_${duration}s.mp3"
                         vm.sendFile(uri, audioFileName)
                     },
-
-                    onScheduleMessage = { text, time ->
-                        vm.scheduleMessage(text, time)
-                    },
-
-                    onBack = {
-                        navController.popBackStack()
-                    }
+                    onScheduleMessage = { text, time -> vm.scheduleMessage(text, time) },
+                    onBack = { navController.popBackStack() }
                 )
             }
 
@@ -216,7 +210,6 @@ fun NavGraph(
                 val url = entry.arguments?.getString("url") ?: ""
                 val title = entry.arguments?.getString("title") ?: ""
 
-                // WebView требует интернета, показываем заглушку, если его нет
                 if (isOnline) {
                     WebViewScreen(
                         url = url,
@@ -233,19 +226,9 @@ fun NavGraph(
             /* ================= TOOLS ================= */
 
             composable(Routes.CALCULATOR) { CalculatorScreen() }
-
-            composable(Routes.TEXT_EDITOR) {
-                Box(
-                    Modifier.fillMaxSize().background(Color.Black),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        "Редактор в разработке",
-                        color = Color.White
-                    )
-                }
-            }
-
+            composable(Routes.TEXT_EDITOR) { TextEditorScreen() }
+            composable(Routes.SLOTS_1) { Slots1Screen() }
+            
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
@@ -253,7 +236,6 @@ fun NavGraph(
             composable(Routes.JEWELS) { JewelsBlastScreen() }
 
             composable(Routes.AI_CHAT) {
-                // AI Chat требует интернета, показываем заглушку, если его нет
                 if (isOnline) {
                     AiChatScreen()
                 } else {
@@ -304,7 +286,7 @@ private fun AppBottomBar(
                     Icon(
                         icon,
                         contentDescription = label,
-                        tint = if (selected) Color(0xFF00FFFF) else Color.Gray // Неоновый циан
+                        tint = if (selected) Color(0xFF00FFFF) else Color.Gray
                     )
                 },
                 label = {
@@ -349,12 +331,11 @@ fun rememberIsOnline(): State<Boolean> {
 
         try {
             cm.registerNetworkCallback(request, callback)
-            // Проверка начального состояния
             val activeNetwork = cm.activeNetwork
             val caps = cm.getNetworkCapabilities(activeNetwork)
             state.value = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
         } catch (_: Exception) {
-            state.value = true // Fallback, считаем что сеть есть, чтобы не блокировать UI ошибкой
+            state.value = true 
         }
 
         onDispose {
@@ -383,7 +364,7 @@ fun NoInternetScreen(onBack: () -> Unit) {
             Icon(
                 Icons.Default.CloudOff,
                 contentDescription = null,
-                tint = Color(0xFF00FFFF).copy(alpha = 0.6f), // Циан с прозрачностью
+                tint = Color(0xFF00FFFF).copy(alpha = 0.6f),
                 modifier = Modifier.size(80.dp)
             )
 
