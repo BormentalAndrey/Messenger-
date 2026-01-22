@@ -5,9 +5,10 @@ package com.kakdela.p2p.ui.navigation
  * Использование констант исключает ошибки опечаток при навигации.
  */
 object Routes {
+
     // --- СЛУЖЕБНЫЕ ---
     const val SPLASH = "splash"
-    
+
     // --- АВТОРИЗАЦИЯ ---
     const val CHOICE = "choice"
     const val AUTH_EMAIL = "auth_email"
@@ -21,7 +22,7 @@ object Routes {
 
     // --- КОНТАКТЫ И ПЕРЕПИСКА ---
     const val CONTACTS = "contacts"
-    
+
     // Шаблон для NavHost: "chat/{chatId}"
     const val CHAT_DIRECT = "chat/{chatId}"
 
@@ -37,6 +38,9 @@ object Routes {
     const val PACMAN = "pacman"
     const val JEWELS = "jewels"
     const val SUDOKU = "sudoku"
+
+    // --- SLOTS ---
+    const val SLOTS_1 = "slots_1"
 
     /**
      * Вспомогательная функция для генерации пути к конкретному чату.
