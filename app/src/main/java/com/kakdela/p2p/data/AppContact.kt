@@ -22,9 +22,9 @@ data class AppContact(
 ) {
 
     /**
-     * Уникальный идентификатор контакта:
-     * - userHash, если контакт зарегистрирован
-     * - иначе phoneNumber
+     * Уникальный идентификатор контакта для открытия чата:
+     * - userHash, если контакт зарегистрирован (приоритет P2P)
+     * - иначе phoneNumber (фоллбэк на SMS/Invite)
      */
     fun getIdentifier(): String = userHash ?: phoneNumber
 }
