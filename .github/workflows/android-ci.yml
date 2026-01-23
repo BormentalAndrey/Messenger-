@@ -6,47 +6,60 @@ on:
   workflow_dispatch:
 
 jobs:
-  debug-unzip:
+  unpack-and-save:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Show workspace root
+      - name: Install unzip
         run: |
-          echo "PWD=$(pwd)"
-          echo "=== ROOT FILES ==="
-          ls -la
+          sudo apt-get update
+          sudo apt-get install -y unzip
 
-      - name: Search zip file
+      - name: Verify archive exists
         run: |
-          echo "=== SEARCH ZIP ==="
-          find . -name "*.zip" -type f || true
-
-      - name: Fail if archive not found
-        run: |
-          if [ ! -f "./termux-library/termux-app-master.zip" ]; then
-            echo "❌ ARCHIVE NOT FOUND:"
-            echo "./termux-library/termux-app-master.zip"
+          if [ ! -f termux-library/termux-app-master.zip ]; then
+            echo "❌ termux-library/termux-app-master.zip not found"
             exit 1
           fi
 
-      - name: Inspect archive
+      # чистим целевую папку
+      - name: Prepare destination
         run: |
-          ls -lh termux-library/termux-app-master.zip
-          file termux-library/termux-app-master.zip
+          rm -rf termux-library/termux-app
+          mkdir -p termux-library/termux-app
 
-      - name: Install unzip
-        run: sudo apt-get update && sudo apt-get install -y unzip
-
-      - name: Try unzip with full log
+      # распаковка БЕЗ termux-app-master
+      - name: Unzip without root folder
         run: |
-          mkdir -p out
-          unzip -v termux-library/termux-app-master.zip
-          unzip termux-library/termux-app-master.zip -d out
+          mkdir -p tmp
+          unzip -q termux-library/termux-app-master.zip -d tmp
 
-      - name: Show result
+          # переносим СОДЕРЖИМОЕ, а не папку
+          mv tmp/termux-app-master/* termux-library/termux-app/
+
+          rm -rf tmp
+
+      - name: Verify result
         run: |
-          echo "=== OUT DIR ==="
-          find out -maxdepth 4
+          echo "=== RESULT ==="
+          ls -la termux-library/termux-app
+          test -f termux-library/termux-app/settings.gradle
+
+      - name: Commit result
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add termux-library/termux-app
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "ci: unpack termux-app without root folder"
+            git push
+          fi
