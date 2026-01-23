@@ -68,6 +68,7 @@ android {
         }
         debug {
             signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = false
         }
     }
 
@@ -86,7 +87,6 @@ android {
     }
 
     composeOptions {
-        // Рекомендуется использовать 1.5.11 или 1.5.14 для Kotlin 1.9.2x
         kotlinCompilerExtensionVersion = "1.5.11"
     }
 
@@ -99,7 +99,7 @@ android {
                 "META-INF/NOTICE*",
                 "META-INF/LICENSE*",
                 "META-INF/kotlinx-coroutines-core.kotlin_module",
-                "META-INF/tink/**" // Добавлено для исключения конфликтов Tink
+                "META-INF/tink/**"
             )
             jniLibs.pickFirsts.add("**/*.so")
         }
@@ -120,13 +120,14 @@ dependencies {
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2") // ДОБАВЛЕНО для работы с viewModel() в NavGraph
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.appcompat:appcompat:1.7.0")
-    // Koin для Android
+
+    // Koin
     implementation("io.insert-koin:koin-android:3.5.0")
-    // Koin для WorkManager (обязательно для ScheduledMessageWorker)
     implementation("io.insert-koin:koin-androidx-workmanager:3.5.0")
+
     // UI Components
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
@@ -142,7 +143,7 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.navigation:navigation-compose:2.8.0")
 
-    // Room Database
+    // Room
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
@@ -152,9 +153,10 @@ dependencies {
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
     implementation("androidx.sqlite:sqlite-ktx:2.4.0")
 
+    // PDFBox Android
     implementation("com.tom-roush:pdfbox-android:2.0.26.0")
 
-    // Security Crypto - ОБНОВЛЕНО до 1.12.0 для исправления HybridDecrypt/Signature ошибок
+    // Security Crypto
     implementation("com.google.crypto.tink:tink-android:1.12.0")
 
     // Media3
@@ -165,7 +167,6 @@ dependencies {
 
     // Utils
     implementation("io.coil-kt:coil-compose:2.7.0")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
@@ -183,7 +184,7 @@ dependencies {
         runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
     }
 
-    // Apache POI для DOCX
+    // Apache POI
     implementation("org.apache.poi:poi-ooxml:5.3.0")
 
     // Retrofit + Gson
