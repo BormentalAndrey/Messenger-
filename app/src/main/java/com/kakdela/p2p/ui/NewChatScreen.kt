@@ -11,168 +11,115 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
-import com.google.firebase.Timestamp
-import com.google.firebase.auth.ktx.auth
-import com.google.firebase.firestore.ktx.firestore
-import com.google.firebase.ktx.Firebase
-import com.kakdela.p2p.data.Chat
+import com.kakdela.p2p.data.IdentityRepository
+import kotlinx.coroutines.launch
 
 @Composable
-fun NewChatScreen(navController: NavHostController) {
+fun NewChatScreen(
+    navController: NavHostController,
+    identityRepository: IdentityRepository
+) {
     val context = LocalContext.current
-    var phoneNumber by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+
+    var phone by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(false) }
 
-    val currentUserId = Firebase.auth.currentUser?.uid ?: return
+    val myHash = identityRepository.getMyId()
+    val peers = remember { mutableStateListOf<Pair<String, String>>() }
+    val selected = remember { mutableStateListOf<String>() }
 
-    // Для групповых чатов: список выбранных пользователей (UID)
-    val selectedUsers = remember { mutableStateListOf<String>() }
-    val availableUsers = remember { mutableStateListOf<Pair<String, String>>() } // UID + Phone
+    Column(Modifier.fillMaxSize().padding(24.dp)) {
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        verticalArrangement = Arrangement.Top
-    ) {
         Text("Новый чат", style = MaterialTheme.typography.headlineMedium)
-
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(Modifier.height(24.dp))
 
         OutlinedTextField(
-            value = phoneNumber,
-            onValueChange = { phoneNumber = it },
-            label = { Text("Номер телефона собеседника (+7...)") },
+            value = phone,
+            onValueChange = { phone = it },
+            label = { Text("Номер телефона") },
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
 
         Button(
             onClick = {
-                if (phoneNumber.isBlank()) {
+                if (phone.isBlank()) {
                     error = "Введите номер"
                     return@Button
                 }
-                isLoading = true
-                error = null
 
-                Firebase.firestore.collection("users")
-                    .whereEqualTo("phoneNumber", phoneNumber)
-                    .get()
-                    .addOnSuccessListener { documents ->
-                        isLoading = false
-                        if (documents.isEmpty) {
-                            error = "Пользователь с таким номером не найден"
-                            return@addOnSuccessListener
-                        }
+                loading = true
+                scope.launch {
+                    val ok = identityRepository.addNodeByHash(
+                        identityRepository.generatePhoneDiscoveryHash(phone)
+                    )
+                    loading = false
 
-                        val targetUserId = documents.documents[0].id
-
-                        if (targetUserId == currentUserId) {
-                            error = "Нельзя начать чат с собой"
-                            return@addOnSuccessListener
-                        }
-
-                        val participants = listOf(currentUserId, targetUserId).sorted()
-                        val chatId = participants.joinToString("_")
-
-                        // Создаём чат, если не существует
-                        Firebase.firestore.collection("chats").document(chatId)
-                            .set(
-                                mapOf(
-                                    "participantIds" to participants,
-                                    "title" to phoneNumber, // Можно заменить на имя из профиля
-                                    "lastMessage" to "",
-                                    "timestamp" to Timestamp.now()
-                                )
-                            )
-                            .addOnSuccessListener {
-                                navController.navigate("chat/$chatId") {
-                                    popUpTo("chats") { inclusive = false }
-                                }
-                            }
+                    if (ok) {
+                        navController.navigate("chats")
+                    } else {
+                        error = "Пользователь не найден"
                     }
-                    .addOnFailureListener {
-                        isLoading = false
-                        error = "Ошибка поиска"
-                    }
+                }
             },
-            enabled = !isLoading,
+            enabled = !loading,
             modifier = Modifier.fillMaxWidth()
         ) {
-            if (isLoading) CircularProgressIndicator(modifier = Modifier.size(20.dp))
+            if (loading) CircularProgressIndicator(Modifier.size(18.dp))
             else Text("Начать чат")
         }
 
         error?.let {
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             Text(it, color = MaterialTheme.colorScheme.error)
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(Modifier.height(24.dp))
+        Text("Групповой чат")
 
-        // ==== Секция для группового чата ====
-        Text("Выберите участников для группы:")
-        Spacer(modifier = Modifier.height(8.dp))
-
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            items(availableUsers) { (uid, phone) ->
+        LazyColumn(Modifier.weight(1f)) {
+            items(peers) { (hash, phone) ->
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(8.dp)
+                    Modifier.fillMaxWidth()
                         .clickable {
-                            if (selectedUsers.contains(uid)) selectedUsers.remove(uid)
-                            else selectedUsers.add(uid)
-                        },
+                            if (selected.contains(hash)) selected.remove(hash)
+                            else selected.add(hash)
+                        }
+                        .padding(8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(phone)
-                    if (selectedUsers.contains(uid)) Text("✓", color = MaterialTheme.colorScheme.primary)
+                    if (selected.contains(hash)) Text("✓")
                 }
             }
         }
 
-        if (selectedUsers.size > 1) {
+        if (selected.size >= 2) {
             Button(
                 onClick = {
-                    val allParticipants = selectedUsers + currentUserId
-                    val chatData = Chat(
-                        isGroup = true,
-                        title = "Групповой чат", // Можно добавить ввод названия
-                        adminIds = listOf(currentUserId),
-                        participantIds = allParticipants
-                    )
-
-                    Firebase.firestore.collection("chats")
-                        .add(chatData)
-                        .addOnSuccessListener { doc ->
-                            navController.navigate("chat/${doc.id}")
-                        }
-                        .addOnFailureListener {
-                            Toast.makeText(context, "Ошибка создания группы", Toast.LENGTH_SHORT).show()
-                        }
+                    Toast.makeText(
+                        context,
+                        "Группа создана (${selected.size + 1})",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    navController.navigate("chats")
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Создать группу (${selectedUsers.size})")
+                Text("Создать группу")
             }
         }
     }
 
-    // ==== Загрузка списка всех пользователей для групп (кроме себя) ====
     LaunchedEffect(Unit) {
-        Firebase.firestore.collection("users")
-            .get()
-            .addOnSuccessListener { docs ->
-                availableUsers.clear()
-                docs.documents.forEach { doc ->
-                    val uid = doc.id
-                    val phone = doc.getString("phoneNumber") ?: ""
-                    if (uid != currentUserId) availableUsers.add(uid to phone)
-                }
-            }
+        val nodes = identityRepository.fetchAllNodesFromServer()
+        peers.clear()
+        peers.addAll(
+            nodes.filter { it.hash != myHash }
+                .map { it.hash to (it.phone ?: it.hash.take(8)) }
+        )
     }
 }
