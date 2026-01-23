@@ -34,19 +34,19 @@ class TerminalActivity : AppCompatActivity(),
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         )
-        terminalView.setTerminalViewClient(this)
 
+        terminalView.setTerminalViewClient(this)
         root.addView(terminalView)
         setContentView(root)
 
         val homeDir = File(filesDir, "home").apply { mkdirs() }
-        val usrDir = File(filesDir, "usr/bin").apply { mkdirs() }
+        val usrBin = File(filesDir, "usr/bin").apply { mkdirs() }
 
         val env = arrayOf(
             "HOME=${homeDir.absolutePath}",
             "PWD=${homeDir.absolutePath}",
             "TMPDIR=${cacheDir.absolutePath}",
-            "PATH=/system/bin:/system/xbin:${usrDir.absolutePath}",
+            "PATH=/system/bin:/system/xbin:${usrBin.absolutePath}",
             "TERM=xterm-256color",
             "LANG=C.UTF-8"
         )
@@ -73,7 +73,7 @@ class TerminalActivity : AppCompatActivity(),
         super.onDestroy()
     }
 
-    /* ================= TerminalViewClient ================= */
+    // ================= TerminalViewClient =================
 
     override fun onScale(scale: Float): Float = scale
 
@@ -138,7 +138,7 @@ class TerminalActivity : AppCompatActivity(),
         Log.e(tag, "stacktrace", e)
     }
 
-    /* ================= TerminalSessionClient ================= */
+    // ================= TerminalSessionClient =================
 
     override fun onTextChanged(changedSession: TerminalSession) {
         terminalView.invalidate()
@@ -159,4 +159,8 @@ class TerminalActivity : AppCompatActivity(),
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
 
     override fun onTerminalCursorStateChange(state: Boolean) {}
+
+    override fun getTerminalCursorStyle(): Int {
+        return TerminalSessionClient.TERMINAL_CURSOR_STYLE_BLOCK
+    }
     }
