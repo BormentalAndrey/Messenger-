@@ -37,17 +37,19 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
-        // 1. Инициализация (WebViewApi инициализируется в MyApplication)
+        // 1. Cookie store
         CookieStore.init(applicationContext)
-        identityRepository = IdentityRepository(applicationContext)
-        
-        // 2. Старт сети
+
+        // 2. IdentityRepository — ТОЛЬКО из Application
+        identityRepository = (application as MyApplication).identityRepository
+
+        // 3. Старт сети (один раз)
         identityRepository.startNetwork()
 
-        // 3. Сервис
+        // 4. Сервис
         startP2PService()
 
-        // 4. Разрешения
+        // 5. Разрешения
         checkAndRequestPermissions()
 
         val prefs = getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
@@ -77,16 +79,20 @@ class MainActivity : ComponentActivity() {
                 startService(intent)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Service Start Error: ${e.message}")
+            Log.e(TAG, "Service Start Error", e)
         }
     }
 
     private fun checkAndRequestPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            !Environment.isExternalStorageManager()
+        ) {
             try {
-                startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                    data = Uri.parse("package:$packageName")
-                })
+                startActivity(
+                    Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                )
             } catch (_: Exception) {}
         }
 
@@ -95,6 +101,7 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.RECORD_AUDIO,
             Manifest.permission.CAMERA
         )
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions += Manifest.permission.POST_NOTIFICATIONS
             permissions += Manifest.permission.READ_MEDIA_AUDIO
@@ -102,12 +109,15 @@ class MainActivity : ComponentActivity() {
             permissions += Manifest.permission.READ_EXTERNAL_STORAGE
             permissions += Manifest.permission.WRITE_EXTERNAL_STORAGE
         }
+
         requestPermissionLauncher.launch(permissions.toTypedArray())
     }
 
     private fun handlePermissionsResult(permissions: Map<String, Boolean>) {
-        if (permissions[Manifest.permission.READ_MEDIA_AUDIO] == true ||
-            permissions[Manifest.permission.READ_EXTERNAL_STORAGE] == true) {
+        if (
+            permissions[Manifest.permission.READ_MEDIA_AUDIO] == true ||
+            permissions[Manifest.permission.READ_EXTERNAL_STORAGE] == true
+        ) {
             MusicManager.loadTracks(this)
         }
     }
