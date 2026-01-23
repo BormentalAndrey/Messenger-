@@ -1,10 +1,16 @@
 import java.util.Properties
 import java.io.FileInputStream
+import java.io.BufferedOutputStream
+import java.math.BigInteger
+import java.net.URL
+import java.security.DigestInputStream
+import java.security.MessageDigest
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
+    id("com.google.gms.google-services")
     kotlin("kapt")
 }
 
@@ -14,10 +20,6 @@ if (localPropertiesFile.exists()) {
     localProperties.load(FileInputStream(localPropertiesFile))
 }
 
-// ----------------------- Termux Bootstrap Variant -----------------------
-val packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7"
-
-// ----------------------- Android Configuration -----------------------
 android {
     namespace = "com.kakdela.p2p"
     compileSdk = 35
@@ -63,7 +65,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
-            shrinkResources = false
+            isShrinkResources = false // исправлено
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -81,14 +83,18 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions { jvmTarget = "17" }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
 
     buildFeatures {
         compose = true
         buildConfig = true
     }
 
-    composeOptions { kotlinCompilerExtensionVersion = "1.5.11" }
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.11"
+    }
 
     packaging {
         resources {
@@ -101,38 +107,44 @@ android {
                 "META-INF/kotlinx-coroutines-core.kotlin_module",
                 "META-INF/tink/**"
             )
-            jniLibs.pickFirsts.add("**/*.so")
         }
-        jniLibs { useLegacyPackaging = true }
+        jniLibs {
+            useLegacyPackaging = true
+            pickFirsts.add("**/*.so")
+        }
     }
 
     sourceSets {
-        getByName("main") { jniLibs.srcDirs(layout.buildDirectory.dir("gdx-natives/lib")) }
+        getByName("main") {
+            jniLibs.srcDirs(layout.buildDirectory.dir("gdx-natives/lib"))
+        }
     }
 }
 
-// ----------------------- Dependencies -----------------------
 dependencies {
-    // ----------------------- Termux Local Modules -----------------------
-    implementation(project(":terminal-view"))
-    implementation(project(":termux-shared"))
+    // Core Termux API
+    implementation("com.termux:termux-android:0.117")
+    implementation("com.termux:termux-boot:0.117")
+    implementation("com.termux:termux-view:0.117")
 
-    // ----------------------- Core Android -----------------------
+    // Core & Lifecycle
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.recyclerview:recyclerview:1.3.2")
-    implementation("androidx.constraintlayout:constraintlayout:2.2.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation("androidx.activity:activity-compose:1.9.2")
+    implementation("androidx.appcompat:appcompat:1.7.0")
 
-    // ----------------------- Koin -----------------------
+    // Koin
     implementation("io.insert-koin:koin-android:3.5.0")
     implementation("io.insert-koin:koin-androidx-workmanager:3.5.0")
 
-    // ----------------------- Compose -----------------------
+    // UI Components
+    implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.0")
+
+    // Compose
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
@@ -142,39 +154,39 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.navigation:navigation-compose:2.8.0")
 
-    // ----------------------- Room -----------------------
+    // Room
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // ----------------------- SQLCipher -----------------------
+    // SQLCipher
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
     implementation("androidx.sqlite:sqlite-ktx:2.4.0")
 
-    // ----------------------- PDFBox Android -----------------------
+    // PDFBox Android
     implementation("com.tom-roush:pdfbox-android:2.0.26.0")
 
-    // ----------------------- Security Crypto -----------------------
+    // Security Crypto
     implementation("com.google.crypto.tink:tink-android:1.12.0")
 
-    // ----------------------- Media3 -----------------------
+    // Media3
     val media3Version = "1.4.1"
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-ui:$media3Version")
     implementation("androidx.media3:media3-session:$media3Version")
 
-    // ----------------------- Utils -----------------------
+    // Utils
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
-    // ----------------------- WebRTC -----------------------
+    // WebRTC
     implementation("io.getstream:stream-webrtc-android:1.2.0")
     implementation("io.getstream:stream-webrtc-android-compose:1.1.2")
 
-    // ----------------------- libGDX -----------------------
+    // libGDX Core
     val gdxVersion = "1.12.1"
     implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
@@ -183,25 +195,23 @@ dependencies {
         runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
     }
 
-    // ----------------------- Apache POI -----------------------
+    // Apache POI
     implementation("org.apache.poi:poi-ooxml:5.3.0")
 
-    // ----------------------- Retrofit + Gson -----------------------
+    // Retrofit + Gson
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
 
-    // ----------------------- libphonenumber -----------------------
+    // libphonenumber
     implementation("com.googlecode.libphonenumber:libphonenumber:8.13.22")
 
-    // ----------------------- Test -----------------------
+    // Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.10")
-
-    // ----------------------- Desugar -----------------------
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:1.1.5")
 }
 
-// ----------------------- libGDX Natives -----------------------
+// --- Copy native libs libGDX ---
 val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
     val gdxVersion = "1.12.1"
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
@@ -223,47 +233,64 @@ val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
 tasks.matching { it.name.contains("merge") && it.name.contains("JniLibFolders") }.configureEach {
     dependsOn(copyAndroidNatives)
 }
-tasks.withType<JavaCompile>().configureEach { dependsOn(copyAndroidNatives) }
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach { dependsOn(copyAndroidNatives) }
 
-// ----------------------- Termux Bootstrap Download -----------------------
-fun downloadBootstrap(arch: String, checksum: String, version: String) {
-    val digest = java.security.MessageDigest.getInstance("SHA-256")
-    val localFile = file("src/main/cpp/bootstrap-$arch.zip")
+tasks.withType<JavaCompile>().configureEach {
+    dependsOn(copyAndroidNatives)
+}
 
-    if (localFile.exists()) {
-        localFile.inputStream().use { fis ->
-            val buffer = ByteArray(8192)
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    dependsOn(copyAndroidNatives)
+}
+
+// --- Bootstraps download ---
+fun validateVersionName(versionName: String) {
+    if (!Regex("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?\$").matches(versionName))
+        throw GradleException("The versionName '$versionName' is not valid per semantic version 2.0.0 spec.")
+}
+
+fun downloadBootstrap(arch: String, expectedChecksum: String, version: String) {
+    val digest = MessageDigest.getInstance("SHA-256")
+    val localUrl = "src/main/cpp/bootstrap-$arch.zip"
+    val file = project.file(localUrl)
+
+    if (file.exists()) {
+        val buffer = ByteArray(8192)
+        FileInputStream(file).use { input ->
             while (true) {
-                val read = fis.read(buffer)
-                if (read < 0) break
-                digest.update(buffer, 0, read)
+                val readBytes = input.read(buffer)
+                if (readBytes < 0) break
+                digest.update(buffer, 0, readBytes)
             }
         }
-        var actualChecksum = java.math.BigInteger(1, digest.digest()).toString(16)
-        while (actualChecksum.length < 64) actualChecksum = "0$actualChecksum"
-        if (actualChecksum == checksum) return else localFile.delete()
+        var checksum = BigInteger(1, digest.digest()).toString(16).padStart(64, '0')
+        if (checksum == expectedChecksum) return
+        logger.quiet("Deleting old local file with wrong hash: $localUrl: expected $expectedChecksum, actual $checksum")
+        file.delete()
     }
 
-    val url = "https://github.com/termux/termux-packages/releases/download/bootstrap-$version/bootstrap-$arch.zip"
-    logger.quiet("Downloading $url ...")
-    val connection = java.net.URL(url).openConnection()
-    connection.instanceFollowRedirects = true
-    val out = BufferedOutputStream(localFile.outputStream())
-    java.security.DigestInputStream(connection.getInputStream(), digest).use { dis ->
-        dis.copyTo(out)
+    val remoteUrl = "https://github.com/termux/termux-packages/releases/download/bootstrap-$version/bootstrap-$arch.zip"
+    logger.quiet("Downloading $remoteUrl ...")
+
+    file.parentFile.mkdirs()
+    BufferedOutputStream(file.outputStream()).use { out ->
+        val connection = URL(remoteUrl).openConnection()
+        connection.getInputStream().use { input ->
+            DigestInputStream(input, digest).use { digestStream ->
+                digestStream.copyTo(out)
+            }
+        }
     }
-    out.close()
-    var actualChecksum = java.math.BigInteger(1, digest.digest()).toString(16)
-    while (actualChecksum.length < 64) actualChecksum = "0$actualChecksum"
-    if (actualChecksum != checksum) {
-        localFile.delete()
-        throw GradleException("Wrong checksum for $url: expected $checksum, actual $actualChecksum")
+
+    var checksum = BigInteger(1, digest.digest()).toString(16).padStart(64, '0')
+    if (checksum != expectedChecksum) {
+        file.delete()
+        throw GradleException("Wrong checksum for $remoteUrl: expected $expectedChecksum, actual $checksum")
     }
 }
 
 tasks.register("downloadBootstraps") {
     doLast {
+        val packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7"
         if (packageVariant == "apt-android-7") {
             val version = "2022.04.28-r5+$packageVariant"
             downloadBootstrap("aarch64", "4a51a7eb209fe82efc24d52e3cccc13165f27377290687cb82038cbd8e948430", version)
