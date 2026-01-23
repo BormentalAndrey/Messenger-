@@ -152,12 +152,7 @@ dependencies {
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
     implementation("androidx.sqlite:sqlite-ktx:2.4.0")
 
-    // Firebase
-    implementation(platform("com.google.firebase:firebase-bom:33.1.0"))
-    implementation("com.google.firebase:firebase-auth-ktx")
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-storage-ktx")
-    implementation("com.google.firebase:firebase-appcheck-playintegrity")
+    implementation "com.tom_roush:pdfbox-android:2.0.27.0"
 
     // Security Crypto - ОБНОВЛЕНО до 1.12.0 для исправления HybridDecrypt/Signature ошибок
     implementation("com.google.crypto.tink:tink-android:1.12.0")
