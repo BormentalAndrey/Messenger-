@@ -133,10 +133,9 @@ val gdxVersion = "1.12.1"
 val media3Version = "1.4.1"
 
 dependencies {
-    // Termux (ИСПРАВЛЕНО: Группа изменена на com.github.termux для JitPack)
-    implementation("com.github.termux:termux-android:0.117")
-    implementation("com.github.termux:termux-boot:0.117")
-    implementation("com.github.termux:termux-view:0.117")
+    // ЛОКАЛЬНЫЙ МОДУЛЬ TERMUX (Заменяет внешние JitPack зависимости)
+    // Это исправляет ошибку 401 Unauthorized
+    implementation(project(":termux-library"))
 
     // Core & Lifecycle
     implementation("androidx.core:core-ktx:1.13.1")
