@@ -60,6 +60,16 @@
 -keep class kotlin.** { *; }
 
 # --------------------------------------------------------------------------------
+# Termux / Terminal
+# --------------------------------------------------------------------------------
+-keep class com.termux.terminal.TermuxSessionClient { *; }
+-keep class com.termux.view.TerminalViewClient { *; }
+-keep class com.termux.shared.termux.shell.TermuxShellManager { *; }
+-keep class com.termux.app.TermuxService { *; }
+-keep class com.termux.app.terminal.TermuxTerminalSessionActivityClient { *; }
+-keep class com.termux.app.terminal.TermuxTerminalSessionServiceClient { *; }
+
+# --------------------------------------------------------------------------------
 # Прочие общие рекомендации
 # --------------------------------------------------------------------------------
 # Не удалять все классы с аннотациями
