@@ -34,19 +34,19 @@ class TerminalActivity : AppCompatActivity(),
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         )
-
         terminalView.setTerminalViewClient(this)
+
         root.addView(terminalView)
         setContentView(root)
 
         val homeDir = File(filesDir, "home").apply { mkdirs() }
-        val usrBin = File(filesDir, "usr/bin").apply { mkdirs() }
+        val usrDir = File(filesDir, "usr/bin").apply { mkdirs() }
 
         val env = arrayOf(
             "HOME=${homeDir.absolutePath}",
             "PWD=${homeDir.absolutePath}",
             "TMPDIR=${cacheDir.absolutePath}",
-            "PATH=/system/bin:/system/xbin:${usrBin.absolutePath}",
+            "PATH=/system/bin:/system/xbin:${usrDir.absolutePath}",
             "TERM=xterm-256color",
             "LANG=C.UTF-8"
         )
@@ -73,7 +73,7 @@ class TerminalActivity : AppCompatActivity(),
         super.onDestroy()
     }
 
-    // ================= TerminalViewClient =================
+    /* ================= TerminalViewClient ================= */
 
     override fun onScale(scale: Float): Float = scale
 
@@ -110,11 +110,25 @@ class TerminalActivity : AppCompatActivity(),
 
     override fun onEmulatorSet() {}
 
-    override fun logError(tag: String, message: String) = Log.e(tag, message)
-    override fun logWarn(tag: String, message: String) = Log.w(tag, message)
-    override fun logInfo(tag: String, message: String) = Log.i(tag, message)
-    override fun logDebug(tag: String, message: String) = Log.d(tag, message)
-    override fun logVerbose(tag: String, message: String) = Log.v(tag, message)
+    override fun logError(tag: String, message: String) {
+        Log.e(tag, message)
+    }
+
+    override fun logWarn(tag: String, message: String) {
+        Log.w(tag, message)
+    }
+
+    override fun logInfo(tag: String, message: String) {
+        Log.i(tag, message)
+    }
+
+    override fun logDebug(tag: String, message: String) {
+        Log.d(tag, message)
+    }
+
+    override fun logVerbose(tag: String, message: String) {
+        Log.v(tag, message)
+    }
 
     override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) {
         Log.e(tag, message, e)
@@ -124,7 +138,7 @@ class TerminalActivity : AppCompatActivity(),
         Log.e(tag, "stacktrace", e)
     }
 
-    // ================= TerminalSessionClient =================
+    /* ================= TerminalSessionClient ================= */
 
     override fun onTextChanged(changedSession: TerminalSession) {
         terminalView.invalidate()
@@ -143,4 +157,6 @@ class TerminalActivity : AppCompatActivity(),
     override fun onColorsChanged(session: TerminalSession) {}
 
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
+
+    override fun onTerminalCursorStateChange(state: Boolean) {}
     }
