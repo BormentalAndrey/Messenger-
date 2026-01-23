@@ -1,27 +1,34 @@
 package com.kakdela.p2p.ui
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -31,221 +38,275 @@ import java.nio.charset.Charset
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TextEditorScreen(navController: NavHostController) {
+
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var textContent by remember { mutableStateOf("") }
-    var currentUri by remember { mutableStateOf<Uri?>(null) }
-    var fileName by remember { mutableStateOf("Новый файл.txt") }
+    var text by remember { mutableStateOf("") }
+    var fileName by remember { mutableStateOf("Новый файл") }
+    var uri by remember { mutableStateOf<Uri?>(null) }
+
     var isModified by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
 
-    // Список кодировок для попытки чтения текстовых файлов
-    val charsets = listOf(Charsets.UTF_8, Charset.forName("windows-1251"), Charsets.ISO_8859_1)
+    var isPdf by remember { mutableStateOf(false) }
+    var showPdf by remember { mutableStateOf(false) }
 
-    // Лаунчер для открытия файлов
+    var pdfRenderer by remember { mutableStateOf<PdfRenderer?>(null) }
+    var pdfPageIndex by remember { mutableStateOf(0) }
+    var pdfBitmap by remember { mutableStateOf<Bitmap?>(null) }
+
+    val charsets = listOf(
+        Charsets.UTF_8,
+        Charset.forName("windows-1251"),
+        Charsets.ISO_8859_1
+    )
+
+    fun renderPdfPage(index: Int) {
+        val renderer = pdfRenderer ?: return
+        renderer.openPage(index).use { page ->
+            val bmp = Bitmap.createBitmap(
+                page.width,
+                page.height,
+                Bitmap.Config.ARGB_8888
+            )
+            page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            pdfBitmap = bmp
+            pdfPageIndex = index
+        }
+    }
+
     val openLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        uri?.let { u ->
-            isLoading = true
-            scope.launch(Dispatchers.IO) {
-                try {
-                    // Извлечение расширения и имени
-                    val contentResolver = context.contentResolver
-                    val path = u.path ?: ""
-                    val isDocx = path.endsWith(".docx", ignoreCase = true) || 
-                                 u.toString().contains(".docx", ignoreCase = true)
-                    
-                    val nameFromUri = u.lastPathSegment?.substringAfterLast("/") ?: "Файл"
-                    
-                    val content: String = if (isDocx) {
-                        contentResolver.openInputStream(u)?.use { input ->
-                            XWPFDocument(input).use { doc ->
-                                doc.paragraphs.joinToString("\n") { it.text }
+        ActivityResultContracts.OpenDocument()
+    ) { openedUri ->
+        openedUri ?: return@rememberLauncherForActivityResult
+
+        isLoading = true
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                val resolver = context.contentResolver
+                val mime = resolver.getType(openedUri)
+
+                val isPdfFile = mime == "application/pdf"
+                val isDocxFile =
+                    mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+                val name = openedUri.lastPathSegment?.substringAfterLast("/") ?: "Файл"
+
+                val content = when {
+                    isPdfFile -> {
+                        resolver.openInputStream(openedUri)?.use {
+                            PDDocument.load(it).use { pdf ->
+                                PDFTextStripper().getText(pdf)
                             }
                         } ?: ""
-                    } else {
+                    }
+
+                    isDocxFile -> {
+                        resolver.openInputStream(openedUri)?.use {
+                            XWPFDocument(it).use { doc ->
+                                doc.paragraphs.joinToString("\n") { p -> p.text }
+                            }
+                        } ?: ""
+                    }
+
+                    else -> {
                         var result: String? = null
-                        for (charset in charsets) {
+                        for (cs in charsets) {
                             try {
-                                contentResolver.openInputStream(u)?.use { input ->
-                                    val text = input.bufferedReader(charset).readText()
-                                    // Если текст успешно прочитан и не выглядит как "мусор"
-                                    if (!text.contains("")) {
-                                        result = text
+                                resolver.openInputStream(openedUri)?.use {
+                                    val t = it.bufferedReader(cs).readText()
+                                    if (t.isNotBlank()) {
+                                        result = t
+                                        return@use
                                     }
                                 }
-                                if (result != null) break
                             } catch (_: Exception) {}
                         }
-                        result ?: contentResolver.openInputStream(u)?.bufferedReader()?.readText() ?: ""
+                        result ?: ""
                     }
-                    
-                    withContext(Dispatchers.Main) {
-                        textContent = content
-                        currentUri = u
-                        fileName = nameFromUri
-                        isModified = false
-                        isLoading = false
-                    }
-                } catch (e: Exception) {
-                    withContext(Dispatchers.Main) {
-                        isLoading = false
-                        snackbarHostState.showSnackbar("Ошибка открытия: ${e.localizedMessage}")
-                        Log.e("Editor", "Error opening", e)
-                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    text = content
+                    uri = openedUri
+                    fileName = name
+                    isPdf = isPdfFile
+                    showPdf = isPdfFile
+                    isModified = false
+                    isLoading = false
+                }
+
+                if (isPdfFile) {
+                    val pfd = resolver.openFileDescriptor(openedUri, "r")!!
+                    val renderer = PdfRenderer(pfd)
+                    pdfRenderer = renderer
+                    renderPdfPage(0)
+                }
+
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    isLoading = false
+                    snackbarHostState.showSnackbar("Ошибка открытия: ${e.localizedMessage}")
+                    Log.e("Editor", "open error", e)
                 }
             }
         }
     }
 
-    // Лаунчер для сохранения нового файла
     val saveLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-    ) { uri: Uri? ->
-        uri?.let {
-            saveFileProcess(
-                context = context,
-                uri = it,
-                content = textContent,
-                isDocx = it.toString().contains(".docx", ignoreCase = true),
-                snackbarHostState = snackbarHostState,
-                scope = scope
-            ) { 
-                currentUri = it
-                isModified = false 
-            }
+        ActivityResultContracts.CreateDocument(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+    ) { saveUri ->
+        saveUri ?: return@rememberLauncherForActivityResult
+        saveFile(context, saveUri, text, true, snackbarHostState, scope) {
+            uri = saveUri
+            fileName = saveUri.lastPathSegment ?: fileName
+            isModified = false
         }
     }
 
     fun saveCurrent() {
-        if (currentUri != null) {
-            val isDocx = fileName.endsWith(".docx", ignoreCase = true) || 
-                         currentUri.toString().contains(".docx", ignoreCase = true)
-            saveFileProcess(
-                context = context,
-                uri = currentUri!!,
-                content = textContent,
-                isDocx = isDocx,
-                snackbarHostState = snackbarHostState,
-                scope = scope
-            ) { isModified = false }
+        if (isPdf) {
+            scope.launch {
+                snackbarHostState.showSnackbar("PDF доступен только для чтения")
+            }
+            return
+        }
+
+        if (uri != null) {
+            val isDocx = fileName.endsWith(".docx", true)
+            saveFile(context, uri!!, text, isDocx, snackbarHostState, scope) {
+                isModified = false
+            }
         } else {
-            // Если файла еще нет, предлагаем создать .docx по умолчанию
-            saveLauncher.launch(fileName.replace(".txt", ".docx"))
+            saveLauncher.launch("$fileName.docx")
         }
     }
 
-    // Обработка кнопки "Назад" при наличии несохраненных изменений
-    BackHandler(enabled = isModified) {
+    BackHandler(isModified) {
         scope.launch {
-            val result = snackbarHostState.showSnackbar(
-                message = "Сохранить изменения в $fileName?",
-                actionLabel = "Да",
-                withDismissAction = true,
-                duration = SnackbarDuration.Long
+            val res = snackbarHostState.showSnackbar(
+                "Сохранить изменения?",
+                "Да",
+                SnackbarDuration.Long
             )
-            if (result == SnackbarResult.ActionPerformed) {
-                saveCurrent()
-            } else {
-                navController.popBackStack()
-            }
+            if (res == SnackbarResult.ActionPerformed) saveCurrent()
+            else navController.popBackStack()
         }
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             CenterAlignedTopAppBar(
-                title = { 
+                title = {
                     Text(
-                        text = if (isModified) "$fileName *" else fileName, 
-                        color = Color.Black, 
-                        maxLines = 1,
-                        fontSize = 16.sp 
-                    ) 
+                        if (isModified) "$fileName *" else fileName,
+                        maxLines = 1
+                    )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { 
-                        if (isModified) {
-                            scope.launch {
-                                val result = snackbarHostState.showSnackbar(
-                                    message = "Выйти без сохранения?",
-                                    actionLabel = "Выйти",
-                                    duration = SnackbarDuration.Short
-                                )
-                                if (result == SnackbarResult.ActionPerformed) navController.popBackStack()
-                            }
-                        } else {
-                            navController.popBackStack()
-                        }
-                    }) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Назад", tint = Color.Black)
+                    IconButton({ navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, null)
                     }
                 },
                 actions = {
                     if (isLoading) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp).padding(end = 12.dp), 
-                            strokeWidth = 2.dp,
-                            color = Color.Black
+                            modifier = Modifier.size(22.dp),
+                            strokeWidth = 2.dp
                         )
                     } else {
-                        IconButton(onClick = { openLauncher.launch(arrayOf("*/*")) }) {
-                            Icon(Icons.Filled.FolderOpen, contentDescription = "Открыть", tint = Color.Black)
+                        IconButton { openLauncher.launch(arrayOf("*/*")) } {
+                            Icon(Icons.Default.FolderOpen, null)
                         }
-                        IconButton(onClick = { saveCurrent() }) {
-                            Icon(Icons.Filled.Save, contentDescription = "Сохранить", tint = Color.Black)
+                        IconButton(enabled = !isPdf) { saveCurrent() } {
+                            Icon(Icons.Default.Save, null)
+                        }
+                        if (isPdf) {
+                            IconButton { showPdf = !showPdf } {
+                                Icon(Icons.Default.PictureAsPdf, null)
+                            }
                         }
                     }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.White)
+                }
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            Surface(
-                color = Color(0xFFF0F0F0), 
-                modifier = Modifier.fillMaxWidth(),
-                shadowElevation = 4.dp
-            ) {
+            Surface(shadowElevation = 4.dp) {
                 Row(
-                    modifier = Modifier.padding(8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
+                    Text("Символов: ${text.length}", fontSize = 12.sp)
                     Text(
-                        text = "Символов: ${textContent.length}",
-                        color = Color.Black.copy(alpha = 0.7f),
-                        fontSize = 12.sp
-                    )
-                    Text(
-                        text = if (isModified) "Не сохранено" else "Сохранено",
-                        color = if (isModified) Color.Red else Color(0xFF4CAF50),
-                        fontSize = 12.sp
+                        when {
+                            isPdf -> "PDF (read-only)"
+                            isModified -> "Не сохранено"
+                            else -> "Сохранено"
+                        },
+                        fontSize = 12.sp,
+                        color = when {
+                            isPdf -> Color.Gray
+                            isModified -> Color.Red
+                            else -> Color(0xFF4CAF50)
+                        }
                     )
                 }
             }
         }
-    ) { paddingValues ->
-        Box(modifier = Modifier
-            .fillMaxSize()
-            .padding(paddingValues)
-            .background(Color.White)
-        ) {
+    ) { padding ->
+
+        if (showPdf && pdfBitmap != null) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Image(
+                    bitmap = pdfBitmap!!.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    Modifier.padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    IconButton(
+                        enabled = pdfPageIndex > 0,
+                        onClick = { renderPdfPage(pdfPageIndex - 1) }
+                    ) { Icon(Icons.Default.ChevronLeft, null) }
+
+                    Text("${pdfPageIndex + 1}/${pdfRenderer?.pageCount ?: 0}")
+
+                    IconButton(
+                        enabled = pdfPageIndex < (pdfRenderer?.pageCount ?: 1) - 1,
+                        onClick = { renderPdfPage(pdfPageIndex + 1) }
+                    ) { Icon(Icons.Default.ChevronRight, null) }
+                }
+            }
+        } else {
             TextField(
-                value = textContent,
+                value = text,
                 onValueChange = {
-                    textContent = it
-                    isModified = true
+                    text = it
+                    if (!isPdf) isModified = true
                 },
-                modifier = Modifier.fillMaxSize(),
-                textStyle = TextStyle(color = Color.Black, fontSize = 16.sp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .background(Color.White),
+                textStyle = TextStyle(fontSize = 16.sp),
+                readOnly = isPdf,
                 colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White,
-                    disabledContainerColor = Color.White,
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent
                 )
@@ -254,47 +315,37 @@ fun TextEditorScreen(navController: NavHostController) {
     }
 }
 
-/**
- * Процесс сохранения файла (общий для текстовых документов и Word)
- */
-private fun saveFileProcess(
+private fun saveFile(
     context: Context,
     uri: Uri,
     content: String,
     isDocx: Boolean,
-    snackbarHostState: SnackbarHostState,
+    snackbar: SnackbarHostState,
     scope: kotlinx.coroutines.CoroutineScope,
     onSuccess: () -> Unit
 ) {
     scope.launch(Dispatchers.IO) {
         try {
-            // Используем "w" для перезаписи текстовых файлов и бинарный поток для docx
-            val mode = if (isDocx) "w" else "wt"
-            
-            context.contentResolver.openOutputStream(uri, mode)?.use { output ->
+            context.contentResolver.openOutputStream(uri, "w")?.use { out ->
                 if (isDocx) {
                     XWPFDocument().use { doc ->
-                        // Разбиваем текст по строкам и создаем абзацы в Word
-                        content.split("\n").forEach { line ->
-                            val paragraph = doc.createParagraph()
-                            val run = paragraph.createRun()
-                            run.setText(line)
+                        content.lines().forEach {
+                            doc.createParagraph().createRun().setText(it)
                         }
-                        doc.write(output)
+                        doc.write(out)
                     }
                 } else {
-                    output.write(content.toByteArray(Charsets.UTF_8))
+                    out.write(content.toByteArray(Charsets.UTF_8))
                 }
             }
             withContext(Dispatchers.Main) {
                 onSuccess()
-                snackbarHostState.showSnackbar("Сохранено успешно")
+                snackbar.showSnackbar("Сохранено")
             }
         } catch (e: Exception) {
             withContext(Dispatchers.Main) {
-                val errorMsg = e.localizedMessage ?: "Неизвестная ошибка"
-                snackbarHostState.showSnackbar("Ошибка сохранения: $errorMsg")
-                Log.e("Editor", "Save error", e)
+                snackbar.showSnackbar("Ошибка сохранения: ${e.localizedMessage}")
+                Log.e("Editor", "save error", e)
             }
         }
     }
