@@ -1,10 +1,11 @@
 import java.util.Properties
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.BufferedOutputStream
 import java.math.BigInteger
-import java.net.URL
-import java.security.DigestInputStream
 import java.security.MessageDigest
+import java.security.DigestInputStream
+import java.net.URL
 
 plugins {
     id("com.android.application")
@@ -65,7 +66,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
-            isShrinkResources = false // исправлено
+            isShrinkResources = false
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -121,8 +122,9 @@ android {
     }
 }
 
+// ------------------- DEPENDENCIES -------------------
 dependencies {
-    // Core Termux API
+    // Termux
     implementation("com.termux:termux-android:0.117")
     implementation("com.termux:termux-boot:0.117")
     implementation("com.termux:termux-view:0.117")
@@ -139,7 +141,7 @@ dependencies {
     implementation("io.insert-koin:koin-android:3.5.0")
     implementation("io.insert-koin:koin-androidx-workmanager:3.5.0")
 
-    // UI Components
+    // UI
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.constraintlayout:constraintlayout:2.2.0")
@@ -186,7 +188,7 @@ dependencies {
     implementation("io.getstream:stream-webrtc-android:1.2.0")
     implementation("io.getstream:stream-webrtc-android-compose:1.1.2")
 
-    // libGDX Core
+    // libGDX
     val gdxVersion = "1.12.1"
     implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
@@ -208,10 +210,12 @@ dependencies {
     // Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.10")
+
+    // Desugaring
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:1.1.5")
 }
 
-// --- Copy native libs libGDX ---
+// ------------------- TASKS -------------------
 val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
     val gdxVersion = "1.12.1"
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
@@ -242,46 +246,44 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
     dependsOn(copyAndroidNatives)
 }
 
-// --- Bootstraps download ---
-fun validateVersionName(versionName: String) {
-    if (!Regex("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?\$").matches(versionName))
-        throw GradleException("The versionName '$versionName' is not valid per semantic version 2.0.0 spec.")
-}
-
+// ------------------- BOOTSTRAPS -------------------
 fun downloadBootstrap(arch: String, expectedChecksum: String, version: String) {
     val digest = MessageDigest.getInstance("SHA-256")
+
     val localUrl = "src/main/cpp/bootstrap-$arch.zip"
     val file = project.file(localUrl)
 
     if (file.exists()) {
-        val buffer = ByteArray(8192)
-        FileInputStream(file).use { input ->
+        file.inputStream().use { input ->
+            val buffer = ByteArray(8192)
             while (true) {
                 val readBytes = input.read(buffer)
                 if (readBytes < 0) break
                 digest.update(buffer, 0, readBytes)
             }
         }
-        var checksum = BigInteger(1, digest.digest()).toString(16).padStart(64, '0')
+
+        var checksum = BigInteger(1, digest.digest()).toString(16)
+        while (checksum.length < 64) checksum = "0$checksum"
         if (checksum == expectedChecksum) return
-        logger.quiet("Deleting old local file with wrong hash: $localUrl: expected $expectedChecksum, actual $checksum")
         file.delete()
+        logger.quiet("Deleted old local file with wrong hash: $localUrl")
     }
 
     val remoteUrl = "https://github.com/termux/termux-packages/releases/download/bootstrap-$version/bootstrap-$arch.zip"
     logger.quiet("Downloading $remoteUrl ...")
 
     file.parentFile.mkdirs()
-    BufferedOutputStream(file.outputStream()).use { out ->
+    BufferedOutputStream(FileOutputStream(file)).use { out ->
         val connection = URL(remoteUrl).openConnection()
-        connection.getInputStream().use { input ->
-            DigestInputStream(input, digest).use { digestStream ->
-                digestStream.copyTo(out)
-            }
+        connection.instanceFollowRedirects = true
+        DigestInputStream(connection.getInputStream(), digest).use { digestStream ->
+            digestStream.copyTo(out)
         }
     }
 
-    var checksum = BigInteger(1, digest.digest()).toString(16).padStart(64, '0')
+    var checksum = BigInteger(1, digest.digest()).toString(16)
+    while (checksum.length < 64) checksum = "0$checksum"
     if (checksum != expectedChecksum) {
         file.delete()
         throw GradleException("Wrong checksum for $remoteUrl: expected $expectedChecksum, actual $checksum")
@@ -290,27 +292,43 @@ fun downloadBootstrap(arch: String, expectedChecksum: String, version: String) {
 
 tasks.register("downloadBootstraps") {
     doLast {
-        val packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7"
+        val packageVariant = "apt-android-7" // или System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7"
         if (packageVariant == "apt-android-7") {
             val version = "2022.04.28-r5+$packageVariant"
             downloadBootstrap("aarch64", "4a51a7eb209fe82efc24d52e3cccc13165f27377290687cb82038cbd8e948430", version)
             downloadBootstrap("arm", "6459a786acbae50d4c8a36fa1c3de6a4dd2d482572f6d54f73274709bd627325", version)
             downloadBootstrap("i686", "919d212b2f19e08600938db4079e794e947365022dbfd50ac342c50fcedcd7be", version)
             downloadBootstrap("x86_64", "61b02fdc03ea4f5d9da8d8cf018013fdc6659e6da6cbf44e9b24d1c623580b89", version)
-        } else if (packageVariant == "apt-android-5") {
-            val version = "2022.04.28-r6+$packageVariant"
-            downloadBootstrap("aarch64", "913609d439415c828c5640be1b0561467e539cb1c7080662decaaca2fb4820e7", version)
-            downloadBootstrap("arm", "26bfb45304c946170db69108e5eb6e3641aad751406ce106c80df80cad2eccf8", version)
-            downloadBootstrap("i686", "46dcfeb5eef67ba765498db9fe4c50dc4690805139aa0dd141a9d8ee0693cd27", version)
-            downloadBootstrap("x86_64", "615b590679ee6cd885b7fd2ff9473c845e920f9b422f790bb158c63fe42b8481", version)
         } else {
             throw GradleException("Unsupported TERMUX_PACKAGE_VARIANT \"$packageVariant\"")
         }
     }
 }
 
+// После evaluate, подключаем downloadBootstraps к сборке release
 afterEvaluate {
     android.applicationVariants.all { variant ->
-        variant.javaCompileProvider.get().dependsOn(tasks.named("downloadBootstraps"))
+        variant.javaCompileProvider.get().dependsOn("downloadBootstraps")
+    }
+}
+
+// ------------------- VERSION CHECK -------------------
+fun validateVersionName(versionName: String) {
+    val semverRegex =
+        """^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$""".toRegex()
+    if (!semverRegex.matches(versionName)) {
+        throw GradleException("Invalid versionName '$versionName'. Must follow semver 2.0.0")
+    }
+}
+
+tasks.register("versionName") {
+    doLast {
+        println(android.defaultConfig.versionName)
+    }
+}
+
+tasks.register("clean") {
+    doLast {
+        fileTree("src/main/cpp").matching { include("bootstrap-*.zip") }.forEach { it.delete() }
     }
 }
