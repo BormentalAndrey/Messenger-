@@ -1,167 +1,192 @@
 package com.kakdela.p2p.data
 
 import android.content.Context
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import android.util.Log
+import kotlinx.coroutines.*
+import org.json.JSONObject
 import org.webrtc.*
 
 class WebRtcManager(
     private val context: Context,
-    private val currentUserId: String,
+    private val identityRepository: IdentityRepository,
+    private val currentUserHash: String,
     private val onRemoteStreamReady: (MediaStream) -> Unit
 ) {
-    private val db = FirebaseFirestore.getInstance()
-    private val rootEglBase: EglBase = EglBase.create()
-    
+
+    private val TAG = "WebRtcManager"
+
+    private val rootEglBase = EglBase.create()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private var factory: PeerConnectionFactory
     private var peerConnection: PeerConnection? = null
-    private var factory: PeerConnectionFactory? = null
+
     private var localVideoTrack: VideoTrack? = null
     private var localAudioTrack: AudioTrack? = null
 
     init {
-        initPeerConnectionFactory()
-    }
-
-    private fun initPeerConnectionFactory() {
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context)
-                .setEnableInternalTracer(true)
+                .setEnableInternalTracer(false)
                 .createInitializationOptions()
         )
 
         factory = PeerConnectionFactory.builder()
-            .setVideoEncoderFactory(DefaultVideoEncoderFactory(rootEglBase.eglBaseContext, true, true))
-            .setVideoDecoderFactory(DefaultVideoDecoderFactory(rootEglBase.eglBaseContext))
+            .setVideoEncoderFactory(
+                DefaultVideoEncoderFactory(
+                    rootEglBase.eglBaseContext,
+                    true,
+                    true
+                )
+            )
+            .setVideoDecoderFactory(
+                DefaultVideoDecoderFactory(rootEglBase.eglBaseContext)
+            )
             .createPeerConnectionFactory()
+
+        identityRepository.addListener(::onSignalingPacket)
     }
 
-    fun startLocalVideoCapture(surface: SurfaceViewRenderer) {
+    fun startLocalVideo(surface: SurfaceViewRenderer) {
         surface.init(rootEglBase.eglBaseContext, null)
         surface.setMirror(true)
 
-        val videoCapturer = createCameraCapturer(Camera2Enumerator(context)) ?: return
-        val videoSource = factory?.createVideoSource(videoCapturer.isScreencast)
-        
-        videoCapturer.initialize(SurfaceTextureHelper.create("CaptureThread", rootEglBase.eglBaseContext), context, videoSource?.capturerObserver)
-        videoCapturer.startCapture(1280, 720, 30)
+        val capturer = createCameraCapturer(Camera2Enumerator(context)) ?: return
+        val videoSource = factory.createVideoSource(capturer.isScreencast)
 
-        localVideoTrack = factory?.createVideoTrack("100", videoSource)
+        capturer.initialize(
+            SurfaceTextureHelper.create("VideoCapture", rootEglBase.eglBaseContext),
+            context,
+            videoSource.capturerObserver
+        )
+        capturer.startCapture(1280, 720, 30)
+
+        localVideoTrack = factory.createVideoTrack("VIDEO", videoSource)
         localVideoTrack?.addSink(surface)
 
-        val audioSource = factory?.createAudioSource(MediaConstraints())
-        localAudioTrack = factory?.createAudioTrack("101", audioSource)
+        val audioSource = factory.createAudioSource(MediaConstraints())
+        localAudioTrack = factory.createAudioTrack("AUDIO", audioSource)
     }
 
-    fun initCall(targetUserId: String) {
-        createPeerConnection(targetUserId)
-        doCall(targetUserId)
+    fun call(targetHash: String) {
+        createPeer(targetHash)
+        peerConnection?.createOffer(object : SimpleSdpObserver() {
+            override fun onCreateSuccess(desc: SessionDescription) {
+                peerConnection?.setLocalDescription(SimpleSdpObserver(), desc)
+                sendSignal(targetHash, "OFFER", desc.description)
+            }
+        }, MediaConstraints())
     }
 
-    fun answerCall(targetUserId: String, offerSdp: String) {
-        createPeerConnection(targetUserId)
-        peerConnection?.setRemoteDescription(SimpleSdpObserver(), SessionDescription(SessionDescription.Type.OFFER, offerSdp))
-        doAnswer(targetUserId)
+    fun answer(targetHash: String, offerSdp: String) {
+        createPeer(targetHash)
+        peerConnection?.setRemoteDescription(
+            SimpleSdpObserver(),
+            SessionDescription(SessionDescription.Type.OFFER, offerSdp)
+        )
+
+        peerConnection?.createAnswer(object : SimpleSdpObserver() {
+            override fun onCreateSuccess(desc: SessionDescription) {
+                peerConnection?.setLocalDescription(SimpleSdpObserver(), desc)
+                sendSignal(targetHash, "ANSWER", desc.description)
+            }
+        }, MediaConstraints())
     }
 
-    private fun createPeerConnection(targetUserId: String) {
-        val rtcConfig = PeerConnection.RTCConfiguration(
+    private fun createPeer(targetHash: String) {
+        if (peerConnection != null) return
+
+        val config = PeerConnection.RTCConfiguration(
             listOf(
-                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-                PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
+                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
             )
         )
 
-        peerConnection = factory?.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
-            override fun onIceCandidate(candidate: IceCandidate) {
-                sendIceCandidate(candidate, targetUserId)
-            }
-            override fun onAddStream(stream: MediaStream) {
-                onRemoteStreamReady(stream)
-            }
-            // Остальные методы заглушки...
-            override fun onSignalingChange(p0: PeerConnection.SignalingState?) {}
-            override fun onIceConnectionChange(p0: PeerConnection.IceConnectionState?) {}
-            override fun onIceConnectionReceivingChange(p0: Boolean) {}
-            override fun onIceGatheringChange(p0: PeerConnection.IceGatheringState?) {}
-            override fun onIceCandidatesRemoved(p0: Array<out IceCandidate>?) {}
-            override fun onRemoveStream(p0: MediaStream?) {}
-            override fun onRenegotiationNeeded() {}
-            override fun onDataChannel(p0: DataChannel?) {}
-        })
+        peerConnection = factory.createPeerConnection(
+            config,
+            object : PeerConnection.Observer {
+                override fun onIceCandidate(c: IceCandidate) {
+                    sendSignal(targetHash, "ICE", JSONObject().apply {
+                        put("sdpMid", c.sdpMid)
+                        put("sdpMLineIndex", c.sdpMLineIndex)
+                        put("candidate", c.sdp)
+                    }.toString())
+                }
 
-        // Добавляем локальные стримы
-        val stream = factory?.createLocalMediaStream("ARDAMS")
-        stream?.addTrack(localVideoTrack)
-        stream?.addTrack(localAudioTrack)
+                override fun onAddStream(stream: MediaStream) {
+                    onRemoteStreamReady(stream)
+                }
+
+                override fun onSignalingChange(p0: PeerConnection.SignalingState?) {}
+                override fun onIceConnectionChange(p0: PeerConnection.IceConnectionState?) {}
+                override fun onIceConnectionReceivingChange(p0: Boolean) {}
+                override fun onIceGatheringChange(p0: PeerConnection.IceGatheringState?) {}
+                override fun onIceCandidatesRemoved(p0: Array<out IceCandidate>?) {}
+                override fun onRemoveStream(p0: MediaStream?) {}
+                override fun onRenegotiationNeeded() {}
+                override fun onDataChannel(p0: DataChannel?) {}
+                override fun onTrack(transceiver: RtpTransceiver?) {}
+            }
+        )
+
+        val stream = factory.createLocalMediaStream("LOCAL")
+        localVideoTrack?.let { stream.addTrack(it) }
+        localAudioTrack?.let { stream.addTrack(it) }
         peerConnection?.addStream(stream)
     }
 
-    private fun doCall(targetUserId: String) {
-        peerConnection?.createOffer(object : SimpleSdpObserver() {
-            override fun onCreateSuccess(desc: SessionDescription?) {
-                peerConnection?.setLocalDescription(SimpleSdpObserver(), desc)
-                // Отправляем Offer через Firestore (сигнализация)
-                sendSignalingMessage(targetUserId, "offer", desc?.description)
+    private fun sendSignal(targetHash: String, type: String, payload: String) {
+        scope.launch {
+            val json = JSONObject().apply {
+                put("type", type)
+                put("payload", payload)
             }
-        }, MediaConstraints())
-    }
-
-    private fun doAnswer(targetUserId: String) {
-        peerConnection?.createAnswer(object : SimpleSdpObserver() {
-            override fun onCreateSuccess(desc: SessionDescription?) {
-                peerConnection?.setLocalDescription(SimpleSdpObserver(), desc)
-                sendSignalingMessage(targetUserId, "answer", desc?.description)
-            }
-        }, MediaConstraints())
-    }
-    
-    fun addIceCandidate(sdpMid: String, sdpMLineIndex: Int, sdp: String) {
-        peerConnection?.addIceCandidate(IceCandidate(sdpMid, sdpMLineIndex, sdp))
-    }
-    
-    fun setRemoteDescription(sdp: String) {
-         peerConnection?.setRemoteDescription(SimpleSdpObserver(), SessionDescription(SessionDescription.Type.ANSWER, sdp))
-    }
-
-    private fun sendSignalingMessage(targetId: String, type: String, sdp: String?) {
-        val data = mapOf(
-            "type" to type,
-            "sdp" to sdp,
-            "senderId" to currentUserId,
-            "timestamp" to System.currentTimeMillis()
-        )
-        // В реальном приложении это отправляется в sub-collection 'calls'
-        db.collection("users").document(targetId).collection("incoming_calls").add(data)
-    }
-    
-    private fun sendIceCandidate(candidate: IceCandidate, targetId: String) {
-         val data = mapOf(
-            "type" to "candidate",
-            "sdpMid" to candidate.sdpMid,
-            "sdpMLineIndex" to candidate.sdpMLineIndex,
-            "sdp" to candidate.sdp,
-            "senderId" to currentUserId
-        )
-        db.collection("users").document(targetId).collection("incoming_calls").add(data)
-    }
-
-    private fun createCameraCapturer(enumerator: CameraEnumerator): VideoCapturer? {
-        val deviceNames = enumerator.deviceNames
-        // Ищем переднюю камеру
-        for (deviceName in deviceNames) {
-            if (enumerator.isFrontFacing(deviceName)) {
-                val videoCapturer = enumerator.createCapturer(deviceName, null)
-                if (videoCapturer != null) return videoCapturer
-            }
+            identityRepository.sendSignaling(targetHash, json.toString())
         }
-        return null
+    }
+
+    private fun onSignalingPacket(type: String, data: String, _: String, fromHash: String) {
+        if (type != "SIGNALING") return
+
+        try {
+            val json = JSONObject(data)
+            when (json.getString("type")) {
+                "OFFER" -> answer(fromHash, json.getString("payload"))
+                "ANSWER" -> peerConnection?.setRemoteDescription(
+                    SimpleSdpObserver(),
+                    SessionDescription(SessionDescription.Type.ANSWER, json.getString("payload"))
+                )
+                "ICE" -> {
+                    val p = JSONObject(json.getString("payload"))
+                    peerConnection?.addIceCandidate(
+                        IceCandidate(
+                            p.getString("sdpMid"),
+                            p.getInt("sdpMLineIndex"),
+                            p.getString("candidate")
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Signal parse error", e)
+        }
+    }
+
+    private fun createCameraCapturer(enumerator: CameraEnumerator): VideoCapturer? =
+        enumerator.deviceNames.firstNotNullOfOrNull {
+            if (enumerator.isFrontFacing(it)) enumerator.createCapturer(it, null) else null
+        }
+
+    fun release() {
+        identityRepository.removeListener(::onSignalingPacket)
+        peerConnection?.close()
+        peerConnection = null
+        scope.cancel()
     }
 }
 
 open class SimpleSdpObserver : SdpObserver {
-    override fun onCreateSuccess(p0: SessionDescription?) {}
+    override fun onCreateSuccess(desc: SessionDescription) {}
     override fun onSetSuccess() {}
     override fun onCreateFailure(p0: String?) {}
     override fun onSetFailure(p0: String?) {}
