@@ -1,7 +1,12 @@
-import java.io.*
+import java.io.BufferedOutputStream
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.math.BigInteger
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.DigestInputStream
+import java.security.MessageDigest
 import java.util.Properties
 
 plugins {
@@ -69,7 +74,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
-            shrinkResources = false
+            isShrinkResources = false // Исправлено: добавлено 'is'
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -239,21 +244,32 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 // ------------------------- Termux Bootstrap -------------------------
 val packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7"
 
-fun validateVersionName(versionName: String) {
+fun validateVersionName(versionName: String?) { // Исправлено: принимаем nullable String?
+    if (versionName == null) return // Или выбрасывать ошибку, если версия обязательна
+
     val regex = Regex(
         "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)" +
                 "(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?" +
                 "(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
     )
-    if (!regex.matches(android.defaultConfig.versionName)) {
-        throw GradleException("Invalid versionName ${android.defaultConfig.versionName}")
+    if (!regex.matches(versionName)) {
+        throw GradleException("Invalid versionName $versionName")
+    }
+}
+
+// Регистрируем задачу проверки версии
+tasks.register("checkVersionName") {
+    doLast {
+        validateVersionName(android.defaultConfig.versionName)
     }
 }
 
 fun downloadBootstrap(arch: String, expectedChecksum: String, version: String) {
-    val digest = java.security.MessageDigest.getInstance("SHA-256")
+    // Исправлено: Используем импортированный класс MessageDigest
+    val digest = MessageDigest.getInstance("SHA-256")
     val localUrl = "src/main/cpp/bootstrap-$arch.zip"
     val file = File(projectDir, localUrl)
+
     if (file.exists()) {
         file.inputStream().use { input ->
             val buffer = ByteArray(8192)
@@ -267,19 +283,32 @@ fun downloadBootstrap(arch: String, expectedChecksum: String, version: String) {
         while (checksum.length < 64) checksum = "0$checksum"
         if (checksum == expectedChecksum) return
         file.delete()
+        println("Deleted old local file with wrong hash: $localUrl")
     }
 
     val remoteUrl = "https://github.com/termux/termux-packages/releases/download/bootstrap-$version/bootstrap-$arch.zip"
-    logger.quiet("Downloading $remoteUrl ...")
+    println("Downloading $remoteUrl ...")
     val connection = URL(remoteUrl).openConnection() as HttpURLConnection
     connection.instanceFollowRedirects = true
+    
+    // Сброс дайджеста перед загрузкой
+    digest.reset()
+    
     connection.inputStream.use { input ->
         file.parentFile.mkdirs()
         BufferedOutputStream(FileOutputStream(file)).use { output ->
-            input.copyTo(output)
+            DigestInputStream(input, digest).use { digestStream ->
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val read = digestStream.read(buffer)
+                    if (read < 0) break
+                    output.write(buffer, 0, read)
+                }
+            }
         }
     }
 
+    // Вычисляем checksum скачанного файла
     val checksum = BigInteger(1, digest.digest()).toString(16).padStart(64, '0')
     if (checksum != expectedChecksum) {
         file.delete()
@@ -310,7 +339,10 @@ val downloadBootstraps = tasks.register("downloadBootstraps") {
 // ------------------------- Hook into preBuild -------------------------
 afterEvaluate {
     android.applicationVariants.all { variant ->
-        variant.preBuildProvider.get().dependsOn(downloadBootstraps)
+        // Исправлено: используем .configure для безопасной привязки задачи
+        variant.preBuildProvider.configure {
+            dependsOn(downloadBootstraps)
+        }
     }
 }
 
