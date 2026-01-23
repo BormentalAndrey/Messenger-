@@ -5,6 +5,7 @@ import android.util.Log
 import com.kakdela.p2p.api.WebViewApiClient
 import com.kakdela.p2p.data.IdentityRepository
 import com.kakdela.p2p.security.CryptoManager
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 
 class MyApplication : Application() {
 
@@ -16,6 +17,9 @@ class MyApplication : Application() {
         super.onCreate()
 
         try {
+            // 0. PDFBox (ОБЯЗАТЕЛЬНО до работы с PDF)
+            PDFBoxResourceLoader.init(this)
+
             // 1. WebView API (антибот + fetch)
             WebViewApiClient.init(this)
 
