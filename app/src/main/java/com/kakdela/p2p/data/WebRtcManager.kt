@@ -25,6 +25,7 @@ class WebRtcManager(
     private var localAudioTrack: AudioTrack? = null
 
     init {
+        // Инициализация фабрики PeerConnection
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context)
                 .setEnableInternalTracer(false)
@@ -47,11 +48,15 @@ class WebRtcManager(
         identityRepository.addListener(::onSignalingPacket)
     }
 
+    /** Запуск локального видео */
     fun startLocalVideo(surface: SurfaceViewRenderer) {
         surface.init(rootEglBase.eglBaseContext, null)
         surface.setMirror(true)
 
-        val capturer = createCameraCapturer(Camera2Enumerator(context)) ?: return
+        val capturer = createCameraCapturer(Camera2Enumerator(context)) ?: run {
+            Log.w(TAG, "No front-facing camera found")
+            return
+        }
         val videoSource = factory.createVideoSource(capturer.isScreencast)
 
         capturer.initialize(
@@ -68,8 +73,9 @@ class WebRtcManager(
         localAudioTrack = factory.createAudioTrack("AUDIO", audioSource)
     }
 
+    /** Начало звонка */
     fun call(targetHash: String) {
-        createPeer(targetHash)
+        createPeerConnection(targetHash)
         peerConnection?.createOffer(object : SimpleSdpObserver() {
             override fun onCreateSuccess(desc: SessionDescription) {
                 peerConnection?.setLocalDescription(SimpleSdpObserver(), desc)
@@ -78,13 +84,13 @@ class WebRtcManager(
         }, MediaConstraints())
     }
 
+    /** Ответ на входящий звонок */
     fun answer(targetHash: String, offerSdp: String) {
-        createPeer(targetHash)
+        createPeerConnection(targetHash)
         peerConnection?.setRemoteDescription(
             SimpleSdpObserver(),
             SessionDescription(SessionDescription.Type.OFFER, offerSdp)
         )
-
         peerConnection?.createAnswer(object : SimpleSdpObserver() {
             override fun onCreateSuccess(desc: SessionDescription) {
                 peerConnection?.setLocalDescription(SimpleSdpObserver(), desc)
@@ -93,7 +99,8 @@ class WebRtcManager(
         }, MediaConstraints())
     }
 
-    private fun createPeer(targetHash: String) {
+    /** Создание PeerConnection и добавление локальных потоков */
+    private fun createPeerConnection(targetHash: String) {
         if (peerConnection != null) return
 
         val config = PeerConnection.RTCConfiguration(
@@ -105,11 +112,11 @@ class WebRtcManager(
         peerConnection = factory.createPeerConnection(
             config,
             object : PeerConnection.Observer {
-                override fun onIceCandidate(c: IceCandidate) {
+                override fun onIceCandidate(candidate: IceCandidate) {
                     sendSignal(targetHash, "ICE", JSONObject().apply {
-                        put("sdpMid", c.sdpMid)
-                        put("sdpMLineIndex", c.sdpMLineIndex)
-                        put("candidate", c.sdp)
+                        put("sdpMid", candidate.sdpMid)
+                        put("sdpMLineIndex", candidate.sdpMLineIndex)
+                        put("candidate", candidate.sdp)
                     }.toString())
                 }
 
@@ -117,24 +124,26 @@ class WebRtcManager(
                     onRemoteStreamReady(stream)
                 }
 
-                override fun onSignalingChange(p0: PeerConnection.SignalingState?) {}
-                override fun onIceConnectionChange(p0: PeerConnection.IceConnectionState?) {}
-                override fun onIceConnectionReceivingChange(p0: Boolean) {}
-                override fun onIceGatheringChange(p0: PeerConnection.IceGatheringState?) {}
-                override fun onIceCandidatesRemoved(p0: Array<out IceCandidate>?) {}
-                override fun onRemoveStream(p0: MediaStream?) {}
+                override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
+                override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {}
+                override fun onIceConnectionReceivingChange(receiving: Boolean) {}
+                override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {}
+                override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) {}
+                override fun onRemoveStream(stream: MediaStream?) {}
                 override fun onRenegotiationNeeded() {}
-                override fun onDataChannel(p0: DataChannel?) {}
+                override fun onDataChannel(channel: DataChannel?) {}
                 override fun onTrack(transceiver: RtpTransceiver?) {}
             }
         )
 
-        val stream = factory.createLocalMediaStream("LOCAL")
-        localVideoTrack?.let { stream.addTrack(it) }
-        localAudioTrack?.let { stream.addTrack(it) }
-        peerConnection?.addStream(stream)
+        // Добавление локальных потоков
+        val localStream = factory.createLocalMediaStream("LOCAL")
+        localVideoTrack?.let { localStream.addTrack(it) }
+        localAudioTrack?.let { localStream.addTrack(it) }
+        peerConnection?.addStream(localStream)
     }
 
+    /** Отправка сигнализации через IdentityRepository */
     private fun sendSignal(targetHash: String, type: String, payload: String) {
         scope.launch {
             val json = JSONObject().apply {
@@ -145,6 +154,7 @@ class WebRtcManager(
         }
     }
 
+    /** Обработка входящей сигнализации */
     private fun onSignalingPacket(type: String, data: String, _: String, fromHash: String) {
         if (type != "SIGNALING") return
 
@@ -172,11 +182,18 @@ class WebRtcManager(
         }
     }
 
-    private fun createCameraCapturer(enumerator: CameraEnumerator): VideoCapturer? =
-        enumerator.deviceNames.firstNotNullOfOrNull {
-            if (enumerator.isFrontFacing(it)) enumerator.createCapturer(it, null) else null
+    /** Создание VideoCapturer для фронтальной камеры */
+    private fun createCameraCapturer(enumerator: CameraEnumerator): VideoCapturer? {
+        for (deviceName in enumerator.deviceNames) {
+            if (enumerator.isFrontFacing(deviceName)) {
+                val capturer = enumerator.createCapturer(deviceName, null)
+                if (capturer != null) return capturer
+            }
         }
+        return null
+    }
 
+    /** Очистка ресурсов */
     fun release() {
         identityRepository.removeListener(::onSignalingPacket)
         peerConnection?.close()
@@ -185,9 +202,10 @@ class WebRtcManager(
     }
 }
 
+/** Простая реализация SdpObserver */
 open class SimpleSdpObserver : SdpObserver {
     override fun onCreateSuccess(desc: SessionDescription) {}
     override fun onSetSuccess() {}
-    override fun onCreateFailure(p0: String?) {}
-    override fun onSetFailure(p0: String?) {}
+    override fun onCreateFailure(error: String?) {}
+    override fun onSetFailure(error: String?) {}
 }
