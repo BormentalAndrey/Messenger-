@@ -117,6 +117,8 @@
             android:name=".l5.k"
             android:exported="false"
             android:screenOrientation="portrait" />
+        <activity
+            android:name=".ui.browser.BrowserActivity" />
 
         <!-- ================= SERVICE ================= -->
         <service
