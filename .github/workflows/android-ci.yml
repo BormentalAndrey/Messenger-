@@ -1,25 +1,30 @@
-name: Android CI
+name: Android CI - Unpack Termux
 
+# Запуск на пуш в main/master и вручную
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
-  unpack-and-save:
+  unpack-and-commit:
     runs-on: ubuntu-latest
 
     steps:
+      # 1️⃣ Проверяем репозиторий
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          token: ${{ secrets.GH_PAT }}  # <-- обязательно добавить PAT в secrets
           fetch-depth: 0
 
+      # 2️⃣ Устанавливаем unzip
       - name: Install unzip
         run: |
           sudo apt-get update
           sudo apt-get install -y unzip
 
+      # 3️⃣ Проверяем, что архив существует
       - name: Verify archive exists
         run: |
           if [ ! -f termux-library/termux-app-master.zip ]; then
@@ -27,30 +32,29 @@ jobs:
             exit 1
           fi
 
-      # чистим целевую папку
-      - name: Prepare destination
+      # 4️⃣ Чистим старую папку
+      - name: Prepare destination folder
         run: |
           rm -rf termux-library/termux-app
           mkdir -p termux-library/termux-app
 
-      # распаковка БЕЗ termux-app-master
-      - name: Unzip without root folder
+      # 5️⃣ Распаковываем архив без папки termux-app-master
+      - name: Unpack termux-app
         run: |
           mkdir -p tmp
           unzip -q termux-library/termux-app-master.zip -d tmp
-
-          # переносим СОДЕРЖИМОЕ, а не папку
+          # переносим содержимое в целевую папку
           mv tmp/termux-app-master/* termux-library/termux-app/
-
           rm -rf tmp
 
-      - name: Verify result
+      # 6️⃣ Проверяем результат
+      - name: Verify unpacked files
         run: |
-          echo "=== RESULT ==="
-          ls -la termux-library/termux-app
-          test -f termux-library/termux-app/settings.gradle
+          echo "=== termux-library/termux-app ==="
+          find termux-library/termux-app -maxdepth 2 -type d
 
-      - name: Commit result
+      # 7️⃣ Коммитим и пушим распакованные файлы
+      - name: Commit and push unpacked files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -62,4 +66,3 @@ jobs:
           else
             git commit -m "ci: unpack termux-app without root folder"
             git push
-          fi
