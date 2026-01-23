@@ -152,7 +152,7 @@ dependencies {
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
     implementation("androidx.sqlite:sqlite-ktx:2.4.0")
 
-    implementation("com.tom_roush:pdfbox-android:2.0.26.0")
+    implementation("com.tom-roush:pdfbox-android:2.0.26.0")
 
     // Security Crypto - ОБНОВЛЕНО до 1.12.0 для исправления HybridDecrypt/Signature ошибок
     implementation("com.google.crypto.tink:tink-android:1.12.0")
