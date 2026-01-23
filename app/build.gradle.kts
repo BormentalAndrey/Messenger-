@@ -271,9 +271,9 @@ fun downloadBootstrap(arch: String, expectedChecksum: String, version: String) {
     val remoteUrl = "https://github.com/termux/termux-packages/releases/download/bootstrap-$version/bootstrap-$arch.zip"
     logger.quiet("Downloading $remoteUrl ...")
 
+    val connection = URL(remoteUrl).openConnection() as HttpURLConnection
+    connection.instanceFollowRedirects = true // исправлено
     BufferedOutputStream(FileOutputStream(localFile)).use { out ->
-        val connection = URL(remoteUrl).openConnection() as HttpURLConnection
-        connection.followRedirects = true
         DigestInputStream(connection.inputStream, digest).use { digestStream ->
             digestStream.copyTo(out)
         }
@@ -304,7 +304,9 @@ val downloadBootstraps = tasks.register("downloadBootstraps") {
 // Подключаем bootstraps к сборке release
 afterEvaluate {
     android.applicationVariants.all { variant ->
-        variant.preBuildProvider.get().dependsOn(downloadBootstraps)
+        variant.preBuildProvider.configure {
+            dependsOn(downloadBootstraps)
+        }
     }
 }
 
