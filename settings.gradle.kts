@@ -13,7 +13,7 @@ pluginManagement {
 }
 
 dependencyResolutionManagement {
-    // Гарантирует, что настройки репозиториев здесь являются единственным источником правды
+    // FAIL_ON_PROJECT_REPOS гарантирует, что все репозитории объявлены только здесь
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     
     repositories {
@@ -31,28 +31,17 @@ dependencyResolutionManagement {
             url = uri("https://getstream.io/maven")
         }
 
-        // JitPack для специфических библиотек (например, Termux или кастомные форки)
+        // JitPack для Termux и других сторонних библиотек
         maven { 
-            url = uri("https://jitpack.io") 
-            // Добавляем фильтр, чтобы не опрашивать JitPack по каждой зависимости (ускоряет билд)
-            content {
-                includeGroup("com.github.termux")
-                includeGroup("com.github.kakdela-p2p") // пример вашего будущего репозитория
-            }
+            url = uri("https://jitpack.io")
         }
 
-        // Зеркало для повышения стабильности загрузки в случае сбоев основных серверов
+        // Зеркало Maven для стабильности сборки
         maven { 
-            url = uri("https://maven.aliyun.com/repository/public") 
-            mavenContent {
-                releasesOnly()
-            }
+            url = uri("https://maven.aliyun.com/repository/public")
         }
     }
 }
 
-// Название проекта
 rootProject.name = "MessengerP2P"
-
-// Подключаемые модули
 include(":app")
