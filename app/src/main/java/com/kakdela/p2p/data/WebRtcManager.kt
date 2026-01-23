@@ -25,7 +25,7 @@ class WebRtcManager(
     private var localAudioTrack: AudioTrack? = null
 
     init {
-        // Инициализация фабрики PeerConnection
+        // Инициализация PeerConnectionFactory
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context)
                 .setEnableInternalTracer(false)
@@ -45,6 +45,7 @@ class WebRtcManager(
             )
             .createPeerConnectionFactory()
 
+        // Подписка на входящие сигнализации
         identityRepository.addListener(::onSignalingPacket)
     }
 
@@ -57,6 +58,7 @@ class WebRtcManager(
             Log.w(TAG, "No front-facing camera found")
             return
         }
+
         val videoSource = factory.createVideoSource(capturer.isScreencast)
 
         capturer.initialize(
@@ -155,7 +157,7 @@ class WebRtcManager(
     }
 
     /** Обработка входящей сигнализации */
-    private fun onSignalingPacket(type: String, data: String, _: String, fromHash: String) {
+    private fun onSignalingPacket(type: String, data: String, ignored: String, fromHash: String) {
         if (type != "SIGNALING") return
 
         try {
