@@ -114,5 +114,5 @@ class TerminalActivity : AppCompatActivity(),
     override fun onColorsChanged(session: TerminalSession) {}
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
     override fun onTerminalCursorStateChange(state: Boolean) {}
-    override fun getTerminalCursorStyle(): Int = TerminalSessionClient.CursorStyle.BLOCK
+    override fun getTerminalCursorStyle(): Int = 0 // 0 = блочный курсор
     }
