@@ -1,34 +1,66 @@
-name: Unzip and Prepare Library
+name: Unzip Termux Library
 
 on:
   push:
     branches: [ "main", "master" ]
+  workflow_dispatch:
 
 jobs:
-  extract:
+  unzip_job:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout your repository
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Extract Termux Library
+      - name: Extracting Archive
         run: |
-          # 1. Распаковываем архив в папку termux-library
-          # -q (quiet) подавляет вывод тысяч строк логов
-          # -o (overwrite) перезаписывает файлы, если они уже есть
-          unzip -qo termux-library/termux-app-master.zip -d termux-library/
+          # 1. Поиск архива (на случай если регистр имен отличается)
+          ARCHIVE_PATH=$(find . -name "termux-app-master.zip" | head -n 1)
+          
+          if [ -z "$ARCHIVE_PATH" ]; then
+            echo "КРИТИЧЕСКАЯ ОШИБКА: Файл .zip не найден в репозитории!"
+            find . -maxdepth 3 -not -path '*/.*'
+            exit 1
+          fi
+          
+          echo "Архив найден: $ARCHIVE_PATH"
 
-          # 2. Исправляем структуру (вынимаем файлы из вложенной папки в корень модуля)
-          # GitHub ZIP всегда создает папку 'termux-app-master' внутри
-          if [ -d "termux-library/termux-app-master" ]; then
-            echo "Moving files out of nested folder..."
-            mv termux-library/termux-app-master/* termux-library/
-            mv termux-library/termux-app-master/.[!.]* termux-library/ 2>/dev/null || true
-            rm -rf termux-library/termux-app-master
+          # 2. Распаковка во временную папку
+          mkdir -p extraction_temp
+          unzip -qo "$ARCHIVE_PATH" -d extraction_temp/
+
+          # 3. Перенос содержимого в termux-library/
+          # Обычно внутри ZIP есть одна корневая папка (например termux-app-master)
+          # Нам нужно то, что ВНУТРИ неё
+          ROOT_DIR=$(ls extraction_temp | head -n 1)
+          echo "Вложенная папка в архиве: $ROOT_DIR"
+          
+          # Очищаем целевую папку и копируем туда файлы
+          mkdir -p termux-library
+          cp -rn extraction_temp/$ROOT_DIR/* termux-library/ 2>/dev/null || true
+          
+          # 4. Удаление мусора
+          rm -rf extraction_temp
+          
+          echo "Файлы успешно распакованы в termux-library/"
+          ls -F termux-library/
+
+      - name: Fix Permissions and Gradle
+        run: |
+          # Даем права на выполнение скриптов
+          chmod -R +x termux-library/
+          
+          # ОЧЕНЬ ВАЖНО: Удаляем репозитории из распакованного билда, 
+          # чтобы не было ошибки "prefer settings repositories"
+          if [ -f "termux-library/build.gradle" ]; then
+            sed -i '/repositories {/,/}/d' termux-library/build.gradle
+          fi
+          if [ -f "termux-library/build.gradle.kts" ]; then
+            sed -i '/repositories {/,/}/d' termux-library/build.gradle.kts
           fi
 
-          # 3. Проверка результата (выведет список файлов для отладки)
-          echo "Current termux-library content:"
-          ls -F termux-library/
+      - name: Verify and Build
+        run: |
+          chmod +x gradlew
+          ./gradlew :termux-library:assembleDebug --stacktrace
           
