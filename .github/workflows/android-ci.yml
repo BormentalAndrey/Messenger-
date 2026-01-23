@@ -2,44 +2,51 @@ name: Android CI
 
 on:
   push:
-    branches:
-      - main
-      - master
-  pull_request:
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
-  unzip-termux:
+  debug-unzip:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Debug files
+      - name: Show workspace root
         run: |
-          echo "ROOT:"
+          echo "PWD=$(pwd)"
+          echo "=== ROOT FILES ==="
           ls -la
-          echo "termux-library:"
-          ls -la termux-library || true
 
-      - name: Ensure unzip is installed
+      - name: Search zip file
         run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip
+          echo "=== SEARCH ZIP ==="
+          find . -name "*.zip" -type f || true
 
-      - name: Check archive exists
+      - name: Fail if archive not found
         run: |
-          if [ ! -f termux-library/termux-app-master.zip ]; then
-            echo "❌ termux-app-master.zip not found"
+          if [ ! -f "./termux-library/termux-app-master.zip" ]; then
+            echo "❌ ARCHIVE NOT FOUND:"
+            echo "./termux-library/termux-app-master.zip"
             exit 1
           fi
 
-      - name: Unzip termux-app
+      - name: Inspect archive
         run: |
-          mkdir -p termux-library/termux-app
-          unzip -o termux-library/termux-app-master.zip -d termux-library/termux-app
+          ls -lh termux-library/termux-app-master.zip
+          file termux-library/termux-app-master.zip
 
-      - name: Verify result
+      - name: Install unzip
+        run: sudo apt-get update && sudo apt-get install -y unzip
+
+      - name: Try unzip with full log
         run: |
-          find termux-library/termux-app -maxdepth 2 -type d
+          mkdir -p out
+          unzip -v termux-library/termux-app-master.zip
+          unzip termux-library/termux-app-master.zip -d out
+
+      - name: Show result
+        run: |
+          echo "=== OUT DIR ==="
+          find out -maxdepth 4
