@@ -3,34 +3,68 @@ name: Unpack Termux Archive
 on:
   push:
     branches:
-      - main  # замените на вашу основную ветку, если нужно
-  workflow_dispatch:  # позволяет запускать вручную
+      - main  # или ваша основная ветка
+  workflow_dispatch:  # для ручного запуска
 
 jobs:
-  unpack:
+  unpack-and-commit:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # важно для последующего пуша
+
+      - name: Setup Git user
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Install unzip
         run: sudo apt-get update && sudo apt-get install -y unzip
 
+      - name: Check if archive exists
+        run: |
+          cd app/src/main/kotlin/com/kakdela/p2p/ui/terminal
+          if [ -f termux-app-master.zip ]; then
+            echo "Архив найден"
+            ls -la
+          else
+            echo "Ошибка: архив termux-app-master.zip не найден!"
+            exit 1
+          fi
+
+      - name: List directory before unpack
+        run: |
+          cd app/src/main/kotlin/com/kakdela/p2p/ui/terminal
+          echo "Содержимое директории до распаковки:"
+          ls -la
+
       - name: Unpack archive
         run: |
-          # Переходим в директорию с архивом
           cd app/src/main/kotlin/com/kakdela/p2p/ui/terminal
-
-          # Распаковываем (с перезаписью, если файлы уже есть)
           unzip -o termux-app-master.zip
 
-          # Перемещаем содержимое внутренней папки termux-app-master в текущую директорию
-          mv termux-app-master/* .
-          mv termux-app-master/.* . 2>/dev/null || true  # скрытые файлы, если есть
+          # Если внутри архива есть папка termux-app-master, перемещаем содержимое наверх
+          if [ -d termux-app-master ]; then
+            mv termux-app-master/* . 2>/dev/null || true
+            mv termux-app-master/.* . 2>/dev/null || true
+            rmdir termux-app-master || true
+          fi
 
-          # Удаляем пустую внутреннюю папку и сам архив (опционально)
-          rmdir termux-app-master
+          # Опционально: удаляем сам архив после распаковки
           rm termux-app-master.zip
 
-          echo "Архив успешно распакован в app/src/main/kotlin/com/kakdela/p2p/ui/terminal"
+      - name: List directory after unpack
+        run: |
+          cd app/src/main/kotlin/com/kakdela/p2p/ui/terminal
+          echo "Содержимое директории после распаковки:"
+          ls -la
+
+      - name: Commit and push changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: unpack termux-app-master archive"
+          branch: main  # или ваша ветка
+          file_pattern: app/src/main/kotlin/com/kakdela/p2p/ui/terminal/*
