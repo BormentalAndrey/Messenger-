@@ -3,8 +3,11 @@ name: Unpack Termux Archive
 on:
   push:
     branches:
-      - main  # или ваша основная ветка
-  workflow_dispatch:  # для ручного запуска
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write   # Это даёт права на коммит и пуш
 
 jobs:
   unpack-and-commit:
@@ -14,7 +17,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # важно для последующего пуша
+          fetch-depth: 0
 
       - name: Setup Git user
         run: |
@@ -46,15 +49,13 @@ jobs:
           cd app/src/main/kotlin/com/kakdela/p2p/ui/terminal
           unzip -o termux-app-master.zip
 
-          # Если внутри архива есть папка termux-app-master, перемещаем содержимое наверх
           if [ -d termux-app-master ]; then
             mv termux-app-master/* . 2>/dev/null || true
             mv termux-app-master/.* . 2>/dev/null || true
             rmdir termux-app-master || true
           fi
 
-          # Опционально: удаляем сам архив после распаковки
-          rm termux-app-master.zip
+          rm termux-app-master.zip || true
 
       - name: List directory after unpack
         run: |
@@ -66,5 +67,4 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: unpack termux-app-master archive"
-          branch: main  # или ваша ветка
           file_pattern: app/src/main/kotlin/com/kakdela/p2p/ui/terminal/*
