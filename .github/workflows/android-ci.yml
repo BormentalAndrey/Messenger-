@@ -1,49 +1,45 @@
-name: Unzip Termux App
+name: Android CI
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches:
+      - main
+      - master
+  pull_request:
   workflow_dispatch:
 
 jobs:
-  unzip:
+  unzip-termux:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Debug: list all files
+      - name: Debug files
         run: |
-          echo "=== ROOT FILES ==="
+          echo "ROOT:"
           ls -la
-          echo "=== termux-library ==="
+          echo "termux-library:"
           ls -la termux-library || true
 
-      - name: Verify archive exists
-        run: |
-          if [ ! -f "termux-library/termux-app-master.zip" ]; then
-            echo "❌ Archive NOT FOUND!"
-            exit 1
-          fi
-
-      - name: Show archive info
-        run: |
-          ls -lh termux-library/termux-app-master.zip
-          file termux-library/termux-app-master.zip
-
-      - name: Install unzip (just in case)
+      - name: Ensure unzip is installed
         run: |
           sudo apt-get update
           sudo apt-get install -y unzip
 
-      - name: Unzip archive
+      - name: Check archive exists
+        run: |
+          if [ ! -f termux-library/termux-app-master.zip ]; then
+            echo "❌ termux-app-master.zip not found"
+            exit 1
+          fi
+
+      - name: Unzip termux-app
         run: |
           mkdir -p termux-library/termux-app
-          unzip -v termux-library/termux-app-master.zip
           unzip -o termux-library/termux-app-master.zip -d termux-library/termux-app
 
-      - name: Verify unpacked files
+      - name: Verify result
         run: |
-          echo "=== UNPACKED ==="
           find termux-library/termux-app -maxdepth 2 -type d
