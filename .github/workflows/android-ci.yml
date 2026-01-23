@@ -3,7 +3,6 @@ name: Unzip Termux App
 on:
   push:
     branches: [ "main", "master" ]
-  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -14,18 +13,37 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Show files before unzip
+      - name: Debug: list all files
         run: |
-          echo "=== BEFORE ==="
+          echo "=== ROOT FILES ==="
           ls -la
+          echo "=== termux-library ==="
           ls -la termux-library || true
 
-      - name: Unzip termux-app archive
+      - name: Verify archive exists
+        run: |
+          if [ ! -f "termux-library/termux-app-master.zip" ]; then
+            echo "❌ Archive NOT FOUND!"
+            exit 1
+          fi
+
+      - name: Show archive info
+        run: |
+          ls -lh termux-library/termux-app-master.zip
+          file termux-library/termux-app-master.zip
+
+      - name: Install unzip (just in case)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y unzip
+
+      - name: Unzip archive
         run: |
           mkdir -p termux-library/termux-app
+          unzip -v termux-library/termux-app-master.zip
           unzip -o termux-library/termux-app-master.zip -d termux-library/termux-app
 
-      - name: Show files after unzip
+      - name: Verify unpacked files
         run: |
-          echo "=== AFTER ==="
-          ls -la termux-library/termux-app
+          echo "=== UNPACKED ==="
+          find termux-library/termux-app -maxdepth 2 -type d
