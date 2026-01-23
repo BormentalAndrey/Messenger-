@@ -69,9 +69,7 @@ class TerminalActivity : AppCompatActivity(),
     }
 
     override fun onDestroy() {
-        if (::terminalSession.isInitialized) {
-            terminalSession.finishIfRunning()
-        }
+        terminalSession.finishIfRunning()
         super.onDestroy()
     }
 
@@ -82,13 +80,9 @@ class TerminalActivity : AppCompatActivity(),
     override fun onSingleTapUp(e: MotionEvent) {}
 
     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
-
     override fun shouldEnforceCharBasedInput(): Boolean = false
-
     override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
-
     override fun isTerminalViewSelected(): Boolean = true
-
     override fun copyModeChanged(copyMode: Boolean) {}
 
     override fun onKeyDown(
@@ -98,7 +92,6 @@ class TerminalActivity : AppCompatActivity(),
     ): Boolean = false
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = false
-
     override fun onLongPress(event: MotionEvent): Boolean = false
 
     override fun readControlKey(): Boolean = false
@@ -117,31 +110,13 @@ class TerminalActivity : AppCompatActivity(),
 
     override fun onEmulatorSet() {}
 
-    override fun logError(tag: String, message: String) {
-        Log.e(tag, message)
-    }
+    override fun logError(tag: String, message: String) = Log.e(tag, message)
+    override fun logWarn(tag: String, message: String) = Log.w(tag, message)
+    override fun logInfo(tag: String, message: String) = Log.i(tag, message)
+    override fun logDebug(tag: String, message: String) = Log.d(tag, message)
+    override fun logVerbose(tag: String, message: String) = Log.v(tag, message)
 
-    override fun logWarn(tag: String, message: String) {
-        Log.w(tag, message)
-    }
-
-    override fun logInfo(tag: String, message: String) {
-        Log.i(tag, message)
-    }
-
-    override fun logDebug(tag: String, message: String) {
-        Log.d(tag, message)
-    }
-
-    override fun logVerbose(tag: String, message: String) {
-        Log.v(tag, message)
-    }
-
-    override fun logStackTraceWithMessage(
-        tag: String,
-        message: String,
-        e: Exception
-    ) {
+    override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) {
         Log.e(tag, message, e)
     }
 
@@ -161,7 +136,7 @@ class TerminalActivity : AppCompatActivity(),
 
     override fun onCopyTextToClipboard(session: TerminalSession, text: String) {}
 
-    override fun onPasteTextFromClipboard(session: TerminalSession) {}
+    override fun onPasteTextFromClipboard(session: TerminalSession?) {}
 
     override fun onBell(session: TerminalSession) {}
 
