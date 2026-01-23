@@ -6,6 +6,7 @@ import java.math.BigInteger
 import java.security.MessageDigest
 import java.security.DigestInputStream
 import java.net.URL
+import java.net.HttpURLConnection
 
 plugins {
     id("com.android.application")
@@ -249,12 +250,10 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 // ------------------- BOOTSTRAPS -------------------
 fun downloadBootstrap(arch: String, expectedChecksum: String, version: String) {
     val digest = MessageDigest.getInstance("SHA-256")
+    val localFile = project.file("src/main/cpp/bootstrap-$arch.zip")
 
-    val localUrl = "src/main/cpp/bootstrap-$arch.zip"
-    val file = project.file(localUrl)
-
-    if (file.exists()) {
-        file.inputStream().use { input ->
+    if (localFile.exists()) {
+        localFile.inputStream().use { input ->
             val buffer = ByteArray(8192)
             while (true) {
                 val readBytes = input.read(buffer)
@@ -263,36 +262,33 @@ fun downloadBootstrap(arch: String, expectedChecksum: String, version: String) {
             }
         }
 
-        var checksum = BigInteger(1, digest.digest()).toString(16)
-        while (checksum.length < 64) checksum = "0$checksum"
+        var checksum = BigInteger(1, digest.digest()).toString(16).padStart(64, '0')
         if (checksum == expectedChecksum) return
-        file.delete()
-        logger.quiet("Deleted old local file with wrong hash: $localUrl")
+        localFile.delete()
+        logger.quiet("Deleted old local file with wrong hash: $localFile")
     }
 
     val remoteUrl = "https://github.com/termux/termux-packages/releases/download/bootstrap-$version/bootstrap-$arch.zip"
     logger.quiet("Downloading $remoteUrl ...")
 
-    file.parentFile.mkdirs()
-    BufferedOutputStream(FileOutputStream(file)).use { out ->
-        val connection = URL(remoteUrl).openConnection()
-        connection.instanceFollowRedirects = true
-        DigestInputStream(connection.getInputStream(), digest).use { digestStream ->
+    BufferedOutputStream(FileOutputStream(localFile)).use { out ->
+        val connection = URL(remoteUrl).openConnection() as HttpURLConnection
+        connection.followRedirects = true
+        DigestInputStream(connection.inputStream, digest).use { digestStream ->
             digestStream.copyTo(out)
         }
     }
 
-    var checksum = BigInteger(1, digest.digest()).toString(16)
-    while (checksum.length < 64) checksum = "0$checksum"
+    var checksum = BigInteger(1, digest.digest()).toString(16).padStart(64, '0')
     if (checksum != expectedChecksum) {
-        file.delete()
+        localFile.delete()
         throw GradleException("Wrong checksum for $remoteUrl: expected $expectedChecksum, actual $checksum")
     }
 }
 
-tasks.register("downloadBootstraps") {
+val downloadBootstraps = tasks.register("downloadBootstraps") {
     doLast {
-        val packageVariant = "apt-android-7" // или System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7"
+        val packageVariant = "apt-android-7"
         if (packageVariant == "apt-android-7") {
             val version = "2022.04.28-r5+$packageVariant"
             downloadBootstrap("aarch64", "4a51a7eb209fe82efc24d52e3cccc13165f27377290687cb82038cbd8e948430", version)
@@ -305,14 +301,21 @@ tasks.register("downloadBootstraps") {
     }
 }
 
-// После evaluate, подключаем downloadBootstraps к сборке release
+// Подключаем bootstraps к сборке release
 afterEvaluate {
     android.applicationVariants.all { variant ->
-        variant.javaCompileProvider.get().dependsOn("downloadBootstraps")
+        variant.preBuildProvider.get().dependsOn(downloadBootstraps)
     }
 }
 
-// ------------------- VERSION CHECK -------------------
+// ------------------- CLEAN -------------------
+tasks.register("clean") {
+    doLast {
+        fileTree("src/main/cpp").matching { include("bootstrap-*.zip") }.forEach { it.delete() }
+    }
+}
+
+// ------------------- VERSION -------------------
 fun validateVersionName(versionName: String) {
     val semverRegex =
         """^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$""".toRegex()
@@ -324,11 +327,5 @@ fun validateVersionName(versionName: String) {
 tasks.register("versionName") {
     doLast {
         println(android.defaultConfig.versionName)
-    }
-}
-
-tasks.register("clean") {
-    doLast {
-        fileTree("src/main/cpp").matching { include("bootstrap-*.zip") }.forEach { it.delete() }
     }
 }
