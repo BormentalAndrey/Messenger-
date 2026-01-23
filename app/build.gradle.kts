@@ -52,7 +52,6 @@ android {
     }
 
     signingConfigs {
-        // Конфигурация release создается с нуля
         create("release") {
             storeFile = file("my-release-key.jks")
             storePassword = System.getenv("KEYSTORE_PASSWORD")
@@ -65,7 +64,6 @@ android {
             enableV2Signing = true
         }
 
-        // ИСПРАВЛЕНО: Используем getByName, так как debug существует всегда
         getByName("debug") {
             storeFile = file("testkey_untrusted.jks")
             keyAlias = "alias"
@@ -135,10 +133,10 @@ val gdxVersion = "1.12.1"
 val media3Version = "1.4.1"
 
 dependencies {
-    // Termux
-    implementation("com.termux:termux-android:0.117")
-    implementation("com.termux:termux-boot:0.117")
-    implementation("com.termux:termux-view:0.117")
+    // Termux (ИСПРАВЛЕНО: Группа изменена на com.github.termux для JitPack)
+    implementation("com.github.termux:termux-android:0.117")
+    implementation("com.github.termux:termux-boot:0.117")
+    implementation("com.github.termux:termux-view:0.117")
 
     // Core & Lifecycle
     implementation("androidx.core:core-ktx:1.13.1")
@@ -242,8 +240,15 @@ fun downloadBootstrap(arch: String, expectedChecksum: String, version: String) {
 
     val remoteUrl = "https://github.com/termux/termux-packages/releases/download/bootstrap-$version/bootstrap-$arch.zip"
     println("Downloading $remoteUrl ...")
-    val connection = URL(remoteUrl).openConnection() as HttpURLConnection
+    
+    val url = URL(remoteUrl)
+    val connection = url.openConnection() as HttpURLConnection
     connection.instanceFollowRedirects = true
+    connection.connect()
+    
+    if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+        throw GradleException("Failed to download bootstrap for $arch: HTTP ${connection.responseCode}")
+    }
     
     digest.reset()
     file.parentFile.mkdirs()
@@ -259,7 +264,7 @@ fun downloadBootstrap(arch: String, expectedChecksum: String, version: String) {
     val finalChecksum = BigInteger(1, digest.digest()).toString(16).padStart(64, '0')
     if (finalChecksum != expectedChecksum) {
         file.delete()
-        throw GradleException("Checksum mismatch for $arch")
+        throw GradleException("Checksum mismatch for $arch. Expected $expectedChecksum but got $finalChecksum")
     }
 }
 
@@ -287,6 +292,9 @@ afterEvaluate {
 // ------------------------- Clean -------------------------
 tasks.named("clean") {
     doLast {
-        fileTree("src/main/cpp").matching { include("bootstrap-*.zip") }.forEach { it.delete() }
+        val cppDir = file("src/main/cpp")
+        if (cppDir.exists()) {
+            fileTree(cppDir).matching { include("bootstrap-*.zip") }.forEach { it.delete() }
+        }
     }
 }
