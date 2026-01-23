@@ -74,7 +74,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
-            isShrinkResources = false // Исправлено: добавлено 'is'
+            isShrinkResources = false
             signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -244,8 +244,8 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
 // ------------------------- Termux Bootstrap -------------------------
 val packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7"
 
-fun validateVersionName(versionName: String?) { // Исправлено: принимаем nullable String?
-    if (versionName == null) return // Или выбрасывать ошибку, если версия обязательна
+fun validateVersionName(versionName: String?) {
+    if (versionName == null) return
 
     val regex = Regex(
         "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)" +
@@ -257,7 +257,6 @@ fun validateVersionName(versionName: String?) { // Исправлено: при�
     }
 }
 
-// Регистрируем задачу проверки версии
 tasks.register("checkVersionName") {
     doLast {
         validateVersionName(android.defaultConfig.versionName)
@@ -265,7 +264,6 @@ tasks.register("checkVersionName") {
 }
 
 fun downloadBootstrap(arch: String, expectedChecksum: String, version: String) {
-    // Исправлено: Используем импортированный класс MessageDigest
     val digest = MessageDigest.getInstance("SHA-256")
     val localUrl = "src/main/cpp/bootstrap-$arch.zip"
     val file = File(projectDir, localUrl)
@@ -291,7 +289,6 @@ fun downloadBootstrap(arch: String, expectedChecksum: String, version: String) {
     val connection = URL(remoteUrl).openConnection() as HttpURLConnection
     connection.instanceFollowRedirects = true
     
-    // Сброс дайджеста перед загрузкой
     digest.reset()
     
     connection.inputStream.use { input ->
@@ -308,7 +305,6 @@ fun downloadBootstrap(arch: String, expectedChecksum: String, version: String) {
         }
     }
 
-    // Вычисляем checksum скачанного файла
     val checksum = BigInteger(1, digest.digest()).toString(16).padStart(64, '0')
     if (checksum != expectedChecksum) {
         file.delete()
@@ -338,8 +334,8 @@ val downloadBootstraps = tasks.register("downloadBootstraps") {
 
 // ------------------------- Hook into preBuild -------------------------
 afterEvaluate {
-    android.applicationVariants.all { variant ->
-        // Исправлено: используем .configure для безопасной привязки задачи
+    // ВАЖНОЕ ИСПРАВЛЕНИЕ: используем forEach вместо all, чтобы избежать ошибки "Boolean expected"
+    android.applicationVariants.forEach { variant ->
         variant.preBuildProvider.configure {
             dependsOn(downloadBootstraps)
         }
