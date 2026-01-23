@@ -1,66 +1,31 @@
-name: Unzip Termux Library
+name: Unzip Termux App
 
 on:
   push:
     branches: [ "main", "master" ]
+  pull_request:
   workflow_dispatch:
 
 jobs:
-  unzip_job:
+  unzip:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extracting Archive
+      - name: Show files before unzip
         run: |
-          # 1. Поиск архива (на случай если регистр имен отличается)
-          ARCHIVE_PATH=$(find . -name "termux-app-master.zip" | head -n 1)
-          
-          if [ -z "$ARCHIVE_PATH" ]; then
-            echo "КРИТИЧЕСКАЯ ОШИБКА: Файл .zip не найден в репозитории!"
-            find . -maxdepth 3 -not -path '*/.*'
-            exit 1
-          fi
-          
-          echo "Архив найден: $ARCHIVE_PATH"
+          echo "=== BEFORE ==="
+          ls -la
+          ls -la termux-library || true
 
-          # 2. Распаковка во временную папку
-          mkdir -p extraction_temp
-          unzip -qo "$ARCHIVE_PATH" -d extraction_temp/
-
-          # 3. Перенос содержимого в termux-library/
-          # Обычно внутри ZIP есть одна корневая папка (например termux-app-master)
-          # Нам нужно то, что ВНУТРИ неё
-          ROOT_DIR=$(ls extraction_temp | head -n 1)
-          echo "Вложенная папка в архиве: $ROOT_DIR"
-          
-          # Очищаем целевую папку и копируем туда файлы
-          mkdir -p termux-library
-          cp -rn extraction_temp/$ROOT_DIR/* termux-library/ 2>/dev/null || true
-          
-          # 4. Удаление мусора
-          rm -rf extraction_temp
-          
-          echo "Файлы успешно распакованы в termux-library/"
-          ls -F termux-library/
-
-      - name: Fix Permissions and Gradle
+      - name: Unzip termux-app archive
         run: |
-          # Даем права на выполнение скриптов
-          chmod -R +x termux-library/
-          
-          # ОЧЕНЬ ВАЖНО: Удаляем репозитории из распакованного билда, 
-          # чтобы не было ошибки "prefer settings repositories"
-          if [ -f "termux-library/build.gradle" ]; then
-            sed -i '/repositories {/,/}/d' termux-library/build.gradle
-          fi
-          if [ -f "termux-library/build.gradle.kts" ]; then
-            sed -i '/repositories {/,/}/d' termux-library/build.gradle.kts
-          fi
+          mkdir -p termux-library/termux-app
+          unzip -o termux-library/termux-app-master.zip -d termux-library/termux-app
 
-      - name: Verify and Build
+      - name: Show files after unzip
         run: |
-          chmod +x gradlew
-          ./gradlew :termux-library:assembleDebug --stacktrace
-          
+          echo "=== AFTER ==="
+          ls -la termux-library/termux-app
