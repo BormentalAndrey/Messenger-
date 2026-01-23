@@ -1,70 +1,48 @@
-name: Unpack Termux Archive
+name: Build Kakdela APK
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
 
-permissions:
-  contents: write   # Это даёт права на коммит и пуш
-
 jobs:
-  unpack-and-commit:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      # 1. Клонируем репозиторий
+      - name: Checkout
         uses: actions/checkout@v4
+
+      # 2. Устанавливаем JDK 17
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
-          fetch-depth: 0
+          distribution: temurin
+          java-version: 17
 
-      - name: Setup Git user
+      # 3. Настройка Gradle
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # 4. Даём права на выполнение Gradle wrapper
+      - name: Grant permissions
+        run: chmod +x ./gradlew
+
+      # 5. Сборка только Release APK
+      - name: Build Release APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          ./gradlew clean
+          ./gradlew assembleRelease --stacktrace
 
-      - name: Install unzip
-        run: sudo apt-get update && sudo apt-get install -y unzip
-
-      - name: Check if archive exists
-        run: |
-          cd app/src/main/kotlin/com/kakdela/p2p/ui/terminal
-          if [ -f termux-app-master.zip ]; then
-            echo "Архив найден"
-            ls -la
-          else
-            echo "Ошибка: архив termux-app-master.zip не найден!"
-            exit 1
-          fi
-
-      - name: List directory before unpack
-        run: |
-          cd app/src/main/kotlin/com/kakdela/p2p/ui/terminal
-          echo "Содержимое директории до распаковки:"
-          ls -la
-
-      - name: Unpack archive
-        run: |
-          cd app/src/main/kotlin/com/kakdela/p2p/ui/terminal
-          unzip -o termux-app-master.zip
-
-          if [ -d termux-app-master ]; then
-            mv termux-app-master/* . 2>/dev/null || true
-            mv termux-app-master/.* . 2>/dev/null || true
-            rmdir termux-app-master || true
-          fi
-
-          rm termux-app-master.zip || true
-
-      - name: List directory after unpack
-        run: |
-          cd app/src/main/kotlin/com/kakdela/p2p/ui/terminal
-          echo "Содержимое директории после распаковки:"
-          ls -la
-
-      - name: Commit and push changes
-        uses: stefanzweifel/git-auto-commit-action@v5
+      # 6. Загружаем только Release APK как артефакт
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
         with:
-          commit_message: "chore: unpack termux-app-master archive"
-          file_pattern: app/src/main/kotlin/com/kakdela/p2p/ui/terminal/*
+          name: Kakdela-Release-APK
+          path: app/build/outputs/apk/release/*.apk
