@@ -117,9 +117,9 @@ android {
 
 dependencies {
     // Core Termux API
-    implementation('com.termux:termux-android:0.117') // пример, проверить актуальную версию
-    implementation('com.termux:termux-boot:0.117')
-    implementation('com.termux:termux-view:0.117')
+    implementation("com.termux:termux-android:0.117") // пример, проверить актуальную версию
+    implementation("com.termux:termux-boot:0.117")
+    implementation("com.termux:termux-view:0.117")
     // Core & Lifecycle
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("androidx.core:core-ktx:1.13.1")
