@@ -149,7 +149,9 @@ fun TextEditorScreen(navController: NavHostController) {
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     isLoading = false
-                    snackbarHostState.showSnackbar("Ошибка открытия: ${e.localizedMessage}")
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Ошибка открытия: ${e.localizedMessage}")
+                    }
                     Log.e("Editor", "open error", e)
                 }
             }
@@ -190,9 +192,9 @@ fun TextEditorScreen(navController: NavHostController) {
     BackHandler(isModified) {
         scope.launch {
             val res = snackbarHostState.showSnackbar(
-                "Сохранить изменения?",
-                "Да",
-                SnackbarDuration.Long
+                message = "Сохранить изменения?",
+                actionLabel = "Да",
+                duration = SnackbarDuration.Long
             )
             if (res == SnackbarResult.ActionPerformed) saveCurrent()
             else navController.popBackStack()
@@ -210,8 +212,8 @@ fun TextEditorScreen(navController: NavHostController) {
                     )
                 },
                 navigationIcon = {
-                    IconButton({ navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, null)
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад")
                     }
                 },
                 actions = {
@@ -221,15 +223,18 @@ fun TextEditorScreen(navController: NavHostController) {
                             strokeWidth = 2.dp
                         )
                     } else {
-                        IconButton { openLauncher.launch(arrayOf("*/*")) } {
-                            Icon(Icons.Default.FolderOpen, null)
+                        IconButton(onClick = { openLauncher.launch(arrayOf("*/*")) }) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = "Открыть")
                         }
-                        IconButton(enabled = !isPdf) { saveCurrent() } {
-                            Icon(Icons.Default.Save, null)
+                        IconButton(
+                            onClick = { saveCurrent() },
+                            enabled = !isPdf
+                        ) {
+                            Icon(Icons.Default.Save, contentDescription = "Сохранить")
                         }
                         if (isPdf) {
-                            IconButton { showPdf = !showPdf } {
-                                Icon(Icons.Default.PictureAsPdf, null)
+                            IconButton(onClick = { showPdf = !showPdf }) {
+                                Icon(Icons.Default.PictureAsPdf, contentDescription = "PDF")
                             }
                         }
                     }
@@ -277,20 +282,22 @@ fun TextEditorScreen(navController: NavHostController) {
                     modifier = Modifier.fillMaxWidth()
                 )
                 Row(
-                    Modifier.padding(8.dp),
+                    Modifier
+                        .padding(8.dp)
+                        .fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     IconButton(
                         enabled = pdfPageIndex > 0,
                         onClick = { renderPdfPage(pdfPageIndex - 1) }
-                    ) { Icon(Icons.Default.ChevronLeft, null) }
+                    ) { Icon(Icons.Default.ChevronLeft, contentDescription = "Назад") }
 
                     Text("${pdfPageIndex + 1}/${pdfRenderer?.pageCount ?: 0}")
 
                     IconButton(
                         enabled = pdfPageIndex < (pdfRenderer?.pageCount ?: 1) - 1,
                         onClick = { renderPdfPage(pdfPageIndex + 1) }
-                    ) { Icon(Icons.Default.ChevronRight, null) }
+                    ) { Icon(Icons.Default.ChevronRight, contentDescription = "Вперед") }
                 }
             }
         } else {
@@ -306,7 +313,7 @@ fun TextEditorScreen(navController: NavHostController) {
                     .background(Color.White),
                 textStyle = TextStyle(fontSize = 16.sp),
                 readOnly = isPdf,
-                colors = TextFieldDefaults.colors(
+                colors = TextFieldDefaults.textFieldColors(
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent
                 )
@@ -326,7 +333,7 @@ private fun saveFile(
 ) {
     scope.launch(Dispatchers.IO) {
         try {
-            context.contentResolver.openOutputStream(uri, "w")?.use { out ->
+            context.contentResolver.openOutputStream(uri)?.use { out ->
                 if (isDocx) {
                     XWPFDocument().use { doc ->
                         content.lines().forEach {
@@ -340,11 +347,13 @@ private fun saveFile(
             }
             withContext(Dispatchers.Main) {
                 onSuccess()
-                snackbar.showSnackbar("Сохранено")
+                scope.launch { snackbar.showSnackbar("Сохранено") }
             }
         } catch (e: Exception) {
             withContext(Dispatchers.Main) {
-                snackbar.showSnackbar("Ошибка сохранения: ${e.localizedMessage}")
+                scope.launch {
+                    snackbar.showSnackbar("Ошибка сохранения: ${e.localizedMessage}")
+                }
                 Log.e("Editor", "save error", e)
             }
         }
