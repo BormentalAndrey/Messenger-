@@ -79,7 +79,7 @@ class TerminalActivity : AppCompatActivity(),
 
     override fun onScale(scale: Float): Float = scale
 
-    override fun onSingleTapUp(e: MotionEvent?) {}
+    override fun onSingleTapUp(e: MotionEvent) {}
 
     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
 
@@ -93,13 +93,13 @@ class TerminalActivity : AppCompatActivity(),
 
     override fun onKeyDown(
         keyCode: Int,
-        event: KeyEvent?,
-        session: TerminalSession?
+        event: KeyEvent,
+        session: TerminalSession
     ): Boolean = false
 
-    override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean = false
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = false
 
-    override fun onLongPress(event: MotionEvent?): Boolean = false
+    override fun onLongPress(event: MotionEvent): Boolean = false
 
     override fun readControlKey(): Boolean = false
     override fun readAltKey(): Boolean = false
@@ -109,63 +109,63 @@ class TerminalActivity : AppCompatActivity(),
     override fun onCodePoint(
         codePoint: Int,
         ctrlDown: Boolean,
-        session: TerminalSession?
+        session: TerminalSession
     ): Boolean {
-        session?.writeCodePoint(ctrlDown, codePoint)
+        session.writeCodePoint(ctrlDown, codePoint)
         return true
     }
 
     override fun onEmulatorSet() {}
 
-    override fun logError(tag: String?, message: String?) {
-        Log.e(tag ?: "Terminal", message ?: "")
+    override fun logError(tag: String, message: String) {
+        Log.e(tag, message)
     }
 
-    override fun logWarn(tag: String?, message: String?) {
-        Log.w(tag ?: "Terminal", message ?: "")
+    override fun logWarn(tag: String, message: String) {
+        Log.w(tag, message)
     }
 
-    override fun logInfo(tag: String?, message: String?) {
-        Log.i(tag ?: "Terminal", message ?: "")
+    override fun logInfo(tag: String, message: String) {
+        Log.i(tag, message)
     }
 
-    override fun logDebug(tag: String?, message: String?) {
-        Log.d(tag ?: "Terminal", message ?: "")
+    override fun logDebug(tag: String, message: String) {
+        Log.d(tag, message)
     }
 
-    override fun logVerbose(tag: String?, message: String?) {
-        Log.v(tag ?: "Terminal", message ?: "")
+    override fun logVerbose(tag: String, message: String) {
+        Log.v(tag, message)
     }
 
     override fun logStackTraceWithMessage(
-        tag: String?,
-        message: String?,
-        e: Exception?
+        tag: String,
+        message: String,
+        e: Exception
     ) {
-        Log.e(tag ?: "Terminal", message ?: "", e)
+        Log.e(tag, message, e)
     }
 
-    override fun logStackTrace(tag: String?, e: Exception?) {
-        Log.e(tag ?: "Terminal", "stacktrace", e)
+    override fun logStackTrace(tag: String, e: Exception) {
+        Log.e(tag, "stacktrace", e)
     }
 
     // ================= TerminalSessionClient =================
 
-    override fun onTextChanged(session: TerminalSession?) {
+    override fun onTextChanged(changedSession: TerminalSession) {
         terminalView.invalidate()
     }
 
-    override fun onTitleChanged(session: TerminalSession?) {}
+    override fun onTitleChanged(changedSession: TerminalSession) {}
 
-    override fun onSessionFinished(session: TerminalSession?) {}
+    override fun onSessionFinished(finishedSession: TerminalSession) {}
 
-    override fun onCopyTextToClipboard(session: TerminalSession?, text: String?) {}
+    override fun onCopyTextToClipboard(session: TerminalSession, text: String) {}
 
-    override fun onPasteTextFromClipboard(session: TerminalSession?) {}
+    override fun onPasteTextFromClipboard(session: TerminalSession) {}
 
-    override fun onBell(session: TerminalSession?) {}
+    override fun onBell(session: TerminalSession) {}
 
-    override fun onColorsChanged(session: TerminalSession?) {}
+    override fun onColorsChanged(session: TerminalSession) {}
 
-    override fun setTerminalShellPid(session: TerminalSession?, pid: Int) {}
+    override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
     }
