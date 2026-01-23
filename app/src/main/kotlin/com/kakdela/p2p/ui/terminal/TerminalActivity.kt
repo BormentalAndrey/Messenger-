@@ -76,38 +76,23 @@ class TerminalActivity : AppCompatActivity(),
     // ================= TerminalViewClient =================
 
     override fun onScale(scale: Float): Float = scale
-
     override fun onSingleTapUp(e: MotionEvent) {}
-
     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
     override fun shouldEnforceCharBasedInput(): Boolean = false
     override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
     override fun isTerminalViewSelected(): Boolean = true
     override fun copyModeChanged(copyMode: Boolean) {}
-
-    override fun onKeyDown(
-        keyCode: Int,
-        event: KeyEvent,
-        session: TerminalSession
-    ): Boolean = false
-
+    override fun onKeyDown(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = false
     override fun onLongPress(event: MotionEvent): Boolean = false
-
     override fun readControlKey(): Boolean = false
     override fun readAltKey(): Boolean = false
     override fun readShiftKey(): Boolean = false
     override fun readFnKey(): Boolean = false
-
-    override fun onCodePoint(
-        codePoint: Int,
-        ctrlDown: Boolean,
-        session: TerminalSession
-    ): Boolean {
+    override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean {
         session.writeCodePoint(ctrlDown, codePoint)
         return true
     }
-
     override fun onEmulatorSet() {}
 
     override fun logError(tag: String?, message: String?) { Log.e(tag ?: "Terminal", message ?: "") }
@@ -115,36 +100,19 @@ class TerminalActivity : AppCompatActivity(),
     override fun logInfo(tag: String?, message: String?) { Log.i(tag ?: "Terminal", message ?: "") }
     override fun logDebug(tag: String?, message: String?) { Log.d(tag ?: "Terminal", message ?: "") }
     override fun logVerbose(tag: String?, message: String?) { Log.v(tag ?: "Terminal", message ?: "") }
-
-    override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) {
-        Log.e(tag ?: "Terminal", message ?: "", e)
-    }
-
-    override fun logStackTrace(tag: String?, e: Exception?) {
-        Log.e(tag ?: "Terminal", "stacktrace", e)
-    }
+    override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) { Log.e(tag ?: "Terminal", message ?: "", e) }
+    override fun logStackTrace(tag: String?, e: Exception?) { Log.e(tag ?: "Terminal", "stacktrace", e) }
 
     // ================= TerminalSessionClient =================
 
-    override fun onTextChanged(changedSession: TerminalSession) {
-        terminalView.invalidate()
-    }
-
-    override fun onTitleChanged(changedSession: TerminalSession) {}
-
-    override fun onSessionFinished(finishedSession: TerminalSession) {}
-
-    override fun onCopyTextToClipboard(session: TerminalSession?, text: String?) {}
-
+    override fun onTextChanged(session: TerminalSession) { terminalView.invalidate() }
+    override fun onTitleChanged(session: TerminalSession) {}
+    override fun onSessionFinished(session: TerminalSession) {}
+    override fun onCopyTextToClipboard(session: TerminalSession, text: String) {}
     override fun onPasteTextFromClipboard(session: TerminalSession?) {}
-
-    override fun onBell(session: TerminalSession?) {}
-
-    override fun onColorsChanged(session: TerminalSession?) {}
-
-    override fun setTerminalShellPid(session: TerminalSession?, pid: Int) {}
-
-    override fun getTerminalCursorStyle(): Int = TerminalSessionClient.CursorStyle.BLOCK
-
+    override fun onBell(session: TerminalSession) {}
+    override fun onColorsChanged(session: TerminalSession) {}
+    override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
     override fun onTerminalCursorStateChange(state: Boolean) {}
+    override fun getTerminalCursorStyle(): Int = TerminalSessionClient.CursorStyle.BLOCK
     }
