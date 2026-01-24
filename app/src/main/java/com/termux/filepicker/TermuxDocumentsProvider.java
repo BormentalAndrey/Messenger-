@@ -11,7 +11,8 @@ import android.provider.DocumentsContract.Root;
 import android.provider.DocumentsProvider;
 import android.webkit.MimeTypeMap;
 
-import com.termux.R;
+// ИСПРАВЛЕНИЕ: Используем R класс вашего приложения
+import com.kakdela.p2p.R;
 import com.termux.shared.termux.TermuxConstants;
 
 import java.io.File;
@@ -23,23 +24,12 @@ import java.util.LinkedList;
 /**
  * A document provider for the Storage Access Framework which exposes the files in the
  * $HOME/ directory to other apps.
- * <p/>
- * Note that this replaces providing an activity matching the ACTION_GET_CONTENT intent:
- * <p/>
- * "A document provider and ACTION_GET_CONTENT should be considered mutually exclusive. If you
- * support both of them simultaneously, your app will appear twice in the system picker UI,
- * offering two different ways of accessing your stored data. This would be confusing for users."
- * - http://developer.android.com/guide/topics/providers/document-provider.html#43
  */
 public class TermuxDocumentsProvider extends DocumentsProvider {
 
     private static final String ALL_MIME_TYPES = "*/*";
-
     private static final File BASE_DIR = TermuxConstants.TERMUX_HOME_DIR;
 
-
-    // The default columns to return information about a root if no specific
-    // columns are requested in a query.
     private static final String[] DEFAULT_ROOT_PROJECTION = new String[]{
         Root.COLUMN_ROOT_ID,
         Root.COLUMN_MIME_TYPES,
@@ -51,8 +41,6 @@ public class TermuxDocumentsProvider extends DocumentsProvider {
         Root.COLUMN_AVAILABLE_BYTES
     };
 
-    // The default columns to return information about a document if no specific
-    // columns are requested in a query.
     private static final String[] DEFAULT_DOCUMENT_PROJECTION = new String[]{
         Document.COLUMN_DOCUMENT_ID,
         Document.COLUMN_MIME_TYPE,
@@ -65,7 +53,8 @@ public class TermuxDocumentsProvider extends DocumentsProvider {
     @Override
     public Cursor queryRoots(String[] projection) {
         final MatrixCursor result = new MatrixCursor(projection != null ? projection : DEFAULT_ROOT_PROJECTION);
-        final String applicationName = getContext().getString(R.string.application_name);
+        // ИСПРАВЛЕНИЕ: Используем app_name если application_name отсутствует
+        final String applicationName = getContext().getString(R.string.app_name);
 
         final MatrixCursor.RowBuilder row = result.newRow();
         row.add(Root.COLUMN_ROOT_ID, getDocIdForFile(BASE_DIR));
@@ -90,8 +79,13 @@ public class TermuxDocumentsProvider extends DocumentsProvider {
     public Cursor queryChildDocuments(String parentDocumentId, String[] projection, String sortOrder) throws FileNotFoundException {
         final MatrixCursor result = new MatrixCursor(projection != null ? projection : DEFAULT_DOCUMENT_PROJECTION);
         final File parent = getFileForDocId(parentDocumentId);
-        for (File file : parent.listFiles()) {
-            includeFile(result, null, file);
+        if (parent.exists() && parent.isDirectory()) {
+            File[] files = parent.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    includeFile(result, null, file);
+                }
+            }
         }
         return result;
     }
@@ -156,19 +150,12 @@ public class TermuxDocumentsProvider extends DocumentsProvider {
     public Cursor querySearchDocuments(String rootId, String query, String[] projection) throws FileNotFoundException {
         final MatrixCursor result = new MatrixCursor(projection != null ? projection : DEFAULT_DOCUMENT_PROJECTION);
         final File parent = getFileForDocId(rootId);
-
-        // This example implementation searches file names for the query and doesn't rank search
-        // results, so we can stop as soon as we find a sufficient number of matches.  Other
-        // implementations might rank results and use other data about files, rather than the file
-        // name, to produce a match.
         final LinkedList<File> pending = new LinkedList<>();
         pending.add(parent);
 
         final int MAX_SEARCH_RESULTS = 50;
         while (!pending.isEmpty() && result.getCount() < MAX_SEARCH_RESULTS) {
             final File file = pending.removeFirst();
-            // Avoid directories outside the $HOME directory linked with symlinks (to avoid e.g. search
-            // through the whole SD card).
             boolean isInsideHome;
             try {
                 isInsideHome = file.getCanonicalPath().startsWith(TermuxConstants.TERMUX_HOME_DIR_PATH);
@@ -177,7 +164,8 @@ public class TermuxDocumentsProvider extends DocumentsProvider {
             }
             if (isInsideHome) {
                 if (file.isDirectory()) {
-                    Collections.addAll(pending, file.listFiles());
+                    File[] files = file.listFiles();
+                    if (files != null) Collections.addAll(pending, files);
                 } else {
                     if (file.getName().toLowerCase().contains(query)) {
                         includeFile(result, null, file);
@@ -185,7 +173,6 @@ public class TermuxDocumentsProvider extends DocumentsProvider {
                 }
             }
         }
-
         return result;
     }
 
@@ -194,22 +181,13 @@ public class TermuxDocumentsProvider extends DocumentsProvider {
         return documentId.startsWith(parentDocumentId);
     }
 
-    /**
-     * Get the document id given a file. This document id must be consistent across time as other
-     * applications may save the ID and use it to reference documents later.
-     * <p/>
-     * The reverse of @{link #getFileForDocId}.
-     */
     private static String getDocIdForFile(File file) {
         return file.getAbsolutePath();
     }
 
-    /**
-     * Get the file given a document id (the reverse of {@link #getDocIdForFile(File)}).
-     */
     private static File getFileForDocId(String docId) throws FileNotFoundException {
         final File f = new File(docId);
-        if (!f.exists()) throw new FileNotFoundException(f.getAbsolutePath() + " not found");
+        // Removed aggressive check to allow root listing even if path doesn't exist yet
         return f;
     }
 
@@ -228,15 +206,7 @@ public class TermuxDocumentsProvider extends DocumentsProvider {
         }
     }
 
-    /**
-     * Add a representation of a file to a cursor.
-     *
-     * @param result the cursor to modify
-     * @param docId  the document ID representing the desired file (may be null if given file)
-     * @param file   the File object representing the desired file (may be null if given docID)
-     */
-    private void includeFile(MatrixCursor result, String docId, File file)
-        throws FileNotFoundException {
+    private void includeFile(MatrixCursor result, String docId, File file) throws FileNotFoundException {
         if (docId == null) {
             docId = getDocIdForFile(file);
         } else {
@@ -249,7 +219,9 @@ public class TermuxDocumentsProvider extends DocumentsProvider {
         } else if (file.canWrite()) {
             flags |= Document.FLAG_SUPPORTS_WRITE;
         }
-        if (file.getParentFile().canWrite()) flags |= Document.FLAG_SUPPORTS_DELETE;
+        
+        File parent = file.getParentFile();
+        if (parent != null && parent.canWrite()) flags |= Document.FLAG_SUPPORTS_DELETE;
 
         final String displayName = file.getName();
         final String mimeType = getMimeType(file);
@@ -264,5 +236,4 @@ public class TermuxDocumentsProvider extends DocumentsProvider {
         row.add(Document.COLUMN_FLAGS, flags);
         row.add(Document.COLUMN_ICON, R.mipmap.ic_launcher);
     }
-
 }
