@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -44,11 +47,11 @@ android {
         create("release") {
             storeFile = file("my-release-key.jks")
             storePassword = System.getenv("KEYSTORE_PASSWORD")
-                ?: localProperties.getProperty("RELEASE_STORE_PASSWORD") ?: ""
+                ?: localProperties.getProperty("RELEASE_STORE_PASSWORD", "")
             keyAlias = System.getenv("KEY_ALIAS")
-                ?: localProperties.getProperty("RELEASE_KEY_ALIAS") ?: ""
+                ?: localProperties.getProperty("RELEASE_KEY_ALIAS", "")
             keyPassword = System.getenv("KEY_PASSWORD")
-                ?: localProperties.getProperty("RELEASE_KEY_PASSWORD") ?: ""
+                ?: localProperties.getProperty("RELEASE_KEY_PASSWORD", "")
             enableV1Signing = true
             enableV2Signing = true
         }
