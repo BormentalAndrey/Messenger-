@@ -1,14 +1,3 @@
-import java.io.BufferedOutputStream
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.math.BigInteger
-import java.net.HttpURLConnection
-import java.net.URL
-import java.security.DigestInputStream
-import java.security.MessageDigest
-import java.util.Properties
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -133,10 +122,6 @@ val gdxVersion = "1.12.1"
 val media3Version = "1.4.1"
 
 dependencies {
-    // ЛОКАЛЬНЫЙ МОДУЛЬ TERMUX (Заменяет внешние JitPack зависимости)
-    // Это исправляет ошибку 401 Unauthorized
-    implementation(project(":termux-library"))
-
     // Core & Lifecycle
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
@@ -216,84 +201,3 @@ val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
 
 tasks.withType<JavaCompile>().configureEach { dependsOn(copyAndroidNatives) }
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach { dependsOn(copyAndroidNatives) }
-
-// ------------------------- Termux Bootstrap -------------------------
-val packageVariant = System.getenv("TERMUX_PACKAGE_VARIANT") ?: "apt-android-7"
-
-fun downloadBootstrap(arch: String, expectedChecksum: String, version: String) {
-    val digest = MessageDigest.getInstance("SHA-256")
-    val file = File(projectDir, "src/main/cpp/bootstrap-$arch.zip")
-
-    if (file.exists()) {
-        file.inputStream().use { input ->
-            val buffer = ByteArray(8192)
-            var read: Int
-            while (input.read(buffer).also { read = it } >= 0) {
-                digest.update(buffer, 0, read)
-            }
-        }
-        val checksum = BigInteger(1, digest.digest()).toString(16).padStart(64, '0')
-        if (checksum == expectedChecksum) return
-        file.delete()
-    }
-
-    val remoteUrl = "https://github.com/termux/termux-packages/releases/download/bootstrap-$version/bootstrap-$arch.zip"
-    println("Downloading $remoteUrl ...")
-    
-    val url = URL(remoteUrl)
-    val connection = url.openConnection() as HttpURLConnection
-    connection.instanceFollowRedirects = true
-    connection.connect()
-    
-    if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-        throw GradleException("Failed to download bootstrap for $arch: HTTP ${connection.responseCode}")
-    }
-    
-    digest.reset()
-    file.parentFile.mkdirs()
-    
-    connection.inputStream.use { input ->
-        BufferedOutputStream(FileOutputStream(file)).use { output ->
-            DigestInputStream(input, digest).use { dis ->
-                dis.copyTo(output)
-            }
-        }
-    }
-
-    val finalChecksum = BigInteger(1, digest.digest()).toString(16).padStart(64, '0')
-    if (finalChecksum != expectedChecksum) {
-        file.delete()
-        throw GradleException("Checksum mismatch for $arch. Expected $expectedChecksum but got $finalChecksum")
-    }
-}
-
-val downloadBootstraps = tasks.register("downloadBootstraps") {
-    doLast {
-        if (packageVariant == "apt-android-7") {
-            val version = "2022.04.28-r5+apt-android-7"
-            downloadBootstrap("aarch64", "4a51a7eb209fe82efc24d52e3cccc13165f27377290687cb82038cbd8e948430", version)
-            downloadBootstrap("arm", "6459a786acbae50d4c8a36fa1c3de6a4dd2d482572f6d54f73274709bd627325", version)
-            downloadBootstrap("i686", "919d212b2f19e08600938db4079e794e947365022dbfd50ac342c50fcedcd7be", version)
-            downloadBootstrap("x86_64", "61b02fdc03ea4f5d9da8d8cf018013fdc6659e6da6cbf44e9b24d1c623580b89", version)
-        }
-    }
-}
-
-// ------------------------- Hook into preBuild -------------------------
-afterEvaluate {
-    android.applicationVariants.forEach { variant ->
-        variant.preBuildProvider.configure {
-            dependsOn(downloadBootstraps)
-        }
-    }
-}
-
-// ------------------------- Clean -------------------------
-tasks.named("clean") {
-    doLast {
-        val cppDir = file("src/main/cpp")
-        if (cppDir.exists()) {
-            fileTree(cppDir).matching { include("bootstrap-*.zip") }.forEach { it.delete() }
-        }
-    }
-}
