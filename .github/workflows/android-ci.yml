@@ -3,9 +3,6 @@ name: Android CI - Unpack Termux
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
   unpack:
     runs-on: ubuntu-latest
@@ -13,41 +10,50 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Если репозиторий публичный, этот параметр может помочь обойти баг
-          persist-credentials: false 
+          persist-credentials: false
 
       - name: Extract and Move to Termux-library
         run: |
-          # Переменные
-          ZIP_PATH="termux-library/termux-app-master.zip"
-          DEST_DIR="Termux-library"
-          
-          # Проверка наличия архива
-          if [ ! -f "$ZIP_PATH" ]; then
-            echo "::error::Архив $ZIP_PATH не найден!"
+          # 1. Пути
+          ZIP_FILE="termux-library/termux-app-master.zip"
+          TARGET_DIR="Termux-library"
+          TMP_DIR="tmp_extraction"
+
+          # Проверка на вшивость
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "::error::Файл $ZIP_FILE не найден!"
             exit 1
           fi
 
-          # Создаем временную папку для распаковки
-          mkdir -p tmp_unpack
-          unzip -q "$ZIP_PATH" -d tmp_unpack
+          # 2. Подготовка папок
+          mkdir -p "$TARGET_DIR"
+          mkdir -p "$TMP_DIR"
 
-          # Создаем чистую целевую папку Termux-library
-          mkdir -p "$DEST_DIR"
+          # 3. Распаковка
+          unzip -q "$ZIP_FILE" -d "$TMP_DIR"
 
-          # Перемещаем содержимое из вложенной папки архива в корень Termux-library
-          # shopt -s dotglob позволяет захватить скрытые файлы (.gitignore и др.)
-          shopt -s dotglob
-          mv tmp_unpack/termux-app-master/* "$DEST_DIR/"
+          # 4. УМНОЕ ПЕРЕМЕЩЕНИЕ
+          # Ищем первую подпапку внутри распакованного архива (например, termux-app-master)
+          # и перемещаем её содержимое в Termux-library
+          INNER_FOLDER=$(find "$TMP_DIR" -mindepth 1 -maxdepth 1 -type d | head -n 1)
 
-          # Удаляем временные файлы
-          rm -rf tmp_unpack
-          
-          echo "✅ Готово! Содержимое архива теперь в папке $DEST_DIR"
+          if [ -n "$INNER_FOLDER" ]; then
+            echo "Найдена папка внутри архива: $INNER_FOLDER"
+            shopt -s dotglob
+            mv "$INNER_FOLDER"/* "$TARGET_DIR/"
+            echo "✅ Файлы успешно извлечены в $TARGET_DIR"
+          else
+            echo "::warning::Вложенных папок не найдено, пробуем корень архива..."
+            shopt -s dotglob
+            mv "$TMP_DIR"/* "$TARGET_DIR/"
+          fi
+
+          # 5. Очистка
+          rm -rf "$TMP_DIR"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: termux-library-ready
+          name: termux-ready
           path: Termux-library/
           
