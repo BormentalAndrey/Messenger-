@@ -195,7 +195,7 @@ val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
     platforms.forEach { platform ->
         val jarConfiguration = configurations.detachedConfiguration(
-            dependencies.create("com.badlogicgames.gdx:gdx-platform:1.12.1:natives-$platform")
+            dependencies.create("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
         )
         from(jarConfiguration.map { zipTree(it) }) { include("*.so"); into("lib/$platform") }
     }
@@ -204,3 +204,8 @@ val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
 
 tasks.withType<JavaCompile>().configureEach { dependsOn(copyAndroidNatives) }
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach { dependsOn(copyAndroidNatives) }
+
+// Добавляем явную зависимость для всех задач merge*JniLibFolders (debug и release)
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach {
+    dependsOn(copyAndroidNatives)
+}
