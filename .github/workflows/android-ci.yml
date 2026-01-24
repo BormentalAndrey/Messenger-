@@ -1,7 +1,7 @@
 name: Android CI - Unpack Termux
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Проверь, что запускаешь через вкладку Actions -> Run workflow
 
 jobs:
   unpack:
@@ -9,47 +9,47 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          persist-credentials: false
 
-      - name: Extract and Move to Termux-library
+      - name: Extract and Move
         run: |
-          # 1. Пути
+          # 1. Настройка путей
           ZIP_FILE="termux-library/termux-app-master.zip"
           TARGET_DIR="Termux-library"
-          TMP_DIR="tmp_extraction"
-
-          # Проверка на вшивость
+          
+          # Проверка: существует ли файл вообще в репозитории?
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "::error::Файл $ZIP_FILE не найден!"
+            echo "::error::Файл $ZIP_FILE не найден! Проверьте путь в репозитории."
+            ls -R
             exit 1
           fi
 
-          # 2. Подготовка папок
+          # 2. Создаем чистую папку назначения
           mkdir -p "$TARGET_DIR"
-          mkdir -p "$TMP_DIR"
+          mkdir -p tmp_unpack
 
           # 3. Распаковка
-          unzip -q "$ZIP_FILE" -d "$TMP_DIR"
+          unzip -q "$ZIP_FILE" -d tmp_unpack
 
-          # 4. УМНОЕ ПЕРЕМЕЩЕНИЕ
-          # Ищем первую подпапку внутри распакованного архива (например, termux-app-master)
-          # и перемещаем её содержимое в Termux-library
-          INNER_FOLDER=$(find "$TMP_DIR" -mindepth 1 -maxdepth 1 -type d | head -n 1)
-
-          if [ -n "$INNER_FOLDER" ]; then
-            echo "Найдена папка внутри архива: $INNER_FOLDER"
+          # 4. Перемещение содержимого (умный поиск папки)
+          # Ищем, куда именно unzip положил файлы (обычно это вложенная папка)
+          CONTENT_PATH=$(find tmp_unpack -mindepth 1 -maxdepth 1 -type d | head -n 1)
+          
+          if [ -n "$CONTENT_PATH" ]; then
+            echo "Распаковано в подпапку: $CONTENT_PATH"
             shopt -s dotglob
-            mv "$INNER_FOLDER"/* "$TARGET_DIR/"
-            echo "✅ Файлы успешно извлечены в $TARGET_DIR"
+            mv "$CONTENT_PATH"/* "$TARGET_DIR/"
           else
-            echo "::warning::Вложенных папок не найдено, пробуем корень архива..."
+            echo "Подпапок не найдено, берем файлы из корня архива"
             shopt -s dotglob
-            mv "$TMP_DIR"/* "$TARGET_DIR/"
+            mv tmp_unpack/* "$TARGET_DIR/"
           fi
 
-          # 5. Очистка
-          rm -rf "$TMP_DIR"
+          # 5. Проверка результата в логах
+          echo "Содержимое $TARGET_DIR после распаковки:"
+          ls -la "$TARGET_DIR"
+
+          # 6. Очистка
+          rm -rf tmp_unpack
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
