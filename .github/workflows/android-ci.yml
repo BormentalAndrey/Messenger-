@@ -1,7 +1,7 @@
 name: Android CI - Unpack Termux
 
 on:
-  workflow_dispatch: # Проверь, что запускаешь через вкладку Actions -> Run workflow
+  workflow_dispatch:
 
 jobs:
   unpack:
@@ -12,44 +12,25 @@ jobs:
 
       - name: Extract and Move
         run: |
-          # 1. Настройка путей
-          ZIP_FILE="termux-library/termux-app-master.zip"
-          TARGET_DIR="Termux-library"
+          # 1. Создаем папку Termux-library (если её нет)
+          mkdir -p Termux-library
           
-          # Проверка: существует ли файл вообще в репозитории?
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "::error::Файл $ZIP_FILE не найден! Проверьте путь в репозитории."
-            ls -R
-            exit 1
-          fi
-
-          # 2. Создаем чистую папку назначения
-          mkdir -p "$TARGET_DIR"
-          mkdir -p tmp_unpack
-
-          # 3. Распаковка
-          unzip -q "$ZIP_FILE" -d tmp_unpack
-
-          # 4. Перемещение содержимого (умный поиск папки)
-          # Ищем, куда именно unzip положил файлы (обычно это вложенная папка)
-          CONTENT_PATH=$(find tmp_unpack -mindepth 1 -maxdepth 1 -type d | head -n 1)
+          # 2. Распаковываем. Если путь верный, файлы попадут в tmp_dir
+          # ВНИМАНИЕ: Проверьте, что в репозитории реально есть папка termux-library (с маленькой буквы)
+          # и в ней лежит файл termux-app-master.zip
+          unzip -q termux-library/termux-app-master.zip -d tmp_dir
           
-          if [ -n "$CONTENT_PATH" ]; then
-            echo "Распаковано в подпапку: $CONTENT_PATH"
-            shopt -s dotglob
-            mv "$CONTENT_PATH"/* "$TARGET_DIR/"
-          else
-            echo "Подпапок не найдено, берем файлы из корня архива"
-            shopt -s dotglob
-            mv tmp_unpack/* "$TARGET_DIR/"
-          fi
-
-          # 5. Проверка результата в логах
-          echo "Содержимое $TARGET_DIR после распаковки:"
-          ls -la "$TARGET_DIR"
-
-          # 6. Очистка
-          rm -rf tmp_unpack
+          # 3. Перемещаем содержимое. 
+          # Мы берем всё из первой найденной папки внутри архива
+          shopt -s dotglob
+          mv tmp_dir/*/* Termux-library/ || mv tmp_dir/* Termux-library/
+          
+          # 4. Проверяем, что получилось (вывод в лог)
+          echo "Список файлов в Termux-library:"
+          ls -R Termux-library/
+          
+          # 5. Чистим мусор
+          rm -rf tmp_dir
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
