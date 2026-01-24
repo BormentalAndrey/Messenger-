@@ -3,46 +3,51 @@ name: Android CI - Unpack Termux
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   unpack:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Если репозиторий публичный, этот параметр может помочь обойти баг
+          persist-credentials: false 
 
       - name: Extract and Move to Termux-library
         run: |
-          # 1. Определяем переменные
-          ARCHIVE="termux-library/termux-app-master.zip"
-          TARGET_DIR="Termux-library"
-          TMP_DIR="tmp_unpack"
-
-          # 2. Проверяем наличие исходного архива
-          if [ ! -f "$ARCHIVE" ]; then
-            echo "::error::Архив $ARCHIVE не найден!"
+          # Переменные
+          ZIP_PATH="termux-library/termux-app-master.zip"
+          DEST_DIR="Termux-library"
+          
+          # Проверка наличия архива
+          if [ ! -f "$ZIP_PATH" ]; then
+            echo "::error::Архив $ZIP_PATH не найден!"
             exit 1
           fi
 
-          # 3. Распаковываем во временную папку
-          unzip -q "$ARCHIVE" -d "$TMP_DIR"
+          # Создаем временную папку для распаковки
+          mkdir -p tmp_unpack
+          unzip -q "$ZIP_PATH" -d tmp_unpack
 
-          # 4. Создаем целевую папку (если её нет)
-          mkdir -p "$TARGET_DIR"
+          # Создаем чистую целевую папку Termux-library
+          mkdir -p "$DEST_DIR"
 
-          # 5. Перемещаем содержимое из папки внутри архива (termux-app-master) 
-          # напрямую в Termux-library. shopt -s dotglob захватывает скрытые файлы.
+          # Перемещаем содержимое из вложенной папки архива в корень Termux-library
+          # shopt -s dotglob позволяет захватить скрытые файлы (.gitignore и др.)
           shopt -s dotglob
-          mv "$TMP_DIR"/termux-app-master/* "$TARGET_DIR/"
+          mv tmp_unpack/termux-app-master/* "$DEST_DIR/"
 
-          # 6. Очистка
-          rm -rf "$TMP_DIR"
+          # Удаляем временные файлы
+          rm -rf tmp_unpack
           
-          echo "✅ Все файлы перемещены в $TARGET_DIR"
+          echo "✅ Готово! Содержимое архива теперь в папке $DEST_DIR"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: termux-library-content
+          name: termux-library-ready
           path: Termux-library/
-          retention-days: 1
           
