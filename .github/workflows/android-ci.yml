@@ -1,35 +1,49 @@
 name: Android CI - Unpack Termux
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Позволяет запускать вручную из вкладки Actions
 
 jobs:
   unpack:
+    name: Unpack and Prepare Termux
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install unzip
-        run: sudo apt-get update && sudo apt-get install -y unzip
-
-      - name: Verify archive exists
+      - name: Unpack termux-app
         run: |
-          if [ ! -f termux-library/termux-app-master.zip ]; then
-            echo "❌ termux-library/termux-app-master.zip not found"
+          # Переменные для чистоты кода
+          ARCHIVE="termux-library/termux-app-master.zip"
+          DEST="termux-library/termux-app"
+
+          # Проверка существования файла
+          if [ ! -f "$ARCHIVE" ]; then
+            echo "::error::Archive $ARCHIVE not found!"
             exit 1
           fi
 
-      - name: Unpack termux-app
-        run: |
-          mkdir -p termux-library/termux-app tmp
-          unzip -q termux-library/termux-app-master.zip -d tmp
-          mv tmp/termux-app-master/* termux-library/termux-app/
-          rm -rf tmp
+          # Создаем целевую директорию
+          mkdir -p "$DEST"
+
+          # Распаковка: 
+          # -q (quiet), -j (junk paths — не сохранять структуру папок, если нужно всё в корень)
+          # Однако лучше использовать стандартную распаковку и перемещение, чтобы сохранить структуру проекта.
+          unzip -q "$ARCHIVE" -d "tmp_unpack"
+          
+          # Перемещаем содержимое (используем dotglob для захвата скрытых файлов типа .gitignore)
+          shopt -s dotglob
+          mv tmp_unpack/termux-app-master/* "$DEST/"
+          
+          # Очистка временных данных перед загрузкой артефакта
+          rm -rf tmp_unpack
+          echo "✅ Unpacked successfully to $DEST"
 
       - name: Upload unpacked artifact
         uses: actions/upload-artifact@v4
         with:
-          name: termux-app
+          name: termux-app-source
           path: termux-library/termux-app
+          retention-days: 5 # Ограничиваем время хранения, чтобы не тратить лимиты
+          
