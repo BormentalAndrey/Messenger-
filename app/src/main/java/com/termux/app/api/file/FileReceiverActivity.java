@@ -10,7 +10,9 @@ import android.util.Patterns;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.termux.R;
+// ИСПРАВЛЕНИЕ 1: Подключаем ресурсы вашего приложения
+import com.kakdela.p2p.R;
+
 import com.termux.shared.android.PackageUtils;
 import com.termux.shared.data.DataUtils;
 import com.termux.shared.data.IntentUtils;
@@ -264,9 +266,13 @@ public class FileReceiverActivity extends AppCompatActivity {
                 String errmsg;
                 boolean state;
 
+                // ИСПРАВЛЕНИЕ 2: Используем context.getPackageName() вместо жестко заданного TermuxConstants.TERMUX_PACKAGE_NAME
+                // Это позволяет коду работать внутри com.kakdela.p2p
+                String packageName = context.getPackageName();
+
                 state = !properties.isFileShareReceiverDisabled();
                 Logger.logVerbose(LOG_TAG, "Setting " + TERMUX_APP.FILE_SHARE_RECEIVER_ACTIVITY_CLASS_NAME + " component state to " + state);
-                errmsg = PackageUtils.setComponentState(context,TermuxConstants.TERMUX_PACKAGE_NAME,
+                errmsg = PackageUtils.setComponentState(context, packageName,
                     TERMUX_APP.FILE_SHARE_RECEIVER_ACTIVITY_CLASS_NAME,
                     state, null, false, false);
                 if (errmsg != null)
@@ -274,7 +280,7 @@ public class FileReceiverActivity extends AppCompatActivity {
 
                 state = !properties.isFileViewReceiverDisabled();
                 Logger.logVerbose(LOG_TAG, "Setting " + TERMUX_APP.FILE_VIEW_RECEIVER_ACTIVITY_CLASS_NAME + " component state to " + state);
-                errmsg = PackageUtils.setComponentState(context,TermuxConstants.TERMUX_PACKAGE_NAME,
+                errmsg = PackageUtils.setComponentState(context, packageName,
                     TERMUX_APP.FILE_VIEW_RECEIVER_ACTIVITY_CLASS_NAME,
                     state, null, false, false);
                 if (errmsg != null)
@@ -283,5 +289,4 @@ public class FileReceiverActivity extends AppCompatActivity {
             }
         }.start();
     }
-
 }
