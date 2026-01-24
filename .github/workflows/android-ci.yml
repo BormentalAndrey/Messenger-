@@ -1,30 +1,19 @@
 name: Android CI - Unpack Termux
 
-# Запуск на пуш в main/master и вручную
 on:
-  push:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
-  unpack-and-commit:
+  unpack:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Проверяем репозиторий
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GH_PAT }}  # <-- обязательно добавить PAT в secrets
-          fetch-depth: 0
 
-      # 2️⃣ Устанавливаем unzip
       - name: Install unzip
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y unzip
+        run: sudo apt-get update && sudo apt-get install -y unzip
 
-      # 3️⃣ Проверяем, что архив существует
       - name: Verify archive exists
         run: |
           if [ ! -f termux-library/termux-app-master.zip ]; then
@@ -32,37 +21,15 @@ jobs:
             exit 1
           fi
 
-      # 4️⃣ Чистим старую папку
-      - name: Prepare destination folder
-        run: |
-          rm -rf termux-library/termux-app
-          mkdir -p termux-library/termux-app
-
-      # 5️⃣ Распаковываем архив без папки termux-app-master
       - name: Unpack termux-app
         run: |
-          mkdir -p tmp
+          mkdir -p termux-library/termux-app tmp
           unzip -q termux-library/termux-app-master.zip -d tmp
-          # переносим содержимое в целевую папку
           mv tmp/termux-app-master/* termux-library/termux-app/
           rm -rf tmp
 
-      # 6️⃣ Проверяем результат
-      - name: Verify unpacked files
-        run: |
-          echo "=== termux-library/termux-app ==="
-          find termux-library/termux-app -maxdepth 2 -type d
-
-      # 7️⃣ Коммитим и пушим распакованные файлы
-      - name: Commit and push unpacked files
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add termux-library/termux-app
-
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "ci: unpack termux-app without root folder"
-            git push
+      - name: Upload unpacked artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: termux-app
+          path: termux-library/termux-app
