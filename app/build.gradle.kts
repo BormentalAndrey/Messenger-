@@ -9,11 +9,15 @@ plugins {
     kotlin("kapt")
 }
 
+/* ------------------------- Local properties ------------------------- */
+
 val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
     localProperties.load(FileInputStream(localPropertiesFile))
 }
+
+/* ------------------------- Android ------------------------- */
 
 android {
     namespace = "com.kakdela.p2p"
@@ -25,23 +29,35 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
+        // Room schemas
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas")
         }
 
+        // NDK
         ndk {
-            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
+            abiFilters += listOf(
+                "armeabi-v7a",
+                "arm64-v8a",
+                "x86",
+                "x86_64"
+            )
         }
 
+        // Gemini API key (local + CI)
         buildConfigField(
             "String",
             "GEMINI_API_KEY",
-            "\"${localProperties.getProperty("GEMINI_API_KEY") ?: ""}\""
+            "\"${System.getenv("GEMINI_API_KEY")
+                ?: localProperties.getProperty("GEMINI_API_KEY", "")}\""
         )
     }
+
+    /* ------------------------- Signing ------------------------- */
 
     signingConfigs {
         create("release") {
@@ -64,6 +80,8 @@ android {
         }
     }
 
+    /* ------------------------- Build types ------------------------- */
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -74,20 +92,26 @@ android {
                 "proguard-rules.pro"
             )
         }
+
         debug {
             signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
         }
     }
 
+    /* ------------------------- Java / Kotlin ------------------------- */
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    /* ------------------------- Compose ------------------------- */
 
     buildFeatures {
         compose = true
@@ -98,19 +122,28 @@ android {
         kotlinCompilerExtensionVersion = "1.5.11"
     }
 
+    /* ------------------------- Packaging ------------------------- */
+
     packaging {
-        resources.excludes += setOf(
-            "/META-INF/{AL2.0,LGPL2.1}",
-            "META-INF/DEPENDENCIES",
-            "META-INF/INDEX.LIST",
-            "META-INF/NOTICE*",
-            "META-INF/LICENSE*",
-            "META-INF/kotlinx-coroutines-core.kotlin_module",
-            "META-INF/tink/**"
-        )
-        jniLibs.pickFirsts.add("**/*.so")
-        jniLibs.useLegacyPackaging = true
+        resources {
+            excludes += setOf(
+                "/META-INF/{AL2.0,LGPL2.1}",
+                "META-INF/DEPENDENCIES",
+                "META-INF/INDEX.LIST",
+                "META-INF/NOTICE*",
+                "META-INF/LICENSE*",
+                "META-INF/kotlinx-coroutines-core.kotlin_module",
+                "META-INF/tink/**"
+            )
+        }
+
+        jniLibs {
+            pickFirsts += "**/*.so"
+            useLegacyPackaging = true
+        }
     }
+
+    /* ------------------------- Source sets ------------------------- */
 
     sourceSets {
         getByName("main") {
@@ -119,13 +152,17 @@ android {
     }
 }
 
-// ------------------------- Dependencies -------------------------
+/* ------------------------- Versions ------------------------- */
+
 val roomVersion = "2.6.1"
 val gdxVersion = "1.12.1"
 val media3Version = "1.4.1"
 
+/* ------------------------- Dependencies ------------------------- */
+
 dependencies {
-    // Core & Lifecycle
+
+    // Core
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
@@ -152,7 +189,7 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.navigation:navigation-compose:2.8.0")
 
-    // DB & Security
+    // Database & Security
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
@@ -160,7 +197,7 @@ dependencies {
     implementation("androidx.sqlite:sqlite-ktx:2.4.0")
     implementation("com.google.crypto.tink:tink-android:1.12.0")
 
-    // Media & Docs
+    // Media & Documents
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-ui:$media3Version")
     implementation("androidx.media3:media3-session:$media3Version")
@@ -181,31 +218,47 @@ dependencies {
     // libGDX
     implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
-    listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64").forEach { platform ->
-        runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
+    listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64").forEach {
+        runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$it")
     }
 
+    // Tests
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.10")
+
+    // Desugaring
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:1.1.5")
 }
 
-// ------------------------- Copy GDX Natives -------------------------
+/* ------------------------- GDX natives copy ------------------------- */
+
 val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
     val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+
     platforms.forEach { platform ->
-        val jarConfiguration = configurations.detachedConfiguration(
+        val cfg = configurations.detachedConfiguration(
             dependencies.create("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
         )
-        from(jarConfiguration.map { zipTree(it) }) { include("*.so"); into("lib/$platform") }
+
+        from(cfg.map { zipTree(it) }) {
+            include("*.so")
+            into("lib/$platform")
+        }
     }
+
     into(layout.buildDirectory.dir("gdx-natives"))
 }
 
-tasks.withType<JavaCompile>().configureEach { dependsOn(copyAndroidNatives) }
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach { dependsOn(copyAndroidNatives) }
+tasks.withType<JavaCompile>().configureEach {
+    dependsOn(copyAndroidNatives)
+}
 
-// Добавляем явную зависимость для всех задач merge*JniLibFolders (debug и release)
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach {
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    dependsOn(copyAndroidNatives)
+}
+
+tasks.matching {
+    it.name.startsWith("merge") && it.name.endsWith("JniLibFolders")
+}.configureEach {
     dependsOn(copyAndroidNatives)
 }
