@@ -1,49 +1,55 @@
 name: Android CI - Unpack Termux
 
 on:
-  workflow_dispatch: # Позволяет запускать вручную из вкладки Actions
+  workflow_dispatch:
+
+# Добавляем права на чтение репозитория
+permissions:
+  contents: read
 
 jobs:
   unpack:
-    name: Unpack and Prepare Termux
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Используем встроенный токен GitHub
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Unpack termux-app
         run: |
-          # Переменные для чистоты кода
+          # Переменные путей
           ARCHIVE="termux-library/termux-app-master.zip"
-          DEST="termux-library/termux-app"
+          EXTRACT_DIR="tmp_extract"
+          FINAL_DEST="termux-library/termux-app"
 
-          # Проверка существования файла
+          # 1. Проверка наличия архива
           if [ ! -f "$ARCHIVE" ]; then
-            echo "::error::Archive $ARCHIVE not found!"
+            echo "::error::Файл $ARCHIVE не найден. Проверьте путь в репозитории."
             exit 1
           fi
 
-          # Создаем целевую директорию
-          mkdir -p "$DEST"
+          # 2. Подготовка папок
+          mkdir -p "$FINAL_DEST"
 
-          # Распаковка: 
-          # -q (quiet), -j (junk paths — не сохранять структуру папок, если нужно всё в корень)
-          # Однако лучше использовать стандартную распаковку и перемещение, чтобы сохранить структуру проекта.
-          unzip -q "$ARCHIVE" -d "tmp_unpack"
-          
-          # Перемещаем содержимое (используем dotglob для захвата скрытых файлов типа .gitignore)
+          # 3. Распаковка во временную папку
+          unzip -q "$ARCHIVE" -d "$EXTRACT_DIR"
+
+          # 4. Перемещение содержимого
+          # Используем dotglob, чтобы переместить и скрытые файлы (.gradle, .gitignore)
           shopt -s dotglob
-          mv tmp_unpack/termux-app-master/* "$DEST/"
+          mv "$EXTRACT_DIR"/termux-app-master/* "$FINAL_DEST/"
           
-          # Очистка временных данных перед загрузкой артефакта
-          rm -rf tmp_unpack
-          echo "✅ Unpacked successfully to $DEST"
+          # 5. Очистка
+          rm -rf "$EXTRACT_DIR"
+          echo "✅ Распаковка завершена успешно"
 
       - name: Upload unpacked artifact
         uses: actions/upload-artifact@v4
         with:
           name: termux-app-source
           path: termux-library/termux-app
-          retention-days: 5 # Ограничиваем время хранения, чтобы не тратить лимиты
+          retention-days: 5
           
