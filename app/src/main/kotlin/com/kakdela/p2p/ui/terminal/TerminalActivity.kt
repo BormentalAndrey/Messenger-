@@ -2,7 +2,6 @@ package com.kakdela.p2p.ui.terminal
 
 import android.os.Bundle
 import android.text.method.ScrollingMovementMethod
-import android.view.Gravity
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
@@ -10,6 +9,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import java.io.BufferedReader
+import java.io.IOException
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import kotlin.concurrent.thread
@@ -19,9 +19,9 @@ class TerminalActivity : AppCompatActivity() {
     private lateinit var outputView: TextView
     private lateinit var inputView: EditText
 
-    private lateinit var shellProcess: Process
-    private lateinit var shellInput: OutputStreamWriter
-    private lateinit var shellOutput: BufferedReader
+    private var shellProcess: Process? = null
+    private var shellInput: OutputStreamWriter? = null
+    private var shellOutput: BufferedReader? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,7 +46,8 @@ class TerminalActivity : AppCompatActivity() {
             setBackgroundColor(0xFF111111.toInt())
             setPadding(16, 16, 16, 16)
             imeOptions = EditorInfo.IME_ACTION_DONE
-            singleLine = true
+            // Исправлено: используем современное свойство или метод
+            isSingleLine = true 
             hint = "command"
             setHintTextColor(0xFF888888.toInt())
         }
@@ -77,11 +78,13 @@ class TerminalActivity : AppCompatActivity() {
         inputView.setOnEditorActionListener { _, actionId, event ->
             if (
                 actionId == EditorInfo.IME_ACTION_DONE ||
-                event?.keyCode == KeyEvent.KEYCODE_ENTER
+                (event != null && event.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
             ) {
                 val cmd = inputView.text.toString()
-                inputView.setText("")
-                sendCommand(cmd)
+                if (cmd.isNotBlank()) {
+                    inputView.setText("")
+                    sendCommand(cmd)
+                }
                 true
             } else false
         }
@@ -90,21 +93,30 @@ class TerminalActivity : AppCompatActivity() {
     /* ---------------- Shell logic ---------------- */
 
     private fun startShell() {
-        shellProcess = ProcessBuilder("/system/bin/sh")
-            .redirectErrorStream(true)
-            .start()
+        try {
+            val process = ProcessBuilder("/system/bin/sh")
+                .redirectErrorStream(true)
+                .start()
+            
+            shellProcess = process
+            shellInput = OutputStreamWriter(process.outputStream)
+            shellOutput = BufferedReader(InputStreamReader(process.inputStream))
 
-        shellInput = OutputStreamWriter(shellProcess.outputStream)
-        shellOutput = BufferedReader(InputStreamReader(shellProcess.inputStream))
-
-        thread {
-            var line: String?
-            while (shellOutput.readLine().also { line = it } != null) {
-                runOnUiThread {
-                    outputView.append("$line\n")
-                    scrollToBottom()
+            thread(start = true, isDaemon = true) {
+                try {
+                    var line: String?
+                    while (shellOutput?.readLine().also { line = it } != null) {
+                        runOnUiThread {
+                            outputView.append("$line\n")
+                            scrollToBottom()
+                        }
+                    }
+                } catch (e: IOException) {
+                    runOnUiThread { outputView.append("\n[Shell disconnected]\n") }
                 }
             }
+        } catch (e: IOException) {
+            outputView.append("Failed to start shell: ${e.message}")
         }
     }
 
@@ -113,23 +125,35 @@ class TerminalActivity : AppCompatActivity() {
         scrollToBottom()
 
         thread {
-            shellInput.write(command + "\n")
-            shellInput.flush()
+            try {
+                shellInput?.write(command + "\n")
+                shellInput?.flush()
+            } catch (e: IOException) {
+                runOnUiThread { outputView.append("Error sending command: ${e.message}\n") }
+            }
         }
     }
 
     private fun scrollToBottom() {
-        val layout = outputView.layout ?: return
-        val scroll = layout.getLineTop(outputView.lineCount) - outputView.height
-        if (scroll > 0) {
-            outputView.scrollTo(0, scroll)
-        } else {
-            outputView.scrollTo(0, 0)
+        outputView.post {
+            val layout = outputView.layout ?: return@post
+            val scroll = layout.getLineTop(outputView.lineCount) - outputView.height
+            if (scroll > 0) {
+                outputView.scrollTo(0, scroll)
+            } else {
+                outputView.scrollTo(0, 0)
+            }
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        shellProcess.destroy()
+        try {
+            shellInput?.close()
+            shellOutput?.close()
+            shellProcess?.destroy()
+        } catch (e: Exception) {
+            // Игнорируем ошибки при закрытии
+        }
     }
 }
