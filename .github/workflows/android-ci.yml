@@ -9,10 +9,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
+
     steps:
       # 1. Клонируем репозиторий
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # 2. Устанавливаем JDK 17
       - name: Set up JDK 17
@@ -20,27 +25,55 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+          cache: gradle
 
       # 3. Настройка Gradle
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # 4. Даём права на выполнение Gradle wrapper
+      # 4. Установка системных зависимостей (нужно для terminal-view / JNI)
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            ninja-build \
+            unzip \
+            zip
+
+      # 5. Клонируем модули Termux (если их нет)
+      - name: Clone Termux modules
+        run: |
+          if [ ! -d "termux-app" ]; then
+            git clone https://github.com/termux/termux-app.git
+          fi
+
+          if [ ! -d "termux-shared" ]; then
+            git clone https://github.com/termux/termux-shared.git
+          fi
+
+          if [ ! -d "terminal-view" ]; then
+            git clone https://github.com/termux/terminal-view.git
+          fi
+
+      # 6. Даём права на выполнение Gradle wrapper
       - name: Grant permissions
         run: chmod +x ./gradlew
 
-      # 5. Сборка только Release APK
+      # 7. Clean
+      - name: Gradle clean
+        run: ./gradlew clean
+
+      # 8. Сборка Release APK
       - name: Build Release APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          ./gradlew clean
-          ./gradlew assembleRelease --stacktrace
+        run: ./gradlew assembleRelease --stacktrace
 
-      # 6. Загружаем только Release APK как артефакт
+      # 9. Загружаем Release APK как артефакт
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
