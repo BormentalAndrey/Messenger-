@@ -3,58 +3,56 @@ name: Android CI - Unpack Termux
 on:
   workflow_dispatch:
 
-# Явно разрешаем чтение содержимого репозитория
 permissions:
   contents: read
 
 jobs:
   unpack:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Передаем токен для авторизации
+          # Принудительно передаем встроенный токен
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Unpack termux-app
         run: |
-          # Константы
-          ZIP_FILE="termux-library/termux-app-master.zip"
-          TARGET_DIR="termux-library/termux-app"
-          TMP_DIR="tmp_extraction"
-
-          # Проверка на существование файла
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "::error file=$ZIP_FILE::Архив не найден по указанному пути!"
+          # Настройки путей
+          SRC_ZIP="termux-library/termux-app-master.zip"
+          DEST_DIR="termux-library/termux-app"
+          
+          # Проверяем, существует ли файл перед работой
+          if [[ ! -f "$SRC_ZIP" ]]; then
+            echo "::error::Архив $SRC_ZIP не найден! Проверьте, загружен ли он в репозиторий."
             exit 1
           fi
 
-          # Создаем чистую целевую папку
-          mkdir -p "$TARGET_DIR"
+          # Создаем папку назначения
+          mkdir -p "$DEST_DIR"
 
-          # Распаковка во временную папку
-          unzip -q "$ZIP_FILE" -d "$TMP_DIR"
-
-          # Перемещаем содержимое вложенной папки 'termux-app-master' в 'termux-library/termux-app'
-          # shopt -s dotglob позволяет перемещать скрытые файлы (.gitignore, .gradle и т.д.)
-          shopt -s dotglob
-          if [ -d "$TMP_DIR/termux-app-master" ]; then
-            mv "$TMP_DIR/termux-app-master/"* "$TARGET_DIR/"
-            echo "✅ Файлы успешно перемещены в $TARGET_DIR"
+          # Распаковка во временную директорию
+          mkdir -p tmp_unzip
+          unzip -q "$SRC_ZIP" -d tmp_unzip
+          
+          # Перемещаем всё, включая скрытые файлы (.gradle, .gitignore)
+          # Используем вложенную папку из архива (termux-app-master)
+          if [ -d "tmp_unzip/termux-app-master" ]; then
+            shopt -s dotglob
+            mv tmp_unzip/termux-app-master/* "$DEST_DIR/"
+            echo "✅ Распаковка в $DEST_DIR завершена"
           else
-            echo "::error::Внутри архива не найдена папка termux-app-master!"
+            echo "::error::Структура архива не соответствует ожидаемой (нет папки termux-app-master)"
             exit 1
           fi
 
-          # Удаляем временный мусор
-          rm -rf "$TMP_DIR"
+          # Очистка
+          rm -rf tmp_unzip
 
       - name: Upload unpacked artifact
         uses: actions/upload-artifact@v4
         with:
-          name: termux-app-source
-          path: termux-library/termux-app/
+          name: termux-app-unpacked
+          path: termux-library/termux-app
           retention-days: 1
           
