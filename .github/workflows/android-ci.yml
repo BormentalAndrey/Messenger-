@@ -11,9 +11,10 @@ jobs:
 
     env:
       GRADLE_OPTS: -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
+      GIT_TERMINAL_PROMPT: 0
 
     steps:
-      # 1. Клонируем репозиторий
+      # 1. Клонируем основной репозиторий
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -31,7 +32,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # 4. Установка системных зависимостей (нужно для terminal-view / JNI)
+      # 4. Установка системных зависимостей (JNI / terminal-view)
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -41,22 +42,24 @@ jobs:
             unzip \
             zip
 
-      # 5. Клонируем модули Termux (если их нет)
+      # 5. Клонируем модули Termux (non-interactive, stable)
       - name: Clone Termux modules
         run: |
+          set -e
+
           if [ ! -d "termux-app" ]; then
-            git clone https://github.com/termux/termux-app.git
+            git clone --depth 1 https://github.com/termux/termux-app.git
           fi
 
           if [ ! -d "termux-shared" ]; then
-            git clone https://github.com/termux/termux-shared.git
+            git clone --depth 1 https://github.com/termux/termux-shared.git
           fi
 
           if [ ! -d "terminal-view" ]; then
-            git clone https://github.com/termux/terminal-view.git
+            git clone --depth 1 https://github.com/termux/terminal-view.git
           fi
 
-      # 6. Даём права на выполнение Gradle wrapper
+      # 6. Даём права на Gradle wrapper
       - name: Grant permissions
         run: chmod +x ./gradlew
 
@@ -73,7 +76,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: ./gradlew assembleRelease --stacktrace
 
-      # 9. Загружаем Release APK как артефакт
+      # 9. Upload APK
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
