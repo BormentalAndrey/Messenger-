@@ -50,6 +50,15 @@ include(":app")
 /* =========================
    TERMUX MODULES
    ========================= */
-include(":termux-shared")
+include(":terminal-emulator")
 include(":terminal-view")
+include(":termux-shared")
 include(":termux-app")
+
+/* =========================
+   TERMUX MODULE PATHS
+   ========================= */
+project(":terminal-emulator").projectDir = file("terminal-emulator")
+project(":terminal-view").projectDir = file("terminal-view")
+project(":termux-shared").projectDir = file("termux-shared")
+project(":termux-app").projectDir = file("termux-app")
