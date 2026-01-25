@@ -32,7 +32,9 @@ class WebRtcManager(
                 .createInitializationOptions()
         )
 
+        val options = PeerConnectionFactory.Options()
         factory = PeerConnectionFactory.builder()
+            .setOptions(options)
             .setVideoEncoderFactory(
                 DefaultVideoEncoderFactory(
                     rootEglBase.eglBaseContext,
@@ -110,6 +112,10 @@ class WebRtcManager(
                 PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
             )
         )
+        
+        // Важно для корректной работы в современных сетях
+        config.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+        config.continuationTimeoutMs = 30000
 
         peerConnection = factory.createPeerConnection(
             config,
@@ -122,19 +128,36 @@ class WebRtcManager(
                     }.toString())
                 }
 
+                // Исправление ошибки: Реализация обязательного метода onAddTrack
+                override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {
+                    streams?.firstOrNull()?.let {
+                        Log.d(TAG, "onAddTrack: Remote stream found")
+                        onRemoteStreamReady(it)
+                    }
+                }
+
                 override fun onAddStream(stream: MediaStream) {
+                    Log.d(TAG, "onAddStream: Legacy stream added")
                     onRemoteStreamReady(stream)
                 }
 
-                override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
-                override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {}
+                override fun onSignalingChange(state: PeerConnection.SignalingState?) {
+                    Log.d(TAG, "SignalingState: $state")
+                }
+
+                override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
+                    Log.d(TAG, "IceConnectionState: $state")
+                }
+
                 override fun onIceConnectionReceivingChange(receiving: Boolean) {}
                 override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {}
                 override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) {}
                 override fun onRemoveStream(stream: MediaStream?) {}
                 override fun onRenegotiationNeeded() {}
                 override fun onDataChannel(channel: DataChannel?) {}
-                override fun onTrack(transceiver: RtpTransceiver?) {}
+                override fun onTrack(transceiver: RtpTransceiver?) {
+                    Log.d(TAG, "onTrack: New transceiver received")
+                }
             }
         )
 
@@ -148,11 +171,15 @@ class WebRtcManager(
     /** Отправка сигнализации через IdentityRepository */
     private fun sendSignal(targetHash: String, type: String, payload: String) {
         scope.launch {
-            val json = JSONObject().apply {
-                put("type", type)
-                put("payload", payload)
+            try {
+                val json = JSONObject().apply {
+                    put("type", type)
+                    put("payload", payload)
+                }
+                identityRepository.sendSignaling(targetHash, json.toString())
+            } catch (e: Exception) {
+                Log.e(TAG, "Error sending signal", e)
             }
-            identityRepository.sendSignaling(targetHash, json.toString())
         }
     }
 
@@ -198,8 +225,12 @@ class WebRtcManager(
     /** Очистка ресурсов */
     fun release() {
         identityRepository.removeListener(::onSignalingPacket)
-        peerConnection?.close()
+        peerConnection?.dispose() // В проде лучше использовать dispose()
         peerConnection = null
+        localVideoTrack = null
+        localAudioTrack = null
+        factory.dispose()
+        rootEglBase.release()
         scope.cancel()
     }
 }
@@ -208,6 +239,10 @@ class WebRtcManager(
 open class SimpleSdpObserver : SdpObserver {
     override fun onCreateSuccess(desc: SessionDescription) {}
     override fun onSetSuccess() {}
-    override fun onCreateFailure(error: String?) {}
-    override fun onSetFailure(error: String?) {}
+    override fun onCreateFailure(error: String?) {
+        Log.e("SdpObserver", "onCreateFailure: $error")
+    }
+    override fun onSetFailure(error: String?) {
+        Log.e("SdpObserver", "onSetFailure: $error")
+    }
 }
