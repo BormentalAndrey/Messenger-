@@ -1,12 +1,7 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-
-    <!-- Базовая тема для Compose -->
-    <style name="Theme.Kakdela" parent="android:Theme.Material.NoActionBar">
-        <item name="android:statusBarColor">@android:color/black</item>
-        <item name="android:navigationBarColor">@android:color/black</item>
-        <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
-    </style>
-
-</resources>
+<style name="Theme.Kakdela.Translucent" parent="android:Theme.Material.NoActionBar">
+    <item name="android:windowIsTranslucent">true</item>
+    <item name="android:windowBackground">@android:color/transparent</item>
+    <item name="android:backgroundDimEnabled">false</item>
+    <item name="android:statusBarColor">@android:color/transparent</item>
+    <item name="android:navigationBarColor">@android:color/transparent</item>
+</style>
