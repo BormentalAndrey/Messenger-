@@ -31,12 +31,10 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
 
-        // Room schemas
         ksp {
             arg("room.schemaLocation", "$projectDir/schemas")
         }
 
-        // NDK
         ndk {
             abiFilters += listOf(
                 "armeabi-v7a",
@@ -45,8 +43,7 @@ android {
                 "x86_64"
             )
         }
-        
-        // Gemini API key
+
         buildConfigField(
             "String",
             "GEMINI_API_KEY",
@@ -54,13 +51,15 @@ android {
         )
     }
 
-    /* ------------------------- Signing ------------------------- */
     signingConfigs {
         create("release") {
             storeFile = file("my-release-key.jks")
-            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: localProperties.getProperty("RELEASE_STORE_PASSWORD", "")
-            keyAlias = System.getenv("KEY_ALIAS") ?: localProperties.getProperty("RELEASE_KEY_ALIAS", "")
-            keyPassword = System.getenv("KEY_PASSWORD") ?: localProperties.getProperty("RELEASE_KEY_PASSWORD", "")
+            storePassword = System.getenv("KEYSTORE_PASSWORD")
+                ?: localProperties.getProperty("RELEASE_STORE_PASSWORD", "")
+            keyAlias = System.getenv("KEY_ALIAS")
+                ?: localProperties.getProperty("RELEASE_KEY_ALIAS", "")
+            keyPassword = System.getenv("KEY_PASSWORD")
+                ?: localProperties.getProperty("RELEASE_KEY_PASSWORD", "")
             enableV1Signing = true
             enableV2Signing = true
         }
@@ -72,13 +71,15 @@ android {
         }
     }
 
-    /* ------------------------- Build Types ------------------------- */
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = false
             signingConfig = signingConfigs.getByName("release")
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
         debug {
             signingConfig = signingConfigs.getByName("debug")
@@ -86,26 +87,25 @@ android {
         }
     }
 
-    /* ------------------------- Java / Kotlin ------------------------- */
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
         isCoreLibraryDesugaringEnabled = true
     }
+
     kotlinOptions {
         jvmTarget = "17"
     }
 
-    /* ------------------------- Compose ------------------------- */
     buildFeatures {
         compose = true
         buildConfig = true
     }
+
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.11"
     }
 
-    /* ------------------------- Packaging ------------------------- */
     packaging {
         resources {
             excludes += setOf(
@@ -138,95 +138,37 @@ val media3Version = "1.4.1"
 
 /* ------------------------- Dependencies ------------------------- */
 dependencies {
-    // --- Core Libraries ---
+
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
 
-    // --- Dependency Injection (Koin) ---
     implementation("io.insert-koin:koin-android:3.5.0")
     implementation("io.insert-koin:koin-androidx-workmanager:3.5.0")
 
-    // --- UI Components ---
-    implementation("com.google.android.material:material:1.12.0")
-    implementation("androidx.recyclerview:recyclerview:1.3.2")
-    implementation("androidx.constraintlayout:constraintlayout:2.2.0")
-
-    // --- Jetpack Compose ---
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.foundation:foundation")
     implementation("androidx.navigation:navigation-compose:2.8.0")
 
-    // --- Database & Security ---
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
-    implementation("net.zetetic:android-database-sqlcipher:4.5.4")
-    implementation("androidx.sqlite:sqlite-ktx:2.4.0")
-    implementation("com.google.crypto.tink:tink-android:1.12.0")
 
-    // --- Media & Documents ---
-    implementation("androidx.media3:media3-exoplayer:$media3Version")
-    implementation("androidx.media3:media3-ui:$media3Version")
-    implementation("androidx.media3:media3-session:$media3Version")
-    implementation("com.tom-roush:pdfbox-android:2.0.26.0")
-    implementation("org.apache.poi:poi-ooxml:5.3.0")
-
-    // --- Utils & Network ---
-    implementation("io.coil-kt:coil-compose:2.7.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
-    implementation("io.getstream:stream-webrtc-android:1.2.0")
-    implementation("io.getstream:stream-webrtc-android-compose:1.1.2")
-    implementation("com.squareup.retrofit2:retrofit:2.9.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
-    implementation("com.googlecode.libphonenumber:libphonenumber:8.13.22")
-
-    // --- Game Engine (libGDX) ---
     implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
+
     listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64").forEach {
         runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$it")
     }
 
-    // --- TERMUX MODULES (LOCAL) ---
+    /* ✅ TERMUX LIBRARIES */
     implementation(project(":termux-shared"))
     implementation(project(":terminal-view"))
-    implementation(project(":termux-app"))
+    // ❌ implementation(project(":termux-app")) — ЗАПРЕЩЕНО
 
-    // --- Tests ---
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.robolectric:robolectric:4.10")
-
-    // --- Java 8+ API Support ---
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:1.1.5")
 }
-
-/* ------------------------- GDX natives copy ------------------------- */
-val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
-    val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-    platforms.forEach { platform ->
-        val cfg = configurations.detachedConfiguration(
-            dependencies.create("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
-        )
-        from(cfg.map { zipTree(it) }) {
-            include("*.so")
-            into("lib/$platform")
-        }
-    }
-    into(layout.buildDirectory.dir("gdx-natives"))
-}
-
-tasks.withType<JavaCompile>().configureEach { dependsOn(copyAndroidNatives) }
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach { dependsOn(copyAndroidNatives) }
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach { dependsOn(copyAndroidNatives) }
