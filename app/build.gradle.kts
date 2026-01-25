@@ -36,7 +36,6 @@ android {
         }
 
         ndk {
-            // Поддержка всех актуальных архитектур
             abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
         }
 
@@ -111,7 +110,10 @@ android {
                 "META-INF/NOTICE*",
                 "META-INF/LICENSE*",
                 "META-INF/kotlinx-coroutines-core.kotlin_module",
-                "META-INF/tink/**"
+                "META-INF/tink/**",
+                "META-INF/library_release.kotlin_module",
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1"
             )
         }
         jniLibs {
@@ -134,17 +136,20 @@ val media3Version = "1.4.1"
 val webrtcVersion = "1.0.32006"
 val okhttpVersion = "4.12.0"
 val tinkVersion = "1.15.0"
+val coilVersion = "2.6.0"
+val poiVersion = "5.2.5"
 
 /* ------------------------- Dependencies ------------------------- */
 dependencies {
 
-    // AndroidX Core & Lifecycle
+    // ✅ AndroidX Core, Lifecycle & Material (Исправляет BottomSheetDialog)
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
+    implementation("com.google.android.material:material:1.12.0")
 
     // Koin Dependency Injection
     implementation("io.insert-koin:koin-android:3.5.0")
@@ -160,6 +165,15 @@ dependencies {
     
     // ✅ ИКОНКИ (Исправляет Unresolved reference: Pause, Schedule, Sms, Public и т.д.)
     implementation("androidx.compose.material:material-icons-extended")
+
+    // ✅ COIL (Исправляет Unresolved reference: coil, AsyncImage, rememberAsyncImagePainter)
+    implementation("io.coil-kt:coil-compose:$coilVersion")
+
+    // ✅ APACHE POI (Исправляет Unresolved reference: poi, XWPFDocument)
+    implementation("org.apache.poi:poi-ooxml:$poiVersion")
+
+    // ✅ LIBPHONENUMBER (Исправляет Unresolved reference: i18n, PhoneNumberUtil)
+    implementation("com.googlecode.libphonenumber:libphonenumber:8.13.39")
 
     // Room Database
     implementation("androidx.room:room-runtime:$roomVersion")
@@ -196,6 +210,6 @@ dependencies {
     implementation(project(":termux-shared"))
     implementation(project(":terminal-view"))
 
-    // Поддержка Java 8+ API на старых Android
+    // Поддержка Java 8+ API (Desugaring)
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
 }
