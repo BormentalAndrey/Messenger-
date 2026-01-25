@@ -10,7 +10,6 @@ plugins {
 }
 
 /* ------------------------- Local properties ------------------------- */
-
 val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
@@ -18,7 +17,6 @@ if (localPropertiesFile.exists()) {
 }
 
 /* ------------------------- Android ------------------------- */
-
 android {
     namespace = "com.kakdela.p2p"
     compileSdk = 35
@@ -140,7 +138,6 @@ val media3Version = "1.4.1"
 
 /* ------------------------- Dependencies ------------------------- */
 dependencies {
-
     // --- Core Libraries ---
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
@@ -201,6 +198,11 @@ dependencies {
     listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64").forEach {
         runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$it")
     }
+
+    // --- TERMUX MODULES (LOCAL) ---
+    implementation(project(":termux-shared"))
+    implementation(project(":terminal-view"))
+    implementation(project(":termux-app"))
 
     // --- Tests ---
     testImplementation("junit:junit:4.13.2")
