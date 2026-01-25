@@ -13,7 +13,6 @@ import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.ShoppingBag
-import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -28,7 +27,6 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.kakdela.p2p.ui.browser.BrowserActivity
 import com.kakdela.p2p.ui.navigation.Routes
-import com.kakdela.p2p.ui.terminal.TerminalActivity
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
@@ -49,7 +47,6 @@ data class DealItem(
             DealType.ACTIVITY -> {
                 when (id) {
                     "browser" -> Icons.Filled.Public
-                    "terminal" -> Icons.Filled.Terminal
                     else -> Icons.Filled.ShoppingBag
                 }
             }
@@ -60,7 +57,6 @@ data class DealItem(
 private val dealItems = listOf(
     // Новые пункты меню для Активностей
     DealItem("browser", "P2P Браузер", "Анонимный сёрфинг", DealType.ACTIVITY),
-    DealItem("terminal", "Терминал", "Системная консоль", DealType.ACTIVITY),
     
     // Существующие инструменты
     DealItem("calculator", "Калькулятор", "Быстрые расчёты", DealType.CALCULATOR),
@@ -125,7 +121,6 @@ fun DealNeonItem(item: DealItem, navController: NavHostController) {
                 DealType.ACTIVITY -> {
                     val intent = when (item.id) {
                         "browser" -> Intent(context, BrowserActivity::class.java)
-                        "terminal" -> Intent(context, TerminalActivity::class.java)
                         else -> null
                     }
                     intent?.let { context.startActivity(it) }
