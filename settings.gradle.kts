@@ -45,15 +45,12 @@ rootProject.name = "MessengerP2P"
 /* =========================
    MAIN APPLICATION
    ========================= */
+// Оставляем только основной модуль приложения.
+// Это предотвратит попытки Gradle анализировать сломанные конфиги Termux.
 include(":app")
 
 /* =========================
-   TERMUX MODULES
+   TERMUX MODULES (REMOVED)
    ========================= */
-include(":termux-app")
-include(":termux-shared")
-include(":terminal-view")
-
-project(":termux-app").projectDir = file("termux-app")
-project(":termux-shared").projectDir = file("termux-shared")
-project(":terminal-view").projectDir = file("terminal-view")
+// Модули :termux-app, :termux-shared и :terminal-view удалены, 
+// так как они несовместимы с текущей версией Gradle и вызывают сбой сборки.
