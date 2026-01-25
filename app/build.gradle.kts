@@ -141,38 +141,25 @@ val media3Version = "1.4.1"
 /* ------------------------- Dependencies ------------------------- */
 dependencies {
 
-    // --- TERMUX MODULES & LIBS (Added) ---
-    // Подключаем локальные модули, которые вы прописали в settings.gradle
-    implementation(project(":termux-shared"))
-    implementation(project(":terminal-view"))
-    
-    // ВАЖНО: Добавляем terminal-emulator из JitPack, так как у вас нет jniLibs.
-    // Эта библиотека содержит необходимые .so файлы для работы терминала.
-    implementation("com.github.termux:terminal-emulator:0.118.0")
-
-    // Библиотека для работы с Preferences (исправляет ошибки в фрагментах)
-    implementation("androidx.preference:preference-ktx:1.2.1")
-    // Guava нужна для termux-shared
-    implementation("com.google.guava:guava:33.2.1-android")
-
-    // --- Core ---
+    // --- Core Libraries ---
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation("androidx.preference:preference-ktx:1.2.1")
 
-    // --- Koin ---
+    // --- Dependency Injection (Koin) ---
     implementation("io.insert-koin:koin-android:3.5.0")
     implementation("io.insert-koin:koin-androidx-workmanager:3.5.0")
 
-    // --- UI ---
+    // --- UI Components ---
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.constraintlayout:constraintlayout:2.2.0")
 
-    // --- Compose ---
+    // --- Jetpack Compose ---
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
@@ -208,7 +195,7 @@ dependencies {
     implementation("com.squareup.retrofit2:converter-gson:2.9.0")
     implementation("com.googlecode.libphonenumber:libphonenumber:8.13.22")
 
-    // --- libGDX ---
+    // --- Game Engine (libGDX) ---
     implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
     listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64").forEach {
@@ -219,7 +206,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.10")
 
-    // --- Desugaring ---
+    // --- Java 8+ API Support ---
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:1.1.5")
 }
 
