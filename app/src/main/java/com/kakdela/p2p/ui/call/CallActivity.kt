@@ -43,7 +43,7 @@ class CallActivity : ComponentActivity() {
     private val pendingIce = CopyOnWriteArrayList<IceCandidate>()
     @Volatile private var isRemoteSdpSet = false
 
-    private val signalingListener: (String, String, String, String) -> Unit = { type, data, fromIp, fromId ->
+    private val signalingListener: (String, String, String, String) -> Unit = { type, data, _, fromId ->
         if (fromId == targetHash && type == "WEBRTC_SIGNAL") {
             try {
                 val json = JSONObject(data)
@@ -65,7 +65,7 @@ class CallActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Поверх блокировки
+        // Настройка окна для работы поверх блокировки
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                 WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
@@ -103,7 +103,7 @@ class CallActivity : ComponentActivity() {
                 isIncoming = isIncoming,
                 onAccept = { 
                     isIncoming = false 
-                    // Обработка уже запущена через startCallProcess
+                    // Процесс уже запущен через startCallProcess при создании
                 },
                 onReject = {
                     sendCallSignal("HANGUP", "rejected")
@@ -126,12 +126,8 @@ class CallActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Исправленная функция отправки сигнала: теперь получает IP из репозитория
-     */
     private fun sendCallSignal(subtype: String, payload: String) {
         lifecycleScope.launch(Dispatchers.IO) {
-            // Ищем IP по хешу в Wi-Fi peers или swarm
             val ip = identityRepo.wifiPeers[targetHash] 
                 ?: identityRepo.swarmPeers[targetHash]
                 ?: identityRepo.fetchAllNodesFromServer().find { it.hash == targetHash }?.ip
@@ -148,7 +144,6 @@ class CallActivity : ComponentActivity() {
                 put("payload", payload)
             }
             
-            // Вызов метода с 3 параметрами, как в IdentityRepository
             identityRepo.sendSignaling(ip, "WEBRTC_SIGNAL", envelope.toString())
         }
     }
@@ -163,7 +158,11 @@ class CallActivity : ComponentActivity() {
     }
 
     private fun initWebRTC() {
-        PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(this).createInitializationOptions())
+        PeerConnectionFactory.initialize(
+            PeerConnectionFactory.InitializationOptions.builder(this)
+                .setEnableInternalTracer(true)
+                .createInitializationOptions()
+        )
         
         val encoderFactory = DefaultVideoEncoderFactory(eglBase.eglBaseContext, true, true)
         val decoderFactory = DefaultVideoDecoderFactory(eglBase.eglBaseContext)
@@ -175,27 +174,50 @@ class CallActivity : ComponentActivity() {
 
         val rtcConfig = PeerConnection.RTCConfiguration(listOf(
             PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
-        )).apply { sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN }
+        )).apply { 
+            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN 
+            continuationTimeoutMs = 30000
+        }
 
         peerConnection = factory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
             override fun onIceCandidate(candidate: IceCandidate) {
                 val payload = "${candidate.sdpMid}|${candidate.sdpMLineIndex}|${candidate.sdp}"
                 sendCallSignal("ICE", payload)
             }
-            override fun onTrack(transceiver: RtpTransceiver?) {
-                val track = transceiver?.receiver?.track()
-                if (track is VideoTrack) { remoteVideoTrack = track }
+
+            // ✅ ИСПРАВЛЕНИЕ: Реализация обязательного метода onAddTrack
+            override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {
+                Log.d(TAG, "onAddTrack: New track received")
+                val track = receiver?.track()
+                if (track is VideoTrack) {
+                    remoteVideoTrack = track
+                }
             }
+
+            override fun onTrack(transceiver: RtpTransceiver?) {
+                Log.d(TAG, "onTrack: Transceiver event")
+                val track = transceiver?.receiver?.track()
+                if (track is VideoTrack) { 
+                    remoteVideoTrack = track 
+                }
+            }
+
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
-                if (state == PeerConnection.IceConnectionState.DISCONNECTED || state == PeerConnection.IceConnectionState.FAILED) {
+                Log.d(TAG, "IceConnectionState: $state")
+                if (state == PeerConnection.IceConnectionState.DISCONNECTED || 
+                    state == PeerConnection.IceConnectionState.FAILED) {
                     runOnUiThread { finish() }
                 }
             }
-            override fun onSignalingChange(p0: PeerConnection.SignalingState?) {}
+
+            override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
             override fun onIceConnectionReceivingChange(p0: Boolean) {}
             override fun onIceGatheringChange(p0: PeerConnection.IceGatheringState?) {}
             override fun onIceCandidatesRemoved(p0: Array<out IceCandidate>?) {}
-            override fun onAddStream(p0: MediaStream?) {}
+            override fun onAddStream(stream: MediaStream?) {
+                // В Unified Plan используем onTrack/onAddTrack, но для надежности:
+                stream?.videoTracks?.firstOrNull()?.let { remoteVideoTrack = it }
+            }
             override fun onRemoveStream(p0: MediaStream?) {}
             override fun onDataChannel(p0: DataChannel?) {}
             override fun onRenegotiationNeeded() {}
@@ -267,9 +289,14 @@ class CallActivity : ComponentActivity() {
             val parts = data.split("|")
             if (parts.size < 3) return
             val candidate = IceCandidate(parts[0], parts[1].toInt(), parts[2])
-            if (isRemoteSdpSet) peerConnection?.addIceCandidate(candidate)
-            else pendingIce.add(candidate)
-        } catch (e: Exception) { Log.e(TAG, "ICE Candidate error") }
+            if (isRemoteSdpSet) {
+                peerConnection?.addIceCandidate(candidate)
+            } else {
+                pendingIce.add(candidate)
+            }
+        } catch (e: Exception) { 
+            Log.e(TAG, "ICE Candidate error: ${e.message}") 
+        }
     }
 
     private fun drainIce() {
@@ -283,11 +310,15 @@ class CallActivity : ComponentActivity() {
 
     override fun onDestroy() {
         identityRepo.removeListener(signalingListener)
-        videoCapturer?.stopCapture()
-        videoCapturer?.dispose()
-        peerConnection?.dispose()
-        factory.dispose()
-        eglBase.release()
+        try {
+            videoCapturer?.stopCapture()
+            videoCapturer?.dispose()
+            peerConnection?.dispose()
+            factory.dispose()
+            eglBase.release()
+        } catch (e: Exception) {
+            Log.e(TAG, "Cleanup error: ${e.message}")
+        }
         audioManager.mode = AudioManager.MODE_NORMAL
         super.onDestroy()
     }
