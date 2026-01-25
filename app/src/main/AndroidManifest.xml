@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
-    package="com.kakdela.p2p">
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -73,70 +72,6 @@
         </activity>
 
         <activity
-            android:name="com.termux.app.TermuxActivity"
-            android:theme="@style/Theme.Kakdela"
-            android:launchMode="singleTask"
-            android:windowSoftInputMode="stateAlwaysVisible|adjustResize"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                </intent-filter>
-        </activity>
-
-        <activity
-            android:name="com.termux.app.activities.SettingsActivity"
-            android:label="@string/menu_settings"
-            android:parentActivityName="com.termux.app.TermuxActivity" />
-
-        <activity
-            android:name="com.termux.app.activities.HelpActivity"
-            android:label="@string/menu_help"
-            android:parentActivityName="com.termux.app.TermuxActivity" />
-        
-        <activity
-             android:name="com.termux.shared.activities.ReportActivity"
-             android:label="@string/menu_report"
-             android:parentActivityName="com.termux.app.TermuxActivity" />
-
-        <activity
-            android:name="com.termux.app.api.file.FileReceiverActivity"
-            android:exported="true"
-            android:theme="@style/Theme.AppCompat.Translucent.NoTitleBar">
-            <intent-filter>
-                <action android:name="android.intent.action.SEND" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="*/*" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="file" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:scheme="content" />
-            </intent-filter>
-        </activity>
-
-        <service
-            android:name="com.termux.app.TermuxService"
-            android:exported="false"
-            android:stopWithTask="false" />
-
-        <provider
-            android:name="com.termux.filepicker.TermuxDocumentsProvider"
-            android:authorities="com.kakdela.p2p.files"
-            android:exported="true"
-            android:grantUriPermissions="true"
-            android:permission="android.permission.MANAGE_DOCUMENTS"
-            android:enabled="true">
-            <intent-filter>
-                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
-            </intent-filter>
-        </provider>
-
-        <activity
             android:name=".ui.call.CallActivity"
             android:exported="false"
             android:showWhenLocked="true"
@@ -165,8 +100,12 @@
             android:name=".l5.k"
             android:exported="false"
             android:screenOrientation="portrait" />
+
         <activity
-            android:name=".ui.browser.BrowserActivity" />
+            android:name=".ui.browser.BrowserActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:theme="@style/Theme.Kakdela" />
 
         <service
             android:name=".services.P2PService"
@@ -183,6 +122,16 @@
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
     </application>
 </manifest>
