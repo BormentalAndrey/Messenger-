@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Termux floating preferences -->
+    <string name="termux_debugging_preferences_title">Debugging</string>
+    <string name="termux_debugging_preferences_summary">
+        Debugging and developer related options
+    </string>
+
+</resources>
