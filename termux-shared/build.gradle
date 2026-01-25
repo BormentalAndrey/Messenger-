@@ -4,37 +4,13 @@ apply plugin: 'maven-publish'
 android {
     namespace = "com.termux.shared"
 
-    compileSdkVersion project.properties.compileSdkVersion.toInteger()
-    ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: project.properties.ndkVersion
-
-    dependencies {
-        implementation "androidx.appcompat:appcompat:1.6.1"
-        implementation "androidx.annotation:annotation:1.9.0"
-        implementation "androidx.core:core:1.13.1"
-        implementation "com.google.android.material:material:1.12.0"
-        implementation "com.google.guava:guava:24.1-jre"
-        implementation "io.noties.markwon:core:$markwonVersion"
-        implementation "io.noties.markwon:ext-strikethrough:$markwonVersion"
-        implementation "io.noties.markwon:linkify:$markwonVersion"
-        implementation "io.noties.markwon:recycler:$markwonVersion"
-        implementation "org.lsposed.hiddenapibypass:hiddenapibypass:6.1"
-
-        implementation "androidx.window:window:1.1.0"
-
-        // Do not increment version higher than 2.5 or there
-        // will be runtime exceptions on android < 8
-        // due to missing classes like java.nio.file.Path.
-        implementation "commons-io:commons-io:2.5"
-
-        implementation project(":terminal-view")
-
-        implementation "com.termux:termux-am-library:v2.0.0"
-    }
+    // Используем значения из gradle.properties
+    compileSdkVersion project.hasProperty("compileSdkVersion") ? project.properties.compileSdkVersion.toInteger() : 35
+    ndkVersion = System.getenv("JITPACK_NDK_VERSION") ?: (project.hasProperty("ndkVersion") ? project.properties.ndkVersion : "25.1.8937393")
 
     defaultConfig {
-        compileSdkVersion project.properties.compileSdkVersion.toInteger()
-        minSdkVersion project.properties.minSdkVersion.toInteger()
-        targetSdkVersion project.properties.targetSdkVersion.toInteger()
+        minSdkVersion project.hasProperty("minSdkVersion") ? project.properties.minSdkVersion.toInteger() : 26
+        targetSdkVersion project.hasProperty("targetSdkVersion") ? project.properties.targetSdkVersion.toInteger() : 35
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
             ndkBuild {
@@ -51,11 +27,9 @@ android {
     }
 
     compileOptions {
-        // Flag to enable support for the new language APIs
-        coreLibraryDesugaringEnabled true
-
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
+        coreLibraryDesugaringEnabled true
     }
 
     externalNativeBuild {
@@ -74,11 +48,43 @@ android {
 }
 
 dependencies {
+    // Основные библиотеки
+    implementation "androidx.appcompat:appcompat:1.6.1"
+    implementation "androidx.annotation:annotation:1.9.0"
+    implementation "androidx.core:core:1.13.1"
+    implementation "com.google.android.material:material:1.12.0"
+    implementation "com.google.guava:guava:24.1-jre"
+
+    // Markwon (Markdown)
+    implementation "io.noties.markwon:core:${project.hasProperty("markwonVersion") ? project.properties.markwonVersion : "4.6.2"}"
+    implementation "io.noties.markwon:ext-strikethrough:${project.hasProperty("markwonVersion") ? project.properties.markwonVersion : "4.6.2"}"
+    implementation "io.noties.markwon:linkify:${project.hasProperty("markwonVersion") ? project.properties.markwonVersion : "4.6.2"}"
+    implementation "io.noties.markwon:recycler:${project.hasProperty("markwonVersion") ? project.properties.markwonVersion : "4.6.2"}"
+
+    // Hidden API bypass
+    implementation "org.lsposed.hiddenapibypass:hiddenapibypass:6.1"
+
+    // Window manager
+    implementation "androidx.window:window:1.1.0"
+
+    // Commons IO
+    implementation "commons-io:commons-io:2.5"
+
+    // Локальные модули
+    implementation project(":terminal-view")
+
+    // Termux library
+    implementation "com.termux:termux-am-library:v2.0.0"
+
+    // Для тестов
     testImplementation "junit:junit:4.13.2"
     androidTestImplementation "androidx.test.ext:junit:1.1.5"
+
+    // Desugar для Java 8+
     coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:1.1.5"
 }
 
+// Источник для публикации
 task sourceJar(type: Jar) {
     from android.sourceSets.main.java.srcDirs
     archiveClassifier = "sources"
@@ -87,7 +93,6 @@ task sourceJar(type: Jar) {
 afterEvaluate {
     publishing {
         publications {
-            // Creates a Maven publication called "release".
             release(MavenPublication) {
                 from components.default
                 groupId = 'com.termux'
