@@ -135,7 +135,8 @@ android {
 val roomVersion = "2.6.1"
 val gdxVersion = "1.12.1"
 val media3Version = "1.4.1"
-val webrtcVersion = "1.0.32006" // Стабильная версия от Google
+val webrtcVersion = "1.0.32006"
+val okhttpVersion = "4.12.0"
 
 /* ------------------------- Dependencies ------------------------- */
 dependencies {
@@ -147,7 +148,7 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
 
-    // Koin Dependency Injection
+    // Koin
     implementation("io.insert-koin:koin-android:3.5.0")
     implementation("io.insert-koin:koin-androidx-workmanager:3.5.0")
 
@@ -157,7 +158,7 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.navigation:navigation-compose:2.8.0")
 
-    // Room Database
+    // Room
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
@@ -167,8 +168,16 @@ dependencies {
     implementation("androidx.media3:media3-ui:$media3Version")
     implementation("androidx.media3:media3-session:$media3Version")
 
-    // ✅ WebRTC (ИСПРАВЛЕНИЕ: Добавлена библиотека для видеозвонков)
+    // WebRTC
     implementation("org.webrtc:google-webrtc:$webrtcVersion")
+
+    // ✅ СЕТЬ И JSON (ИСПРАВЛЕНИЕ: Добавлены OkHttp и Gson)
+    implementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
+    implementation("com.squareup.okhttp3:logging-interceptor:$okhttpVersion")
+    implementation("com.google.code.gson:gson:2.11.0")
+
+    // ✅ PDF (ИСПРАВЛЕНИЕ: Добавлен PDFBox для Android)
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
     // LibGDX
     implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
