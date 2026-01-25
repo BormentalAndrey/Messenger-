@@ -36,12 +36,8 @@ android {
         }
 
         ndk {
-            abiFilters += listOf(
-                "armeabi-v7a",
-                "arm64-v8a",
-                "x86",
-                "x86_64"
-            )
+            // Поддержка всех актуальных архитектур
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
         }
 
         buildConfigField(
@@ -137,10 +133,12 @@ val gdxVersion = "1.12.1"
 val media3Version = "1.4.1"
 val webrtcVersion = "1.0.32006"
 val okhttpVersion = "4.12.0"
+val tinkVersion = "1.15.0"
 
 /* ------------------------- Dependencies ------------------------- */
 dependencies {
 
+    // AndroidX Core & Lifecycle
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
@@ -148,17 +146,22 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
 
-    // Koin
+    // Koin Dependency Injection
     implementation("io.insert-koin:koin-android:3.5.0")
     implementation("io.insert-koin:koin-androidx-workmanager:3.5.0")
 
-    // Compose
+    // Jetpack Compose
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.navigation:navigation-compose:2.8.0")
+    
+    // ✅ ИКОНКИ (Исправляет Unresolved reference: Pause, Schedule, Sms, Public и т.д.)
+    implementation("androidx.compose.material:material-icons-extended")
 
-    // Room
+    // Room Database
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
@@ -171,25 +174,28 @@ dependencies {
     // WebRTC
     implementation("org.webrtc:google-webrtc:$webrtcVersion")
 
-    // ✅ СЕТЬ И JSON (ИСПРАВЛЕНИЕ: Добавлены OkHttp и Gson)
+    // ✅ БЕЗОПАСНОСТЬ (Tink для CryptoManager.kt)
+    implementation("com.google.crypto.tink:tink-android:$tinkVersion")
+
+    // ✅ СЕТЬ И JSON (OkHttp и Gson для WebViewApiClient.kt и моделей)
     implementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
     implementation("com.squareup.okhttp3:logging-interceptor:$okhttpVersion")
     implementation("com.google.code.gson:gson:2.11.0")
 
-    // ✅ PDF (ИСПРАВЛЕНИЕ: Добавлен PDFBox для Android)
+    // ✅ PDF (PDFBox для MyApplication.kt)
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
     // LibGDX
     implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
-
     listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64").forEach {
         runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$it")
     }
 
-    /* ✅ TERMUX LIBRARIES */
+    /* ✅ ВНЕШНИЕ МОДУЛИ ПРОЕКТА */
     implementation(project(":termux-shared"))
     implementation(project(":terminal-view"))
 
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:1.1.5")
+    // Поддержка Java 8+ API на старых Android
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
 }
