@@ -135,6 +135,7 @@ android {
 val roomVersion = "2.6.1"
 val gdxVersion = "1.12.1"
 val media3Version = "1.4.1"
+val webrtcVersion = "1.0.32006" // Стабильная версия от Google
 
 /* ------------------------- Dependencies ------------------------- */
 dependencies {
@@ -161,10 +162,13 @@ dependencies {
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
 
-    // Media3 (ExoPlayer) - ИСПРАВЛЕНИЕ: Добавлены недостающие зависимости
+    // Media3 (ExoPlayer)
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-ui:$media3Version")
     implementation("androidx.media3:media3-session:$media3Version")
+
+    // ✅ WebRTC (ИСПРАВЛЕНИЕ: Добавлена библиотека для видеозвонков)
+    implementation("org.webrtc:google-webrtc:$webrtcVersion")
 
     // LibGDX
     implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
@@ -177,7 +181,6 @@ dependencies {
     /* ✅ TERMUX LIBRARIES */
     implementation(project(":termux-shared"))
     implementation(project(":terminal-view"))
-    // ❌ implementation(project(":termux-app")) — ЗАПРЕЩЕНО
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:1.1.5")
 }
