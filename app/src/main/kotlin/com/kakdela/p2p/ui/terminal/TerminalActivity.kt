@@ -80,24 +80,24 @@ class TerminalActivity : AppCompatActivity() {
                     return 0 
                 }
 
-                // Логирование (Error, Warn, Info, Debug уже были, добавляем Verbose)
+                // Стандартное логирование
                 override fun logError(tag: String?, message: String?) { Log.e(tag, message ?: "") }
                 override fun logWarn(tag: String?, message: String?) { Log.w(tag, message ?: "") }
                 override fun logInfo(tag: String?, message: String?) { Log.i(tag, message ?: "") }
                 override fun logDebug(tag: String?, message: String?) { Log.d(tag, message ?: "") }
+                override fun logVerbose(tag: String?, message: String?) { Log.v(tag, message ?: "") }
                 
-                // ИСПРАВЛЕНО: Добавлен Verbose согласно логу ошибки
-                override fun logVerbose(tag: String?, message: String?) {
-                    Log.v(tag, message ?: "")
+                // ИСПРАВЛЕНО: Реализация методов логирования исключений
+                override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) {
+                    Log.e(tag, "${message ?: ""}: ${Log.getStackTraceString(e)}")
                 }
-                
-                // Превентивное добавление (на случай если библиотека потребует StackTrace)
-                fun logStackTrace(tag: String?, e: Exception?) {
+
+                override fun logStackTrace(tag: String?, e: Exception?) {
                     Log.e(tag, Log.getStackTraceString(e))
                 }
             }
 
-            // Порядок: [Path, CWD, Args, Env, TranscriptRows, Client]
+            // Конструктор: [Path, CWD, Args, Env, TranscriptRows, Client]
             session = TerminalSession(
                 shellPath,
                 homeDir.absolutePath,
