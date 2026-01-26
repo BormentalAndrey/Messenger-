@@ -1,21 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- Основная тема приложения -->
-    <style name="Theme.Kakdela" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.Kakdela" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:statusBarColor">@android:color/black</item>
         <item name="android:navigationBarColor">@android:color/black</item>
+        
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
+
+        <item name="colorPrimary">@android:color/holo_blue_dark</item>
+        <item name="colorSecondary">@android:color/holo_orange_dark</item>
     </style>
 
-    <!-- Прозрачная тема для FileReceiverActivity (вместо AppCompat) -->
-    <style name="Theme.Kakdela.Translucent"
-        parent="android:Theme.Translucent.NoTitleBar">
-
+    <style name="Theme.Kakdela.Translucent" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowContentOverlay">@null</item>
         <item name="android:backgroundDimEnabled">false</item>
+        
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
     </style>
 
 </resources>
