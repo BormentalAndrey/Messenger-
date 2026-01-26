@@ -138,11 +138,12 @@ val okhttpVersion = "4.12.0"
 val tinkVersion = "1.15.0"
 val coilVersion = "2.6.0"
 val poiVersion = "5.2.5"
+val guavaVersion = "33.0.0-android"
 
 /* ------------------------- Dependencies ------------------------- */
 dependencies {
 
-    // ✅ AndroidX Core, Lifecycle & Material (Исправляет BottomSheetDialog)
+    // ✅ AndroidX Core, Lifecycle & Material
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
@@ -163,16 +164,16 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.navigation:navigation-compose:2.8.0")
     
-    // ✅ ИКОНКИ (Исправляет Unresolved reference: Pause, Schedule, Sms, Public и т.д.)
+    // ✅ ИКОНКИ
     implementation("androidx.compose.material:material-icons-extended")
 
-    // ✅ COIL (Исправляет Unresolved reference: coil, AsyncImage, rememberAsyncImagePainter)
+    // ✅ COIL
     implementation("io.coil-kt:coil-compose:$coilVersion")
 
-    // ✅ APACHE POI (Исправляет Unresolved reference: poi, XWPFDocument)
+    // ✅ APACHE POI
     implementation("org.apache.poi:poi-ooxml:$poiVersion")
 
-    // ✅ LIBPHONENUMBER (Исправляет Unresolved reference: i18n, PhoneNumberUtil)
+    // ✅ LIBPHONENUMBER
     implementation("com.googlecode.libphonenumber:libphonenumber:8.13.39")
 
     // Room Database
@@ -188,16 +189,19 @@ dependencies {
     // WebRTC
     implementation("org.webrtc:google-webrtc:$webrtcVersion")
 
-    // ✅ БЕЗОПАСНОСТЬ (Tink для CryptoManager.kt)
+    // ✅ БЕЗОПАСНОСТЬ (Tink)
     implementation("com.google.crypto.tink:tink-android:$tinkVersion")
 
-    // ✅ СЕТЬ И JSON (OkHttp и Gson для WebViewApiClient.kt и моделей)
+    // ✅ СЕТЬ И JSON
     implementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
     implementation("com.squareup.okhttp3:logging-interceptor:$okhttpVersion")
     implementation("com.google.code.gson:gson:2.11.0")
 
-    // ✅ PDF (PDFBox для MyApplication.kt)
+    // ✅ PDF
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
+    // ✅ GUAVA (Исправляет Missing class com.google.common.io.MoreFiles для Termux Shared)
+    implementation("com.google.guava:guava:$guavaVersion")
 
     // LibGDX
     implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
