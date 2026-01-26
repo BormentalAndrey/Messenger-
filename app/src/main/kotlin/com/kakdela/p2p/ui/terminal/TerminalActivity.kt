@@ -49,45 +49,48 @@ class TerminalActivity : AppCompatActivity() {
                 "/system/bin/sh"
             }
 
-            // Создаем клиент с правильными именами методов согласно логам ошибок
+            // Создаем клиент с учетом nullability параметров (p0: TerminalSession?)
             val client = object : TerminalSessionClient {
-                override fun onTextChanged(session: TerminalSession) {
+                override fun onTextChanged(session: TerminalSession?) {
                     terminalView.onScreenUpdated()
                 }
 
-                override fun onTitleChanged(session: TerminalSession) {
-                    Log.d(TAG, "Title: ${session.title}")
+                override fun onTitleChanged(session: TerminalSession?) {
+                    Log.d(TAG, "Title changed")
                 }
 
-                override fun onSessionFinished(session: TerminalSession) {
+                override fun onSessionFinished(session: TerminalSession?) {
                     if (!isFinishing) finish()
                 }
 
-                // Исправлено согласно логу: onCopyTextToClipboard вместо onClipboardText
-                override fun onCopyTextToClipboard(session: TerminalSession, text: String?) {
-                    // Логика копирования в буфер обмена (по желанию)
-                }
+                override fun onCopyTextToClipboard(session: TerminalSession?, text: String?) {}
 
-                override fun onBell(session: TerminalSession) {}
-                override fun onColorsChanged(session: TerminalSession) {}
+                // Исправлено: добавлены обязательные знаки вопроса (?) для соответствия интерфейсу
+                override fun onPasteTextFromClipboard(session: TerminalSession?) {}
+
+                override fun onBell(session: TerminalSession?) {}
+
+                override fun onColorsChanged(session: TerminalSession?) {}
+
                 override fun onTerminalCursorStateChange(state: Boolean) {}
-                
-                // В новых версиях этот метод может принимать Integer
-                override fun setTerminalShellProcessId(session: TerminalSession, processId: Int) {}
-                
-                // Дополнительные методы, если они требуются интерфейсом
-                override fun onPasteTextFromClipboard(session: TerminalSession) {}
-                override fun onIntegerConfigNotify(session: TerminalSession, p1: Int, p2: Int) {}
+
+                // В некоторых версиях этот метод может отсутствовать или иметь другую сигнатуру
+                // Если ошибка 'overrides nothing' сохранится, удалите @Override или сам метод
+                fun setTerminalShellProcessId(processId: Int) {}
             }
 
-            // Важно: Проверьте порядок аргументов. В некоторых версиях Termux:
-            // TerminalSession(shellPath, cwd, args, env, client)
+            /* ИСПРАВЛЕНИЕ КОНСТРУКТОРА: 
+               Судя по ошибке "No value passed for parameter 'p5'", ваша версия ожидает 
+               минимум 6 параметров. Обычно это:
+               1. shellPath, 2. cwd, 3. args, 4. env, 5. client, 6. ПАРАМЕТР (часто transcriptRows)
+            */
             session = TerminalSession(
                 shellPath,
                 homeDir.absolutePath,
                 arrayOf("-l"),
                 env,
-                client
+                client,
+                10000 // p5: количество строк истории (transcript rows)
             )
 
             terminalView.attachSession(session)
@@ -98,8 +101,13 @@ class TerminalActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        // Используем стандартный метод завершения
-        session?.finishIfRunning()
+        // Безопасное завершение сессии
+        try {
+            session?.finishIfRunning()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error finishing session", e)
+        }
         super.onDestroy()
     }
 }
+
