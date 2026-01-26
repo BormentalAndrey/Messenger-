@@ -80,21 +80,20 @@ class TerminalActivity : AppCompatActivity() {
                     return 0 
                 }
 
-                // ИСПРАВЛЕНО: Добавлены все уровни логирования для полной реализации интерфейса
-                override fun logError(tag: String?, message: String?) {
-                    Log.e("Termux:$tag", message ?: "")
+                // Логирование (Error, Warn, Info, Debug уже были, добавляем Verbose)
+                override fun logError(tag: String?, message: String?) { Log.e(tag, message ?: "") }
+                override fun logWarn(tag: String?, message: String?) { Log.w(tag, message ?: "") }
+                override fun logInfo(tag: String?, message: String?) { Log.i(tag, message ?: "") }
+                override fun logDebug(tag: String?, message: String?) { Log.d(tag, message ?: "") }
+                
+                // ИСПРАВЛЕНО: Добавлен Verbose согласно логу ошибки
+                override fun logVerbose(tag: String?, message: String?) {
+                    Log.v(tag, message ?: "")
                 }
-
-                override fun logWarn(tag: String?, message: String?) {
-                    Log.w("Termux:$tag", message ?: "")
-                }
-
-                override fun logInfo(tag: String?, message: String?) {
-                    Log.i("Termux:$tag", message ?: "")
-                }
-
-                override fun logDebug(tag: String?, message: String?) {
-                    Log.d("Termux:$tag", message ?: "")
+                
+                // Превентивное добавление (на случай если библиотека потребует StackTrace)
+                fun logStackTrace(tag: String?, e: Exception?) {
+                    Log.e(tag, Log.getStackTraceString(e))
                 }
             }
 
