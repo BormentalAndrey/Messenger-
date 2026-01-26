@@ -94,6 +94,12 @@
     <string name="dialog_title_select_url">Выберите URL</string>
     <string name="dialog_title_reset_terminal">Сбросить терминал?</string>
     <string name="dialog_message_reset_terminal">Это убьет текущий процесс и перезапустит сессию.</string>
+
+    <string name="title_select_url_none_found">URL не найдены</string>
+    <string name="title_select_url_dialog">Выберите URL</string>
+    <string name="msg_select_url_copied_to_clipboard">URL скопирован в буфер обмена</string>
+    <string name="msg_generating_report">Генерация отчета...</string>
+    <string name="msg_add_termux_debug_info">Добавить отладочную информацию?</string>
     
     <string name="menu_select_url">Выбрать URL</string>
     <string name="action_select_url">Выбрать URL</string>
