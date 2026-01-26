@@ -42,6 +42,9 @@ object Routes {
     // --- SLOTS ---
     const val SLOTS_1 = "slots_1"
 
+    // --- TERMINAL ---
+    const val TERMINAL = "terminal"
+
     /**
      * Вспомогательная функция для генерации пути к конкретному чату.
      */
