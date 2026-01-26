@@ -71,7 +71,7 @@
     <string name="termux_terminal_view_terminal_margin_adjustment_on">Включено</string>
     <string name="termux_terminal_view_terminal_margin_adjustment_off">Выключено</string>
 
-    <string name="error_termux_service_start_failed_bg">Не удалось запустить сервис из фона.</string>
+    <string name="error_termux_service_start_failed_bg">Не удалось запустить сервис из фона (Background execution restriction).</string>
     <string name="error_termux_service_start_failed_general">Ошибка запуска сервиса Termux.</string>
     <string name="error_termux_service_not_running">Сервис Termux не запущен.</string>
     <string name="msg_enabling_terminal_toolbar">Включение панели клавиш…</string>
@@ -122,6 +122,7 @@
     <string name="action_style_terminal">Стиль</string>
     <string name="action_toggle_keep_screen_on">Не гасить экран</string>
     <string name="action_open_help">Помощь</string>
+    <string name="action_report_issue">Сообщить о проблеме</string>
 
     <string name="menu_select_url">Выбрать URL</string>
     <string name="action_select_url">Выбрать URL</string>
@@ -133,7 +134,7 @@
     <string name="menu_help">Помощь</string>
     <string name="menu_settings">Настройки</string>
     <string name="menu_report">Сообщить о проблеме</string>
-    <string name="action_report_issue">Сообщить о проблеме</string>
+
     <string name="title_share_transcript">Поделиться логом</string>
     <string name="title_share_transcript_with">Отправить лог через...</string>
     <string name="title_share_selected_text">Поделиться выделенным</string>
