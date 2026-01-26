@@ -63,6 +63,7 @@
         android:hardwareAccelerated="true"
         tools:targetApi="34">
 
+        <!-- MAIN -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -75,7 +76,15 @@
             </intent-filter>
         </activity>
 
-        <!-- TERMUX -->
+        <!-- ===== YOUR TERMINAL ACTIVITY ===== -->
+        <activity
+            android:name=".ui.terminal.TerminalActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Kakdela"
+            android:windowSoftInputMode="stateAlwaysVisible|adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- ===== TERMUX CORE ===== -->
         <activity
             android:name="com.termux.app.TermuxActivity"
             android:theme="@style/Theme.Kakdela"
@@ -102,7 +111,6 @@
             android:label="@string/menu_report"
             android:parentActivityName="com.termux.app.TermuxActivity" />
 
-        <!-- FIXED: AppCompat -> Material translucent -->
         <activity
             android:name="com.termux.app.api.file.FileReceiverActivity"
             android:exported="true"
@@ -144,6 +152,7 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!-- OTHER APP ACTIVITIES -->
         <activity
             android:name=".ui.call.CallActivity"
             android:exported="false"
