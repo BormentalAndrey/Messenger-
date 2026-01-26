@@ -49,48 +49,50 @@ class TerminalActivity : AppCompatActivity() {
                 "/system/bin/sh"
             }
 
-            // Создаем клиент с учетом nullability параметров (p0: TerminalSession?)
+            // ИСПРАВЛЕНО: Убраны '?' (nullability), так как лог требует TerminalSession (not null)
             val client = object : TerminalSessionClient {
-                override fun onTextChanged(session: TerminalSession?) {
+                override fun onTextChanged(session: TerminalSession) {
                     terminalView.onScreenUpdated()
                 }
 
-                override fun onTitleChanged(session: TerminalSession?) {
+                override fun onTitleChanged(session: TerminalSession) {
                     Log.d(TAG, "Title changed")
                 }
 
-                override fun onSessionFinished(session: TerminalSession?) {
+                override fun onSessionFinished(session: TerminalSession) {
                     if (!isFinishing) finish()
                 }
 
-                override fun onCopyTextToClipboard(session: TerminalSession?, text: String?) {}
+                override fun onCopyTextToClipboard(session: TerminalSession, text: String) {}
 
-                // Исправлено: добавлены обязательные знаки вопроса (?) для соответствия интерфейсу
-                override fun onPasteTextFromClipboard(session: TerminalSession?) {}
+                override fun onPasteTextFromClipboard(session: TerminalSession) {}
 
-                override fun onBell(session: TerminalSession?) {}
+                override fun onBell(session: TerminalSession) {}
 
-                override fun onColorsChanged(session: TerminalSession?) {}
+                override fun onColorsChanged(session: TerminalSession) {}
 
                 override fun onTerminalCursorStateChange(state: Boolean) {}
 
-                // В некоторых версиях этот метод может отсутствовать или иметь другую сигнатуру
-                // Если ошибка 'overrides nothing' сохранится, удалите @Override или сам метод
-                fun setTerminalShellProcessId(processId: Int) {}
+                override fun setTerminalShellProcessId(session: TerminalSession, processId: Int) {}
             }
 
             /* ИСПРАВЛЕНИЕ КОНСТРУКТОРА: 
-               Судя по ошибке "No value passed for parameter 'p5'", ваша версия ожидает 
-               минимум 6 параметров. Обычно это:
-               1. shellPath, 2. cwd, 3. args, 4. env, 5. client, 6. ПАРАМЕТР (часто transcriptRows)
+               Лог показал, что Int ожидается раньше, чем Client.
+               Типичный порядок в старых версиях:
+               1. shellPath (String)
+               2. cwd (String)
+               3. args (Array<String>)
+               4. env (Array<String>)
+               5. transcriptRows (Int) <--- ВОТ ОН
+               6. client (TerminalSessionClient) <--- И ВОТ ОН
             */
             session = TerminalSession(
                 shellPath,
                 homeDir.absolutePath,
                 arrayOf("-l"),
                 env,
-                client,
-                10000 // p5: количество строк истории (transcript rows)
+                10000, // Сначала число (Int)
+                client // Потом клиент (TerminalSessionClient)
             )
 
             terminalView.attachSession(session)
@@ -101,7 +103,6 @@ class TerminalActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        // Безопасное завершение сессии
         try {
             session?.finishIfRunning()
         } catch (e: Exception) {
@@ -110,4 +111,3 @@ class TerminalActivity : AppCompatActivity() {
         super.onDestroy()
     }
 }
-
