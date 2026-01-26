@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Как дела?</string>
-    <string name="application_name">Как дела?</string> <string name="send">Отправить</string>
+    <string name="application_name">Как дела?</string> 
+    <string name="send">Отправить</string>
     <string name="enter_message">Введите сообщение...</string>
     <string name="chats">Чаты</string>
     <string name="enter_phone">Введите номер телефона</string>
@@ -9,17 +10,36 @@
     <string name="verify">Подтвердить</string>
     <string name="global_chat">Глобальный чат</string>
 
-    <string name="error_termux_service_start_failed_bg">Termux service start failed because app is in background.</string>
-    <string name="error_termux_service_start_failed_general">Termux service start failed.</string>
-    <string name="error_termux_service_not_running">Termux service is not running.</string>
-    
     <string name="title_file_received">Файл получен</string>
     <string name="action_file_received_edit">Редактировать</string>
     <string name="action_file_received_open_directory">Открыть папку</string>
     <string name="error_file_received_title">Ошибка получения файла</string>
     <string name="file_received_title">File received</string>
     
-    <string name="termux_font_default">Default</string>
+    <string name="termux_preferences_title">Настройки Termux</string>
+    <string name="termux_preferences_summary">Управление терминалом</string>
+    <string name="termux_api_preferences_title">Termux:API</string>
+    <string name="termux_api_preferences_summary">Настройки API</string>
+    <string name="termux_float_preferences_title">Termux:Float</string>
+    <string name="termux_float_preferences_summary">Плавающее окно</string>
+    <string name="termux_tasker_preferences_title">Termux:Tasker</string>
+    <string name="termux_tasker_preferences_summary">Интеграция с Tasker</string>
+    <string name="termux_widget_preferences_title">Termux:Widget</string>
+    <string name="termux_widget_preferences_summary">Настройки виджетов</string>
+    <string name="about_preference_title">О программе</string>
+    <string name="donate_preference_title">Поддержать проект</string>
+    
+    <string name="action_new_session">Новая сессия</string>
+    <string name="action_new_session_failsafe">Безопасный режим</string>
+    <string name="action_open_settings">Настройки</string>
+    
+    <string name="termux_logging_header">Логирование</string>
+    <string name="termux_log_level_title">Уровень логов</string>
+
+    <string name="error_termux_service_start_failed_bg">Не удалось запустить сервис из фона.</string>
+    <string name="error_termux_service_start_failed_general">Ошибка запуска сервиса Termux.</string>
+    <string name="error_termux_service_not_running">Сервис Termux не запущен.</string>
+    
     <string name="dialog_title_styling">Стиль терминала</string>
     <string name="dialog_title_select_url">Выберите URL</string>
     <string name="dialog_title_reset_terminal">Сбросить терминал?</string>
@@ -34,8 +54,6 @@
     <string name="menu_help">Помощь</string>
     <string name="menu_settings">Настройки</string>
     <string name="menu_report">Сообщить о проблеме</string>
-    
-    <string name="permission_storage_rationale">Приложению нужен доступ к памяти для работы с файлами в терминале.</string>
 
     <string name="button_yes">Да</string>
     <string name="button_no">Нет</string>
