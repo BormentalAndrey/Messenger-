@@ -51,7 +51,6 @@
     <string name="termux_soft_keyboard_enabled_title">Экранная клавиатура</string>
     <string name="termux_soft_keyboard_enabled_off">Скрыта</string>
     <string name="termux_soft_keyboard_enabled_on">Активна</string>
-    
     <string name="termux_soft_keyboard_enabled_only_if_no_hardware_title">Клавиатура только при отсутствии Hardware</string>
     <string name="termux_soft_keyboard_enabled_only_if_no_hardware_on">Включено</string>
     <string name="termux_soft_keyboard_enabled_only_if_no_hardware_off">Выключено</string>
@@ -59,7 +58,6 @@
     <string name="termux_terminal_view_preferences_title">Экран терминала</string>
     <string name="termux_terminal_view_preferences_summary">Настройки отображения</string>
     <string name="termux_terminal_view_view_header">Вид</string>
-    
     <string name="termux_terminal_view_terminal_margin_adjustment_title">Корректировка отступов</string>
     <string name="termux_terminal_view_terminal_margin_adjustment_on">Включено</string>
     <string name="termux_terminal_view_terminal_margin_adjustment_off">Выключено</string>
@@ -68,6 +66,10 @@
     <string name="error_termux_service_start_failed_general">Ошибка запуска сервиса Termux.</string>
     <string name="error_termux_service_not_running">Сервис Termux не запущен.</string>
     
+    <string name="bootstrap_error_title">Ошибка установки системы</string>
+    <string name="bootstrap_error_body">Не удалось установить базовые компоненты окружения. Пожалуйста, убедитесь в наличии интернета и свободного места.</string>
+    <string name="bootstrap_error_abort">Выход</string>
+
     <string name="dialog_title_styling">Стиль терминала</string>
     <string name="dialog_title_select_url">Выберите URL</string>
     <string name="dialog_title_reset_terminal">Сбросить терминал?</string>
