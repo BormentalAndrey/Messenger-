@@ -36,6 +36,8 @@
     <string name="action_rename_session_confirm">ОК</string>
     <string name="title_max_terminals_reached">Лимит достигнут</string>
     <string name="msg_max_terminals_reached">Вы достигли максимального количества открытых терминалов.</string>
+    <string name="title_create_named_session">Создать именованную сессию</string>
+    <string name="action_create_named_session_confirm">Создать</string>
     
     <string name="termux_logging_header">Логирование</string>
     <string name="termux_log_level_title">Уровень логов</string>
@@ -58,6 +60,9 @@
     <string name="termux_soft_keyboard_enabled_only_if_no_hardware_title">Клавиатура только при отсутствии Hardware</string>
     <string name="termux_soft_keyboard_enabled_only_if_no_hardware_on">Включено</string>
     <string name="termux_soft_keyboard_enabled_only_if_no_hardware_off">Выключено</string>
+    <string name="action_toggle_soft_keyboard">Клавиатура</string>
+    <string name="toggle_keyboard_button">Клавиатура</string>
+    <string name="terminal_toolbar_text_input">Поле ввода</string>
 
     <string name="termux_terminal_view_preferences_title">Экран терминала</string>
     <string name="termux_terminal_view_preferences_summary">Настройки отображения</string>
@@ -69,12 +74,21 @@
     <string name="error_termux_service_start_failed_bg">Не удалось запустить сервис из фона.</string>
     <string name="error_termux_service_start_failed_general">Ошибка запуска сервиса Termux.</string>
     <string name="error_termux_service_not_running">Сервис Termux не запущен.</string>
+    <string name="msg_enabling_terminal_toolbar">Включение панели клавиш…</string>
+    <string name="msg_disabling_terminal_toolbar">Отключение панели клавиш…</string>
+
+    <string name="error_run_command_service_api_help">Помощь по API: %1$s</string>
+    <string name="error_run_command_service_invalid_intent_action">Неверное действие Intent: %1$s</string>
+    <string name="error_run_command_service_invalid_execution_command_runner">Неверный раннер команды: %1$s</string>
+    <string name="error_run_command_service_mandatory_extra_missing">Отсутствует обязательный параметр: %1$s</string>
     
     <string name="bootstrap_installer_body">Установка системных компонентов…</string>
     <string name="bootstrap_error_title">Ошибка установки системы</string>
     <string name="bootstrap_error_body">Не удалось установить базовые компоненты окружения. Пожалуйста, убедитесь в наличии интернета и свободного места.</string>
     <string name="bootstrap_error_try_again">Повторить</string>
     <string name="bootstrap_error_abort">Выход</string>
+    <string name="bootstrap_error_not_primary_user_message">Установка возможна только основным пользователем устройства.</string>
+    <string name="bootstrap_error_installed_on_portable_sd">Приложение не может быть запущено с переносной SD-карты.</string>
 
     <string name="dialog_title_styling">Стиль терминала</string>
     <string name="dialog_title_select_url">Выберите URL</string>
@@ -82,6 +96,7 @@
     <string name="dialog_message_reset_terminal">Это убьет текущий процесс и перезапустит сессию.</string>
     
     <string name="menu_select_url">Выбрать URL</string>
+    <string name="action_select_url">Выбрать URL</string>
     <string name="menu_share_transcript">Поделиться текстом</string>
     <string name="menu_reset_terminal">Сбросить терминал</string>
     <string name="menu_kill_process">Убить процесс</string>
