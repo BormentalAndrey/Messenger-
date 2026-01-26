@@ -72,13 +72,17 @@ class TerminalActivity : AppCompatActivity() {
 
                 override fun onTerminalCursorStateChange(state: Boolean) {}
 
-                // ИСПРАВЛЕНО: Правильное имя метода согласно логу ошибки
                 override fun setTerminalShellPid(session: TerminalSession, pid: Int) {
                     Log.d(TAG, "Shell PID: $pid")
                 }
+
+                // ИСПРАВЛЕНО: Добавлен обязательный метод стиля курсора
+                override fun getTerminalCursorStyle(): Int {
+                    return 0 // 0 обычно означает BLOCK (стандартный курсор)
+                }
             }
 
-            // Конструктор: [Path, CWD, Args, Env, TranscriptRows, Client]
+            // Порядок: [Path, CWD, Args, Env, TranscriptRows, Client]
             session = TerminalSession(
                 shellPath,
                 homeDir.absolutePath,
