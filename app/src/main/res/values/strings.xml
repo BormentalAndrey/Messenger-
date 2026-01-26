@@ -35,6 +35,27 @@
     
     <string name="termux_logging_header">Логирование</string>
     <string name="termux_log_level_title">Уровень логов</string>
+    <string name="termux_terminal_view_key_logging_enabled_title">Логирование клавиш</string>
+    <string name="termux_terminal_view_key_logging_enabled_on">Включено</string>
+    <string name="termux_terminal_view_key_logging_enabled_off">Выключено</string>
+    
+    <string name="termux_plugin_error_notifications_enabled_title">Уведомления плагинов</string>
+    <string name="termux_plugin_error_notifications_enabled_on">Показывать</string>
+    <string name="termux_plugin_error_notifications_enabled_off">Скрывать</string>
+    
+    <string name="termux_crash_report_notifications_enabled_title">Отчеты о сбоях</string>
+    <string name="termux_crash_report_notifications_enabled_on">Включено</string>
+    <string name="termux_crash_report_notifications_enabled_off">Выключено</string>
+
+    <string name="termux_terminal_io_preferences_title">Ввод/Вывод терминала</string>
+    <string name="termux_terminal_io_preferences_summary">Настройки клавиатуры</string>
+    <string name="termux_terminal_view_preferences_title">Экран терминала</string>
+    <string name="termux_terminal_view_preferences_summary">Настройки отображения</string>
+    
+    <string name="termux_keyboard_header">Клавиатура</string>
+    <string name="termux_soft_keyboard_enabled_title">Экранная клавиатура</string>
+    <string name="termux_soft_keyboard_enabled_off">Скрыта</string>
+    <string name="termux_soft_keyboard_enabled_on">Активна</string>
 
     <string name="error_termux_service_start_failed_bg">Не удалось запустить сервис из фона.</string>
     <string name="error_termux_service_start_failed_general">Ошибка запуска сервиса Termux.</string>
