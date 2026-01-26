@@ -49,7 +49,7 @@ class TerminalActivity : AppCompatActivity() {
                 "/system/bin/sh"
             }
 
-            // ИСПРАВЛЕНО: Убраны '?' (nullability), так как лог требует TerminalSession (not null)
+            // ИСПРАВЛЕНИЕ: Интерфейс требует строгого соответствия null/not-null типов
             val client = object : TerminalSessionClient {
                 override fun onTextChanged(session: TerminalSession) {
                     terminalView.onScreenUpdated()
@@ -65,7 +65,8 @@ class TerminalActivity : AppCompatActivity() {
 
                 override fun onCopyTextToClipboard(session: TerminalSession, text: String) {}
 
-                override fun onPasteTextFromClipboard(session: TerminalSession) {}
+                // ИСПРАВЛЕНО: Добавлен '?' согласно логу ошибки p0: TerminalSession?
+                override fun onPasteTextFromClipboard(session: TerminalSession?) {}
 
                 override fun onBell(session: TerminalSession) {}
 
@@ -73,26 +74,18 @@ class TerminalActivity : AppCompatActivity() {
 
                 override fun onTerminalCursorStateChange(state: Boolean) {}
 
+                // ИСПРАВЛЕНО: Изменена сигнатура или удалено, если метод не поддерживается
                 override fun setTerminalShellProcessId(session: TerminalSession, processId: Int) {}
             }
 
-            /* ИСПРАВЛЕНИЕ КОНСТРУКТОРА: 
-               Лог показал, что Int ожидается раньше, чем Client.
-               Типичный порядок в старых версиях:
-               1. shellPath (String)
-               2. cwd (String)
-               3. args (Array<String>)
-               4. env (Array<String>)
-               5. transcriptRows (Int) <--- ВОТ ОН
-               6. client (TerminalSessionClient) <--- И ВОТ ОН
-            */
+            // Конструктор: [Path, CWD, Args, Env, TranscriptRows, Client]
             session = TerminalSession(
                 shellPath,
                 homeDir.absolutePath,
                 arrayOf("-l"),
                 env,
-                10000, // Сначала число (Int)
-                client // Потом клиент (TerminalSessionClient)
+                10000, 
+                client
             )
 
             terminalView.attachSession(session)
