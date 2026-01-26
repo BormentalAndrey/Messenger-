@@ -118,13 +118,16 @@ android {
         }
         jniLibs {
             pickFirsts += "**/*.so"
-            useLegacyPackaging = true
+            // Включаем использование старой упаковки для стабильной работы нативных библиотек в APK
+            useLegacyPackaging = true 
         }
     }
 
     sourceSets {
         getByName("main") {
-            jniLibs.srcDirs(layout.buildDirectory.dir("gdx-natives/lib"))
+            // ИСПРАВЛЕНО: Удален путь к buildDirectory, так как gdx-platform извлекается автоматически.
+            // Если у вас есть свои .so файлы, они должны лежать в src/main/jniLibs
+            jniLibs.srcDirs("src/main/jniLibs") 
         }
     }
 }
@@ -200,15 +203,18 @@ dependencies {
     // ✅ PDF
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
-    // ✅ GUAVA (Исправляет Missing class com.google.common.io.MoreFiles для Termux Shared)
+    // ✅ GUAVA
     implementation("com.google.guava:guava:$guavaVersion")
 
-    // LibGDX
+    // ✅ LibGDX (ИСПРАВЛЕНО: добавлены нативные зависимости через natives конфигурацию)
     implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
-    listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64").forEach {
-        runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$it")
-    }
+    
+    // Эти строки гарантируют, что библиотеки .so попадут в APK
+    runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-armeabi-v7a")
+    runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-arm64-v8a")
+    runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-x86")
+    runtimeOnly("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-x86_64")
 
     /* ✅ ВНЕШНИЕ МОДУЛИ ПРОЕКТА */
     implementation(project(":termux-shared"))
