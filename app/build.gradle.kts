@@ -1,5 +1,6 @@
 import java.util.Properties
 import java.io.FileInputStream
+import org.gradle.api.tasks.Copy
 
 plugins {
     id("com.android.application")
@@ -27,6 +28,33 @@ val coilVersion = "2.6.0"
 val poiVersion = "5.2.5"
 val guavaVersion = "33.2.1-android"
 
+/* ------------------------- GDX Native Copy Task ------------------------- */
+/**
+ * Принудительно извлекаем libGDX .so в src/main/jniLibs
+ * Нужно для:
+ *  - стабильного Release
+ *  - CI
+ *  - legacy JNI загрузки
+ */
+val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
+    val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+
+    into(layout.projectDirectory.dir("src/main/jniLibs"))
+
+    platforms.forEach { platform ->
+        val cfg = configurations.detachedConfiguration(
+            dependencies.create(
+                "com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform"
+            )
+        )
+
+        from(cfg.map { zipTree(it) }) {
+            include("**/*.so")
+            into(platform)
+        }
+    }
+}
+
 /* ------------------------- Android ------------------------- */
 android {
     namespace = "com.kakdela.p2p"
@@ -47,25 +75,36 @@ android {
         }
 
         ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            abiFilters += listOf(
+                "armeabi-v7a",
+                "arm64-v8a",
+                "x86",
+                "x86_64"
+            )
         }
 
         buildConfigField(
             "String",
             "GEMINI_API_KEY",
-            "\"${System.getenv("GEMINI_API_KEY") ?: localProperties.getProperty("GEMINI_API_KEY", "")}\""
+            "\"${System.getenv("GEMINI_API_KEY")
+                ?: localProperties.getProperty("GEMINI_API_KEY", "")}\""
         )
     }
 
+    /* ------------------------- Signing ------------------------- */
     signingConfigs {
         create("release") {
             storeFile = file("my-release-key.jks")
-            storePassword = System.getenv("KEYSTORE_PASSWORD") ?: localProperties.getProperty("RELEASE_STORE_PASSWORD", "")
-            keyAlias = System.getenv("KEY_ALIAS") ?: localProperties.getProperty("RELEASE_KEY_ALIAS", "")
-            keyPassword = System.getenv("KEY_PASSWORD") ?: localProperties.getProperty("RELEASE_KEY_PASSWORD", "")
+            storePassword = System.getenv("KEYSTORE_PASSWORD")
+                ?: localProperties.getProperty("RELEASE_STORE_PASSWORD", "")
+            keyAlias = System.getenv("KEY_ALIAS")
+                ?: localProperties.getProperty("RELEASE_KEY_ALIAS", "")
+            keyPassword = System.getenv("KEY_PASSWORD")
+                ?: localProperties.getProperty("RELEASE_KEY_PASSWORD", "")
             enableV1Signing = true
             enableV2Signing = true
         }
+
         getByName("debug") {
             storeFile = file("testkey_untrusted.jks")
             keyAlias = "alias"
@@ -74,19 +113,25 @@ android {
         }
     }
 
+    /* ------------------------- Build Types ------------------------- */
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = false
             signingConfig = signingConfigs.getByName("release")
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
+
         debug {
             signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
         }
     }
 
+    /* ------------------------- Java / Kotlin ------------------------- */
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -97,6 +142,7 @@ android {
         jvmTarget = "17"
     }
 
+    /* ------------------------- Compose ------------------------- */
     buildFeatures {
         compose = true
         buildConfig = true
@@ -106,6 +152,7 @@ android {
         kotlinCompilerExtensionVersion = "1.5.11"
     }
 
+    /* ------------------------- Packaging (JNI Critical) ------------------------- */
     packaging {
         resources {
             excludes += setOf(
@@ -115,95 +162,116 @@ android {
                 "META-INF/NOTICE*",
                 "META-INF/LICENSE*",
                 "META-INF/kotlinx-coroutines-core.kotlin_module",
-                "META-INF/tink/**"
+                "META-INF/tink/**",
+                "META-INF/library_release.kotlin_module"
             )
         }
+
         jniLibs {
             pickFirsts += "**/*.so"
-            useLegacyPackaging = true 
+            useLegacyPackaging = true
         }
     }
 
     sourceSets {
         getByName("main") {
-            // Подключаем результат выполнения вашей задачи copyAndroidNatives
-            jniLibs.srcDirs(layout.buildDirectory.dir("gdx-natives/lib"))
+            jniLibs.srcDirs("src/main/jniLibs")
         }
+    }
+}
+
+/* ------------------------- Hook native copy into build ------------------------- */
+tasks.whenTaskAdded {
+    if (name.contains("merge", ignoreCase = true) &&
+        name.contains("JniLibFolders", ignoreCase = true)
+    ) {
+        dependsOn(copyAndroidNatives)
     }
 }
 
 /* ------------------------- Dependencies ------------------------- */
 dependencies {
-    // Termux локальные модули
+
+    // --- TERMUX ---
     implementation(project(":termux-shared"))
     implementation(project(":terminal-view"))
     implementation(project(":terminal-emulator"))
 
-    // AndroidX & UI
+    // --- Android Core ---
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.2")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
-    implementation("com.google.android.material:material:1.12.0")
     implementation("com.google.guava:guava:$guavaVersion")
 
-    // Koin
+    // --- Koin ---
     implementation("io.insert-koin:koin-android:3.5.0")
     implementation("io.insert-koin:koin-androidx-workmanager:3.5.0")
 
-    // Compose
+    // --- UI ---
+    implementation("com.google.android.material:material:1.12.0")
+    implementation("androidx.recyclerview:recyclerview:1.3.2")
+    implementation("androidx.constraintlayout:constraintlayout:2.2.0")
+
+    // --- Compose ---
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.navigation:navigation-compose:2.8.0")
     implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.navigation:navigation-compose:2.8.0")
 
-    // Room & Security
+    // --- Images ---
+    implementation("io.coil-kt:coil-compose:$coilVersion")
+
+    // --- Docs ---
+    implementation("org.apache.poi:poi-ooxml:$poiVersion")
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
+    // --- Utils ---
+    implementation("com.googlecode.libphonenumber:libphonenumber:8.13.39")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    // --- Room ---
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
     ksp("androidx.room:room-compiler:$roomVersion")
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
-    implementation("com.google.crypto.tink:tink-android:$tinkVersion")
+    implementation("androidx.sqlite:sqlite-ktx:2.4.0")
 
-    // Media & Docs
+    // --- Media ---
     implementation("androidx.media3:media3-exoplayer:$media3Version")
     implementation("androidx.media3:media3-ui:$media3Version")
-    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
-    implementation("org.apache.poi:poi-ooxml:$poiVersion")
+    implementation("androidx.media3:media3-session:$media3Version")
 
-    // Network & WebRTC
-    implementation("com.squareup.retrofit2:retrofit:2.9.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:$okhttpVersion")
+    // --- WebRTC ---
     implementation("org.webrtc:google-webrtc:$webrtcVersion")
     implementation("io.getstream:stream-webrtc-android:1.2.0")
+    implementation("io.getstream:stream-webrtc-android-compose:1.1.2")
 
-    // libGDX Core
+    // --- Security ---
+    implementation("com.google.crypto.tink:tink-android:$tinkVersion")
+
+    // --- Network ---
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    implementation("com.squareup.okhttp3:okhttp:$okhttpVersion")
+    implementation("com.squareup.okhttp3:logging-interceptor:$okhttpVersion")
+
+    // --- libGDX ---
     implementation("com.badlogicgames.gdx:gdx:$gdxVersion")
     implementation("com.badlogicgames.gdx:gdx-backend-android:$gdxVersion")
 
-    // Desugaring
+    // --- Tests ---
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.10")
+
+    // --- Desugaring ---
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")
 }
-
-/* ------------------------- GDX natives copy (ВАШ МЕТОД) ------------------------- */
-val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
-    val platforms = listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-    platforms.forEach { platform ->
-        val cfg = configurations.detachedConfiguration(
-            dependencies.create("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-$platform")
-        )
-        from(cfg.map { zipTree(it) }) {
-            include("*.so")
-            into("lib/$platform")
-        }
-    }
-    into(layout.buildDirectory.dir("gdx-natives"))
-}
-
-// Связываем выполнение задачи с компиляцией
-tasks.withType<JavaCompile>().configureEach { dependsOn(copyAndroidNatives) }
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach { dependsOn(copyAndroidNatives) }
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }.configureEach { dependsOn(copyAndroidNatives) }
