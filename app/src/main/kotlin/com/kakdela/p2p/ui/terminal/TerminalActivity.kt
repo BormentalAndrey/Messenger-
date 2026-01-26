@@ -76,13 +76,16 @@ class TerminalActivity : AppCompatActivity() {
                     Log.d(TAG, "Shell PID: $pid")
                 }
 
-                // ИСПРАВЛЕНО: Добавлен обязательный метод стиля курсора
                 override fun getTerminalCursorStyle(): Int {
-                    return 0 // 0 обычно означает BLOCK (стандартный курсор)
+                    return 0 
+                }
+
+                // ИСПРАВЛЕНО: Добавлен обязательный метод логирования ошибок
+                override fun logError(tag: String?, message: String?) {
+                    Log.e("TerminalInternal:$tag", message ?: "Unknown error")
                 }
             }
 
-            // Порядок: [Path, CWD, Args, Env, TranscriptRows, Client]
             session = TerminalSession(
                 shellPath,
                 homeDir.absolutePath,
