@@ -76,12 +76,18 @@
     <string name="error_termux_service_not_running">Сервис Termux не запущен.</string>
     <string name="msg_enabling_terminal_toolbar">Включение панели клавиш…</string>
     <string name="msg_disabling_terminal_toolbar">Отключение панели клавиш…</string>
+    <string name="msg_terminal_reset">Терминал сброшен</string>
 
     <string name="error_run_command_service_api_help">Помощь по API: %1$s</string>
     <string name="error_run_command_service_invalid_intent_action">Неверное действие Intent: %1$s</string>
     <string name="error_run_command_service_invalid_execution_command_runner">Неверный раннер команды: %1$s</string>
     <string name="error_run_command_service_mandatory_extra_missing">Отсутствует обязательный параметр: %1$s</string>
-    
+    <string name="error_termux_service_invalid_execution_command_runner">Неверный запуск команды: %1$s</string>
+    <string name="error_termux_service_unsupported_execution_command_runner">Неподдерживаемый тип запуска: %1$s</string>
+    <string name="error_termux_service_execution_command_shell_name_unset">Имя шелла не установлено для режима: %1$s</string>
+    <string name="error_termux_service_unsupported_execution_command_shell_create_mode">Неподдерживаемый режим создания шелла: %1$s</string>
+    <string name="error_display_over_other_apps_permission_not_granted_to_start_terminal">Разрешение на отображение поверх других окон не предоставлено.</string>
+
     <string name="bootstrap_installer_body">Установка системных компонентов…</string>
     <string name="bootstrap_error_title">Ошибка установки системы</string>
     <string name="bootstrap_error_body">Не удалось установить базовые компоненты окружения. Пожалуйста, убедитесь в наличии интернета и свободного места.</string>
@@ -94,13 +100,19 @@
     <string name="dialog_title_select_url">Выберите URL</string>
     <string name="dialog_title_reset_terminal">Сбросить терминал?</string>
     <string name="dialog_message_reset_terminal">Это убьет текущий процесс и перезапустит сессию.</string>
-
+    <string name="title_confirm_kill_process">Убить процесс?</string>
     <string name="title_select_url_none_found">URL не найдены</string>
     <string name="title_select_url_dialog">Выберите URL</string>
     <string name="msg_select_url_copied_to_clipboard">URL скопирован в буфер обмена</string>
     <string name="msg_generating_report">Генерация отчета...</string>
     <string name="msg_add_termux_debug_info">Добавить отладочную информацию?</string>
-    
+    <string name="error_styling_not_installed">Приложение Termux:Styling не найдено.</string>
+    <string name="action_styling_install">Установить</string>
+
+    <string name="notification_action_exit">Выйти</string>
+    <string name="notification_action_wake_lock">Удерживать Wake Lock</string>
+    <string name="notification_action_wake_unlock">Отпустить Wake Lock</string>
+
     <string name="menu_select_url">Выбрать URL</string>
     <string name="action_select_url">Выбрать URL</string>
     <string name="menu_share_transcript">Поделиться текстом</string>
@@ -111,6 +123,11 @@
     <string name="menu_help">Помощь</string>
     <string name="menu_settings">Настройки</string>
     <string name="menu_report">Сообщить о проблеме</string>
+    <string name="action_report_issue">Сообщить о проблеме</string>
+    <string name="title_share_transcript">Поделиться логом</string>
+    <string name="title_share_transcript_with">Поделиться логом через...</string>
+    <string name="title_share_selected_text">Поделиться выделенным</string>
+    <string name="title_share_selected_text_with">Поделиться выделенным через...</string>
 
     <string name="button_yes">Да</string>
     <string name="button_no">Нет</string>
