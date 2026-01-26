@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Цвет фона для адаптивной иконки лаунчера -->
-    <color name="ic_launcher_background">#000000</color>
-
-    <!-- Опционально: другие цвета для темы, если захотите использовать в Compose -->
     <color name="neon_cyan">#00FFF0</color>
     <color name="neon_pink">#FF00C8</color>
     <color name="neon_purple">#D700FF</color>
+    <color name="background_black">#000000</color>
+    <color name="surface_gray">#121212</color>
+    <color name="text_gray_light">#E0E0E0</color>
+
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="dark_gray">#A9A9A9</color>
 </resources>
