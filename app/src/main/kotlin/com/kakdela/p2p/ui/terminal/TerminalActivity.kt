@@ -5,99 +5,118 @@ import android.util.Log
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import com.termux.terminal.TerminalSession
-import com.termux.view.TerminalView // ИСПРАВЛЕНО: Правильный пакет для View
+import com.termux.terminal.TerminalSessionClient
+import com.termux.view.TerminalView
 import java.io.File
 
 class TerminalActivity : AppCompatActivity() {
 
     private lateinit var terminalView: TerminalView
     private var session: TerminalSession? = null
+
     private val TAG = "TerminalActivity"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // -------------------- TerminalView --------------------
-        // Используем конструктор с Context и AttributeSet (null)
         terminalView = TerminalView(this, null).apply {
-            setTextSize(16) // Увеличили для лучшей читаемости в продакшне
+            setTextSize(16)
             keepScreenOn = true
         }
-        
-        // ИСПРАВЛЕНО: Устраняем "Overload resolution ambiguity" явным приведением к View
+
         setContentView(terminalView as View)
 
-        // -------------------- Termux Shell --------------------
         setupTerminalSession()
     }
 
     private fun setupTerminalSession() {
         try {
-            // Определяем рабочие директории
-            val termuxPrefix = File(filesDir, "usr")
+            // -------------------- Directories --------------------
+            val prefixDir = File(filesDir, "usr")
             val homeDir = File(filesDir, "home")
 
-            if (!termuxPrefix.exists()) termuxPrefix.mkdirs()
+            if (!prefixDir.exists()) prefixDir.mkdirs()
             if (!homeDir.exists()) homeDir.mkdirs()
 
-            // Настройка окружения (Environment)
-            // В продакшне важно прописать PATH, чтобы работали базовые команды
-            val env = mutableListOf(
-                "PATH=${termuxPrefix.absolutePath}/bin:/system/bin:/system/xbin",
+            // -------------------- Environment --------------------
+            val env = arrayOf(
+                "PATH=${prefixDir.absolutePath}/bin:/system/bin:/system/xbin",
                 "HOME=${homeDir.absolutePath}",
+                "PREFIX=${prefixDir.absolutePath}",
                 "TERM=xterm-256color",
-                "PREFIX=${termuxPrefix.absolutePath}"
+                "LANG=en_US.UTF-8"
             )
 
-            // Определяем исполняемый файл
-            val shellPath = if (File(termuxPrefix, "bin/bash").exists()) {
-                "${termuxPrefix.absolutePath}/bin/bash"
-            } else if (File(termuxPrefix, "bin/sh").exists()) {
-                "${termuxPrefix.absolutePath}/bin/sh"
-            } else {
-                "/system/bin/sh"
+            // -------------------- Shell --------------------
+            val shellPath = when {
+                File(prefixDir, "bin/bash").exists() ->
+                    "${prefixDir.absolutePath}/bin/bash"
+                File(prefixDir, "bin/sh").exists() ->
+                    "${prefixDir.absolutePath}/bin/sh"
+                else ->
+                    "/system/bin/sh"
             }
 
-            // ИСПРАВЛЕНО: Прямое создание TerminalSession (надежнее для встраивания)
-            // Параметры: shellPath, cwd, args, env, clientCallback
+            // -------------------- TerminalSession --------------------
             session = TerminalSession(
-                shellPath,
-                homeDir.absolutePath,
-                arrayOf("-l"), // login shell
-                env.toTypedArray(),
-                object : com.termux.terminal.TerminalSessionClient {
+                shellPath,                    // executable
+                homeDir.absolutePath,         // cwd
+                arrayOf("-l"),                // args
+                env,                          // environment
+                object : TerminalSessionClient {
+
                     override fun onTextChanged(session: TerminalSession) {
                         terminalView.onScreenUpdated()
                     }
-                    override fun onCommandFinished(session: TerminalSession) {
-                        Log.i(TAG, "Shell session finished")
-                        if (!isFinishing) finish()
+
+                    override fun onTitleChanged(session: TerminalSession) {
+                        runOnUiThread {
+                            title = session.title
+                        }
                     }
-                    override fun onSessionTitleChanged(session: TerminalSession) {}
-                    override fun onClipboardText(session: TerminalSession, text: String) {}
-                    override fun onBell(session: TerminalSession) {}
-                    override fun onColorsChanged(session: TerminalSession) {}
-                    override fun onTerminalCursorStateChange(state: Boolean) {}
-                    override fun setTerminalShellProcessId(processId: Int) {}
-                }
+
+                    override fun onSessionFinished(session: TerminalSession) {
+                        Log.i(TAG, "Terminal session finished")
+                        runOnUiThread {
+                            if (!isFinishing) finish()
+                        }
+                    }
+
+                    override fun onClipboardText(
+                        session: TerminalSession,
+                        text: String
+                    ) {
+                        // clipboard ignored intentionally
+                    }
+
+                    override fun onBell(session: TerminalSession) {
+                        // bell ignored
+                    }
+
+                    override fun onColorsChanged(session: TerminalSession) {
+                        terminalView.onScreenUpdated()
+                    }
+
+                    override fun onTerminalCursorStateChange(state: Boolean) {
+                        // no-op
+                    }
+                },
+                false // exitOnProcessExit (ВАЖНО: обязательный параметр!)
             )
 
-            // Присоединяем сессию к View
             terminalView.attachSession(session)
 
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start Terminal session", e)
+            Log.e(TAG, "Failed to start terminal session", e)
         }
     }
 
     override fun onResume() {
         super.onResume()
-        // Обеспечиваем фокус для клавиатуры
         terminalView.requestFocus()
     }
 
     override fun onDestroy() {
-        // ИСПРАВЛЕНО: Явный вызов finish() для процесса shell
         session?.finishIfRunning()
         super.onDestroy()
     }
