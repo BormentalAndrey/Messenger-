@@ -32,6 +32,10 @@
     <string name="action_new_session">Новая сессия</string>
     <string name="action_new_session_failsafe">Безопасный режим</string>
     <string name="action_open_settings">Настройки</string>
+    <string name="title_rename_session">Переименовать сессию</string>
+    <string name="action_rename_session_confirm">ОК</string>
+    <string name="title_max_terminals_reached">Лимит достигнут</string>
+    <string name="msg_max_terminals_reached">Вы достигли максимального количества открытых терминалов.</string>
     
     <string name="termux_logging_header">Логирование</string>
     <string name="termux_log_level_title">Уровень логов</string>
