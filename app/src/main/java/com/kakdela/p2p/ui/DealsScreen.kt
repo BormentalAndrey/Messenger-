@@ -27,10 +27,11 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.kakdela.p2p.ui.browser.BrowserActivity
 import com.kakdela.p2p.ui.navigation.Routes
+import com.kakdela.p2p.ui.terminal.TerminalActivity
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
-// Добавлен тип ACTIVITY для внешних экранов
+// Типы пунктов
 enum class DealType { WEB, CALCULATOR, TOOL, ACTIVITY }
 
 data class DealItem(
@@ -47,6 +48,7 @@ data class DealItem(
             DealType.ACTIVITY -> {
                 when (id) {
                     "browser" -> Icons.Filled.Public
+                    "terminal" -> Icons.Filled.Edit
                     else -> Icons.Filled.ShoppingBag
                 }
             }
@@ -55,18 +57,63 @@ data class DealItem(
 }
 
 private val dealItems = listOf(
-    // Новые пункты меню для Активностей
-    DealItem("browser", "P2P Браузер", "Анонимный сёрфинг", DealType.ACTIVITY),
-    
-    // Существующие инструменты
-    DealItem("calculator", "Калькулятор", "Быстрые расчёты", DealType.CALCULATOR),
-    DealItem("text_editor", "Текстовый редактор", "TXT, DOCX, PDF (чтение)", DealType.TOOL),
-    
-    // Веб-сервисы
-    DealItem("gosuslugi", "Госуслуги", "Госуслуги РФ", DealType.WEB, "https://www.gosuslugi.ru"),
-    DealItem("ozon", "Ozon", "Маркетплейс", DealType.WEB, "https://www.ozon.ru"),
-    DealItem("wb", "Wildberries", "Маркетплейс", DealType.WEB, "https://www.wildberries.ru"),
-    DealItem("drom", "Drom.ru", "Автомобили", DealType.WEB, "https://www.drom.ru")
+    // ===== Activity =====
+    DealItem(
+        id = "browser",
+        title = "P2P Браузер",
+        description = "Анонимный сёрфинг",
+        type = DealType.ACTIVITY
+    ),
+    DealItem(
+        id = "terminal",
+        title = "Терминал",
+        description = "Полноценный Termux",
+        type = DealType.ACTIVITY
+    ),
+
+    // ===== Инструменты =====
+    DealItem(
+        id = "calculator",
+        title = "Калькулятор",
+        description = "Быстрые расчёты",
+        type = DealType.CALCULATOR
+    ),
+    DealItem(
+        id = "text_editor",
+        title = "Текстовый редактор",
+        description = "TXT, DOCX, PDF (чтение)",
+        type = DealType.TOOL
+    ),
+
+    // ===== WEB =====
+    DealItem(
+        id = "gosuslugi",
+        title = "Госуслуги",
+        description = "Госуслуги РФ",
+        type = DealType.WEB,
+        url = "https://www.gosuslugi.ru"
+    ),
+    DealItem(
+        id = "ozon",
+        title = "Ozon",
+        description = "Маркетплейс",
+        type = DealType.WEB,
+        url = "https://www.ozon.ru"
+    ),
+    DealItem(
+        id = "wb",
+        title = "Wildberries",
+        description = "Маркетплейс",
+        type = DealType.WEB,
+        url = "https://www.wildberries.ru"
+    ),
+    DealItem(
+        id = "drom",
+        title = "Drom.ru",
+        description = "Автомобили",
+        type = DealType.WEB,
+        url = "https://www.drom.ru"
+    )
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,15 +122,17 @@ fun DealsScreen(navController: NavHostController) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { 
+                title = {
                     Text(
-                        "Дела", 
-                        fontWeight = FontWeight.Black, 
-                        color = Color.Magenta, 
+                        text = "Дела",
+                        fontWeight = FontWeight.Black,
+                        color = Color.Magenta,
                         letterSpacing = 2.sp
-                    ) 
+                    )
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Color.Black)
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = Color.Black
+                )
             )
         }
     ) { padding ->
@@ -105,7 +154,7 @@ fun DealsScreen(navController: NavHostController) {
 @Composable
 fun DealNeonItem(item: DealItem, navController: NavHostController) {
     val neonColor = Color.Magenta
-    val context = LocalContext.current // Получаем контекст для запуска Activity
+    val context = LocalContext.current
 
     Card(
         modifier = Modifier
@@ -117,21 +166,26 @@ fun DealNeonItem(item: DealItem, navController: NavHostController) {
         colors = CardDefaults.cardColors(containerColor = Color(0xFF120012)),
         onClick = {
             when (item.type) {
-                // Логика запуска Activity
                 DealType.ACTIVITY -> {
                     val intent = when (item.id) {
                         "browser" -> Intent(context, BrowserActivity::class.java)
+                        "terminal" -> Intent(context, TerminalActivity::class.java)
                         else -> null
                     }
                     intent?.let { context.startActivity(it) }
                 }
-                
-                // Логика навигации Compose
-                DealType.CALCULATOR -> navController.navigate(Routes.CALCULATOR)
-                DealType.TOOL -> if (item.id == "text_editor") navController.navigate(Routes.TEXT_EDITOR)
+
+                DealType.CALCULATOR ->
+                    navController.navigate(Routes.CALCULATOR)
+
+                DealType.TOOL ->
+                    if (item.id == "text_editor") {
+                        navController.navigate(Routes.TEXT_EDITOR)
+                    }
+
                 DealType.WEB -> item.url?.let {
                     val encoded = URLEncoder.encode(it, StandardCharsets.UTF_8.toString())
-                    navController.navigate("webview/${encoded}/${item.title}")
+                    navController.navigate("webview/$encoded/${item.title}")
                 }
             }
         }
@@ -142,16 +196,25 @@ fun DealNeonItem(item: DealItem, navController: NavHostController) {
                 .padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(item.iconVector, null, tint = neonColor, modifier = Modifier.size(28.dp))
+            Icon(
+                imageVector = item.iconVector,
+                contentDescription = null,
+                tint = neonColor,
+                modifier = Modifier.size(28.dp)
+            )
             Spacer(Modifier.width(20.dp))
             Column(Modifier.weight(1f)) {
                 Text(item.title, color = Color.White, fontWeight = FontWeight.Bold)
-                Text(item.description, color = Color.White.copy(0.6f), fontSize = 12.sp)
+                Text(
+                    item.description,
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 12.sp
+                )
             }
             Icon(
-                Icons.Filled.ArrowForwardIos, 
-                null, 
-                tint = neonColor.copy(0.5f), 
+                imageVector = Icons.Filled.ArrowForwardIos,
+                contentDescription = null,
+                tint = neonColor.copy(alpha = 0.5f),
                 modifier = Modifier.size(16.dp)
             )
         }
