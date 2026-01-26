@@ -1,13 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <color name="neon_cyan">#00FFF0</color>
-    <color name="neon_pink">#FF00C8</color>
-    <color name="neon_purple">#D700FF</color>
-    <color name="background_black">#000000</color>
-    <color name="surface_gray">#121212</color>
-    <color name="text_gray_light">#E0E0E0</color>
-
     <style name="Theme.Kakdela" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:statusBarColor">@color/background_black</item>
         <item name="android:navigationBarColor">@color/background_black</item>
@@ -32,7 +25,7 @@
         <item name="colorOnSurface">@color/text_gray_light</item>
         <item name="colorOnBackground">@android:color/white</item>
         
-        <item name="colorOutline">@android:color/darker_gray</item>
+        <item name="colorOutline">#757575</item>
     </style>
 
     <style name="Theme.Kakdela.Translucent" parent="Theme.Material3.DayNight.NoActionBar">
@@ -52,4 +45,3 @@
     </style>
 
 </resources>
-            
