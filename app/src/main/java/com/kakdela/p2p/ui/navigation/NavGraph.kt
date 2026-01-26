@@ -51,7 +51,7 @@ fun NavGraph(
 ) {
     val context = LocalContext.current
     val isOnline by rememberIsOnline()
-    
+
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
 
@@ -131,13 +131,11 @@ fun NavGraph(
                     onContactClick = { contact ->
                         contact.userHash?.let { hash ->
                             navController.navigate(Routes.buildChatRoute(hash))
-                        } ?: run {
-                            Toast.makeText(
-                                context,
-                                "Пользователь ещё не в P2P-сети. Пригласите его.",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
+                        } ?: Toast.makeText(
+                            context,
+                            "Пользователь ещё не в P2P-сети. Пригласите его.",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 )
             }
@@ -150,7 +148,7 @@ fun NavGraph(
                     navArgument("chatId") { type = NavType.StringType }
                 )
             ) { entry ->
-                val chatId = entry.arguments?.getString("chatId") ?: ""
+                val chatId = entry.arguments?.getString("chatId") ?: return@composable
                 val app = context.applicationContext as Application
 
                 val vm: ChatViewModel = viewModel(
@@ -171,13 +169,15 @@ fun NavGraph(
                     chatPartnerId = chatId,
                     messages = messages,
                     identityRepository = identityRepository,
-                    onSendMessage = { text -> vm.sendMessage(text) },
-                    onSendFile = { uri, fileName -> vm.sendFile(uri, fileName) },
+                    onSendMessage = vm::sendMessage,
+                    onSendFile = vm::sendFile,
                     onSendAudio = { uri, duration ->
-                        val audioFileName = "audio_msg_${System.currentTimeMillis()}_${duration}s.mp3"
-                        vm.sendFile(uri, audioFileName)
+                        vm.sendFile(
+                            uri,
+                            "audio_msg_${System.currentTimeMillis()}_${duration}s.mp3"
+                        )
                     },
-                    onScheduleMessage = { text, time -> vm.scheduleMessage(text, time) },
+                    onScheduleMessage = vm::scheduleMessage,
                     onBack = { navController.popBackStack() }
                 )
             }
@@ -187,10 +187,7 @@ fun NavGraph(
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
             composable(Routes.SETTINGS) {
-                SettingsScreen(
-                    navController = navController,
-                    identityRepository = identityRepository
-                )
+                SettingsScreen(navController, identityRepository)
             }
 
             composable(Routes.MUSIC) { MusicPlayerScreen() }
@@ -208,15 +205,9 @@ fun NavGraph(
                 val title = entry.arguments?.getString("title") ?: ""
 
                 if (isOnline) {
-                    WebViewScreen(
-                        url = url,
-                        title = title,
-                        navController = navController
-                    )
+                    WebViewScreen(url, title, navController)
                 } else {
-                    NoInternetScreen {
-                        navController.popBackStack()
-                    }
+                    NoInternetScreen { navController.popBackStack() }
                 }
             }
 
@@ -224,9 +215,8 @@ fun NavGraph(
 
             composable(Routes.CALCULATOR) { CalculatorScreen() }
             composable(Routes.TEXT_EDITOR) { TextEditorScreen(navController) }
-            
             composable(Routes.SLOTS_1) { Slots1Screen(navController) }
-            
+
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
             composable(Routes.CHESS) { ChessScreen() }
             composable(Routes.PACMAN) { PacmanScreen() }
@@ -237,9 +227,7 @@ fun NavGraph(
                 if (isOnline) {
                     AiChatScreen()
                 } else {
-                    NoInternetScreen {
-                        navController.popBackStack()
-                    }
+                    NoInternetScreen { navController.popBackStack() }
                 }
             }
         }
@@ -272,9 +260,7 @@ private fun AppBottomBar(
                 onClick = {
                     if (!selected) {
                         navController.navigate(route) {
-                            popUpTo(navController.graph.startDestinationId) {
-                                saveState = true
-                            }
+                            popUpTo(navController.graph.startDestinationId) { saveState = true }
                             launchSingleTop = true
                             restoreState = true
                         }
@@ -306,25 +292,38 @@ fun rememberIsOnline(): State<Boolean> {
 
     DisposableEffect(context) {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
         val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) { state.value = true }
-            override fun onLost(network: Network) { state.value = false }
+            override fun onAvailable(network: Network) {
+                state.value = true
+            }
+
+            override fun onLost(network: Network) {
+                state.value = false
+            }
         }
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
+
         try {
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .build()
+
             cm.registerNetworkCallback(request, callback)
-            val activeNetwork = cm.activeNetwork
-            val caps = cm.getNetworkCapabilities(activeNetwork)
+
+            val caps = cm.getNetworkCapabilities(cm.activeNetwork)
             state.value = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
         } catch (_: Exception) {
-            state.value = true 
+            state.value = true
         }
+
         onDispose {
-            try { cm.unregisterNetworkCallback(callback) } catch (_: Exception) {}
+            try {
+                cm.unregisterNetworkCallback(callback)
+            } catch (_: Exception) {
+            }
         }
     }
+
     return state
 }
 
@@ -352,13 +351,16 @@ fun NoInternetScreen(onBack: () -> Unit) {
                 "Нет соединения",
                 color = Color.White,
                 fontSize = 22.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
             )
             Spacer(Modifier.height(32.dp))
             OutlinedButton(
                 onClick = onBack,
                 border = BorderStroke(1.dp, Color(0xFF00FFFF)),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF00FFFF))
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Color(0xFF00FFFF)
+                )
             ) {
                 Text("ВЕРНУТЬСЯ", fontWeight = FontWeight.Bold)
             }
