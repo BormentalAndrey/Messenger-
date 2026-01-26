@@ -25,7 +25,6 @@ class WebRtcManager(
     private var localAudioTrack: AudioTrack? = null
 
     init {
-        // Инициализация PeerConnectionFactory
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(context)
                 .setEnableInternalTracer(false)
@@ -33,6 +32,7 @@ class WebRtcManager(
         )
 
         val options = PeerConnectionFactory.Options()
+
         factory = PeerConnectionFactory.builder()
             .setOptions(options)
             .setVideoEncoderFactory(
@@ -47,7 +47,6 @@ class WebRtcManager(
             )
             .createPeerConnectionFactory()
 
-        // Подписка на входящие сигнализации
         identityRepository.addListener(::onSignalingPacket)
     }
 
@@ -103,72 +102,71 @@ class WebRtcManager(
         }, MediaConstraints())
     }
 
-    /** Создание PeerConnection и добавление локальных потоков */
+    /** Создание PeerConnection */
     private fun createPeerConnection(targetHash: String) {
         if (peerConnection != null) return
 
         val config = PeerConnection.RTCConfiguration(
             listOf(
-                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
+                PeerConnection.IceServer
+                    .builder("stun:stun.l.google.com:19302")
+                    .createIceServer()
             )
         )
-        
-        // Важно для корректной работы в современных сетях
+
         config.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
-        config.continuationTimeoutMs = 30000
+        // ❌ continuationTimeoutMs УДАЛЕНО — его не существует в WebRTC
 
         peerConnection = factory.createPeerConnection(
             config,
             object : PeerConnection.Observer {
+
                 override fun onIceCandidate(candidate: IceCandidate) {
-                    sendSignal(targetHash, "ICE", JSONObject().apply {
-                        put("sdpMid", candidate.sdpMid)
-                        put("sdpMLineIndex", candidate.sdpMLineIndex)
-                        put("candidate", candidate.sdp)
-                    }.toString())
+                    sendSignal(
+                        targetHash,
+                        "ICE",
+                        JSONObject().apply {
+                            put("sdpMid", candidate.sdpMid)
+                            put("sdpMLineIndex", candidate.sdpMLineIndex)
+                            put("candidate", candidate.sdp)
+                        }.toString()
+                    )
                 }
 
-                // Исправление ошибки: Реализация обязательного метода onAddTrack
-                override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {
+                override fun onAddTrack(
+                    receiver: RtpReceiver?,
+                    streams: Array<out MediaStream>?
+                ) {
                     streams?.firstOrNull()?.let {
-                        Log.d(TAG, "onAddTrack: Remote stream found")
+                        Log.d(TAG, "Remote stream received")
                         onRemoteStreamReady(it)
                     }
                 }
 
                 override fun onAddStream(stream: MediaStream) {
-                    Log.d(TAG, "onAddStream: Legacy stream added")
                     onRemoteStreamReady(stream)
                 }
 
-                override fun onSignalingChange(state: PeerConnection.SignalingState?) {
-                    Log.d(TAG, "SignalingState: $state")
-                }
+                override fun onTrack(transceiver: RtpTransceiver?) {}
 
-                override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
-                    Log.d(TAG, "IceConnectionState: $state")
-                }
-
+                override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
+                override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {}
                 override fun onIceConnectionReceivingChange(receiving: Boolean) {}
                 override fun onIceGatheringChange(state: PeerConnection.IceGatheringState?) {}
                 override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>?) {}
                 override fun onRemoveStream(stream: MediaStream?) {}
                 override fun onRenegotiationNeeded() {}
                 override fun onDataChannel(channel: DataChannel?) {}
-                override fun onTrack(transceiver: RtpTransceiver?) {
-                    Log.d(TAG, "onTrack: New transceiver received")
-                }
             }
         )
 
-        // Добавление локальных потоков
         val localStream = factory.createLocalMediaStream("LOCAL")
         localVideoTrack?.let { localStream.addTrack(it) }
         localAudioTrack?.let { localStream.addTrack(it) }
+
         peerConnection?.addStream(localStream)
     }
 
-    /** Отправка сигнализации через IdentityRepository */
     private fun sendSignal(targetHash: String, type: String, payload: String) {
         scope.launch {
             try {
@@ -178,13 +176,12 @@ class WebRtcManager(
                 }
                 identityRepository.sendSignaling(targetHash, json.toString())
             } catch (e: Exception) {
-                Log.e(TAG, "Error sending signal", e)
+                Log.e(TAG, "Signal send error", e)
             }
         }
     }
 
-    /** Обработка входящей сигнализации */
-    private fun onSignalingPacket(type: String, data: String, ignored: String, fromHash: String) {
+    private fun onSignalingPacket(type: String, data: String, _: String, fromHash: String) {
         if (type != "SIGNALING") return
 
         try {
@@ -211,21 +208,20 @@ class WebRtcManager(
         }
     }
 
-    /** Создание VideoCapturer для фронтальной камеры */
     private fun createCameraCapturer(enumerator: CameraEnumerator): VideoCapturer? {
         for (deviceName in enumerator.deviceNames) {
             if (enumerator.isFrontFacing(deviceName)) {
-                val capturer = enumerator.createCapturer(deviceName, null)
-                if (capturer != null) return capturer
+                enumerator.createCapturer(deviceName, null)?.let {
+                    return it
+                }
             }
         }
         return null
     }
 
-    /** Очистка ресурсов */
     fun release() {
         identityRepository.removeListener(::onSignalingPacket)
-        peerConnection?.dispose() // В проде лучше использовать dispose()
+        peerConnection?.dispose()
         peerConnection = null
         localVideoTrack = null
         localAudioTrack = null
@@ -235,14 +231,13 @@ class WebRtcManager(
     }
 }
 
-/** Простая реализация SdpObserver */
 open class SimpleSdpObserver : SdpObserver {
     override fun onCreateSuccess(desc: SessionDescription) {}
     override fun onSetSuccess() {}
     override fun onCreateFailure(error: String?) {
-        Log.e("SdpObserver", "onCreateFailure: $error")
+        Log.e("SdpObserver", "Create failed: $error")
     }
     override fun onSetFailure(error: String?) {
-        Log.e("SdpObserver", "onSetFailure: $error")
+        Log.e("SdpObserver", "Set failed: $error")
     }
 }
