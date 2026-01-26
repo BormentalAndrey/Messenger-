@@ -3,7 +3,6 @@
     xmlns:tools="http://schemas.android.com/tools"
     package="com.kakdela.p2p">
 
-    <!-- permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -63,7 +62,6 @@
         android:hardwareAccelerated="true"
         tools:targetApi="34">
 
-        <!-- MAIN -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -76,18 +74,16 @@
             </intent-filter>
         </activity>
 
-        <!-- ===== YOUR TERMINAL ACTIVITY ===== -->
         <activity
             android:name=".ui.terminal.TerminalActivity"
             android:exported="false"
-            android:theme="@style/Theme.Kakdela"
+            android:theme="@style/Theme.AppCompat.NoActionBar"
             android:windowSoftInputMode="stateAlwaysVisible|adjustResize"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
-        <!-- ===== TERMUX CORE ===== -->
         <activity
             android:name="com.termux.app.TermuxActivity"
-            android:theme="@style/Theme.Kakdela"
+            android:theme="@style/Theme.AppCompat.NoActionBar"
             android:launchMode="singleTask"
             android:windowSoftInputMode="stateAlwaysVisible|adjustResize"
             android:exported="true">
@@ -99,22 +95,25 @@
         <activity
             android:name="com.termux.app.activities.SettingsActivity"
             android:label="@string/menu_settings"
+            android:theme="@style/Theme.AppCompat.DayNight"
             android:parentActivityName="com.termux.app.TermuxActivity" />
 
         <activity
             android:name="com.termux.app.activities.HelpActivity"
             android:label="@string/menu_help"
+            android:theme="@style/Theme.AppCompat.DayNight"
             android:parentActivityName="com.termux.app.TermuxActivity" />
 
         <activity
             android:name="com.termux.shared.activities.ReportActivity"
             android:label="@string/menu_report"
+            android:theme="@style/Theme.AppCompat.DayNight"
             android:parentActivityName="com.termux.app.TermuxActivity" />
 
         <activity
             android:name="com.termux.app.api.file.FileReceiverActivity"
             android:exported="true"
-            android:theme="@style/Theme.Kakdela.Translucent">
+            android:theme="@style/Theme.AppCompat.Light.Dialog">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -152,7 +151,6 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- OTHER APP ACTIVITIES -->
         <activity
             android:name=".ui.call.CallActivity"
             android:exported="false"
@@ -166,7 +164,9 @@
             android:name=".game.JewelsBlastActivity"
             android:exported="false"
             android:screenOrientation="portrait"
-            android:configChanges="orientation|screenSize|keyboardHidden" />
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <meta-data android:name="android.app.lib_name" android:value="gdx" />
+        </activity>
 
         <activity
             android:name=".ui.player.VideoPlayerActivity"
@@ -176,7 +176,11 @@
 
         <activity android:name=".z5.a" android:exported="false" android:screenOrientation="portrait" />
         <activity android:name=".l5.k" android:exported="false" android:screenOrientation="portrait" />
-        <activity android:name=".ui.browser.BrowserActivity" />
+        
+        <activity 
+            android:name=".ui.browser.BrowserActivity"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+            android:configChanges="orientation|screenSize" />
 
         <service
             android:name=".services.P2PService"
