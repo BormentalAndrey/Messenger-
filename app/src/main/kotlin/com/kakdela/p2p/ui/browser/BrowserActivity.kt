@@ -1,7 +1,7 @@
 package com.kakdela.p2p.ui.browser
 
 import android.annotation.SuppressLint
-import android.content.Context
+import android.app.Activity // ИЗМЕНЕНО: Используем стандартную Activity
 import android.graphics.Bitmap
 import android.os.Bundle
 import android.view.KeyEvent
@@ -19,10 +19,10 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 
-class BrowserActivity : AppCompatActivity() {
+// ИЗМЕНЕНО: Наследуемся от Activity, так как ваша тема в манифесте не AppCompat
+class BrowserActivity : Activity() {
 
     private lateinit var webView: WebView
     private lateinit var urlEditText: EditText
@@ -32,13 +32,12 @@ class BrowserActivity : AppCompatActivity() {
     private lateinit var refreshButton: Button
     private lateinit var homeButton: Button
 
-    private val homeUrl = "https://www.google.com"  // Измените на вашу домашнюю страницу
+    private val homeUrl = "https://www.google.com"
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Создаем корневой LinearLayout (vertical)
         val rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = ViewGroup.LayoutParams(
@@ -47,93 +46,62 @@ class BrowserActivity : AppCompatActivity() {
             )
         }
 
-        // Адресная строка и кнопка обновления (horizontal)
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
-            setPadding(16, 16, 16, 16)  // dp в px, но для простоты используем pixels; в реальности используйте dpToPx
+            // Использование вспомогательной функции для отступов
+            val p = dpToPx(8)
+            setPadding(p, p, p, p)
         }
 
         urlEditText = EditText(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                1f
-            )
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             hint = "Введите URL"
             imeOptions = EditorInfo.IME_ACTION_GO
             inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
         }
 
         refreshButton = Button(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             text = "Обновить"
         }
 
         topBar.addView(urlEditText)
         topBar.addView(refreshButton)
 
-        // Прогресс-бар
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             max = 100
-            progress = 0
             visibility = View.GONE
         }
 
-        // WebView
         webView = WebView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-            id = ViewCompat.generateViewId()  // Для уникального ID
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+            id = ViewCompat.generateViewId()
         }
 
-        // Нижняя панель навигации (horizontal)
         val bottomBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            setPadding(16, 16, 16, 16)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            val p = dpToPx(8)
+            setPadding(p, p, p, p)
         }
 
         backButton = Button(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                1f
-            )
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             text = "Назад"
         }
 
         forwardButton = Button(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                1f
-            )
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             text = "Вперед"
         }
 
         homeButton = Button(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                1f
-            )
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             text = "Домой"
         }
 
@@ -141,7 +109,6 @@ class BrowserActivity : AppCompatActivity() {
         bottomBar.addView(forwardButton)
         bottomBar.addView(homeButton)
 
-        // Добавляем все в root
         rootLayout.addView(topBar)
         rootLayout.addView(progressBar)
         rootLayout.addView(webView)
@@ -149,24 +116,21 @@ class BrowserActivity : AppCompatActivity() {
 
         setContentView(rootLayout)
 
-        // Настройки WebView
-        val webSettings: WebSettings = webView.settings
-        webSettings.javaScriptEnabled = true
-        webSettings.domStorageEnabled = true
-        webSettings.loadWithOverviewMode = true
-        webSettings.useWideViewPort = true
-        webSettings.builtInZoomControls = true
-        webSettings.displayZoomControls = false
-        webSettings.cacheMode = WebSettings.LOAD_DEFAULT
+        webView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            loadWithOverviewMode = true
+            useWideViewPort = true
+            builtInZoomControls = true
+            displayZoomControls = false
+            cacheMode = WebSettings.LOAD_DEFAULT
+        }
 
-        // Клиенты
         webView.webViewClient = MyWebViewClient()
         webView.webChromeClient = MyWebChromeClient()
 
-        // Загрузка домашней страницы
         loadUrl(homeUrl)
 
-        // Обработчики
         urlEditText.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_GO) {
                 loadUrl(urlEditText.text.toString())
@@ -214,14 +178,10 @@ class BrowserActivity : AppCompatActivity() {
             progressBar.visibility = View.GONE
         }
 
-        override fun onReceivedError(
-            view: WebView?,
-            request: WebResourceRequest?,
-            error: WebResourceError?
-        ) {
+        override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
             super.onReceivedError(view, request, error)
             progressBar.visibility = View.GONE
-            Toast.makeText(this@BrowserActivity, "Ошибка загрузки: ${error?.description}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@BrowserActivity, "Ошибка: ${error?.description}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -232,11 +192,11 @@ class BrowserActivity : AppCompatActivity() {
 
         override fun onReceivedTitle(view: WebView?, title: String?) {
             super.onReceivedTitle(view, title)
-            supportActionBar?.title = title
+            // ИЗМЕНЕНО: В обычном Activity используем заголовок окна
+            this@BrowserActivity.title = title
         }
     }
 
-    // Вспомогательная функция для dp в px (если нужно для padding/margins)
     private fun dpToPx(dp: Int): Int {
         return (dp * resources.displayMetrics.density).toInt()
     }
