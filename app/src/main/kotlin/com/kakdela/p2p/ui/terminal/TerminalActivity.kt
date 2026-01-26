@@ -80,12 +80,25 @@ class TerminalActivity : AppCompatActivity() {
                     return 0 
                 }
 
-                // ИСПРАВЛЕНО: Добавлен обязательный метод логирования ошибок
+                // ИСПРАВЛЕНО: Добавлены все уровни логирования для полной реализации интерфейса
                 override fun logError(tag: String?, message: String?) {
-                    Log.e("TerminalInternal:$tag", message ?: "Unknown error")
+                    Log.e("Termux:$tag", message ?: "")
+                }
+
+                override fun logWarn(tag: String?, message: String?) {
+                    Log.w("Termux:$tag", message ?: "")
+                }
+
+                override fun logInfo(tag: String?, message: String?) {
+                    Log.i("Termux:$tag", message ?: "")
+                }
+
+                override fun logDebug(tag: String?, message: String?) {
+                    Log.d("Termux:$tag", message ?: "")
                 }
             }
 
+            // Порядок: [Path, CWD, Args, Env, TranscriptRows, Client]
             session = TerminalSession(
                 shellPath,
                 homeDir.absolutePath,
