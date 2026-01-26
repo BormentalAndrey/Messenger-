@@ -1,4 +1,30 @@
 # --------------------------------------------------------------------------------
+# Guava (Исправляет ошибки Missing class com.google.common.io.MoreFiles)
+# --------------------------------------------------------------------------------
+-dontwarn com.google.common.io.**
+-dontwarn com.google.common.collect.**
+-dontwarn com.google.common.util.concurrent.**
+-dontwarn com.google.common.cache.**
+-keep class com.google.common.io.** { *; }
+-keep class com.google.common.collect.** { *; }
+-keep class com.google.common.base.** { *; }
+
+# --------------------------------------------------------------------------------
+# Termux / Terminal (Расширенные правила для стабильной работы)
+# --------------------------------------------------------------------------------
+-dontwarn com.termux.**
+-keep class com.termux.** { *; }
+-keep interface com.termux.** { *; }
+
+# Специфичные классы из вашего кода
+-keep class com.termux.terminal.TermuxSessionClient { *; }
+-keep class com.termux.view.TerminalViewClient { *; }
+-keep class com.termux.shared.termux.shell.TermuxShellManager { *; }
+-keep class com.termux.app.TermuxService { *; }
+-keep class com.termux.app.terminal.TermuxTerminalSessionActivityClient { *; }
+-keep class com.termux.app.terminal.TermuxTerminalSessionServiceClient { *; }
+
+# --------------------------------------------------------------------------------
 # PDFBox для Android
 # --------------------------------------------------------------------------------
 -dontwarn org.apache.pdfbox.**
@@ -52,28 +78,23 @@
 # --------------------------------------------------------------------------------
 -keep class androidx.** { *; }
 -keep interface androidx.** { *; }
+-keep class com.google.android.material.** { *; }
 
 # --------------------------------------------------------------------------------
 # Kotlin / Coroutines
 # --------------------------------------------------------------------------------
 -keep class kotlinx.coroutines.** { *; }
 -keep class kotlin.** { *; }
-
-# --------------------------------------------------------------------------------
-# Termux / Terminal
-# --------------------------------------------------------------------------------
--keep class com.termux.terminal.TermuxSessionClient { *; }
--keep class com.termux.view.TerminalViewClient { *; }
--keep class com.termux.shared.termux.shell.TermuxShellManager { *; }
--keep class com.termux.app.TermuxService { *; }
--keep class com.termux.app.terminal.TermuxTerminalSessionActivityClient { *; }
--keep class com.termux.app.terminal.TermuxTerminalSessionServiceClient { *; }
+-keepattributes Signature, InnerClasses, EnclosingMethod
 
 # --------------------------------------------------------------------------------
 # Прочие общие рекомендации
 # --------------------------------------------------------------------------------
 # Не удалять все классы с аннотациями
 -keepattributes *Annotation*
+
+# Сохранять имена файлов и номера строк для отладки (Crashlytics)
+-keepattributes SourceFile, LineNumberTable
 
 # Не удалять перечисления
 -keepclassmembers enum * { *; }
