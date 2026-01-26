@@ -36,9 +36,14 @@ class WebRtcManager(
     private val pendingIceCandidates = CopyOnWriteArrayList<IceCandidate>()
     @Volatile private var isRemoteDescriptionSet = false
 
+    // Ссылка на слушатель для корректного удаления в release()
+    private val signalingListener: (String, String, String, String) -> Unit = { type, data, _, fromHash ->
+        onSignalingPacket(type, data, fromHash)
+    }
+
     init {
         initPeerConnectionFactory()
-        identityRepository.addListener(::onSignalingPacket)
+        identityRepository.addListener(signalingListener)
     }
 
     private fun initPeerConnectionFactory() {
@@ -58,36 +63,39 @@ class WebRtcManager(
 
     /** Запуск локального видео-превью */
     fun startLocalVideo(surface: SurfaceViewRenderer) {
-        // Инициализация SurfaceViewRenderer
-        surface.init(rootEglBase.eglBaseContext, null)
-        surface.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
-        surface.setEnableHardwareScaler(true)
+        try {
+            surface.init(rootEglBase.eglBaseContext, null)
+            surface.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
+            surface.setEnableHardwareScaler(true)
 
-        val enumerator = Camera2Enumerator(context)
-        val deviceNames = enumerator.deviceNames
+            val enumerator = Camera2Enumerator(context)
+            val deviceNames = enumerator.deviceNames
 
-        val frontDevice = deviceNames.find { enumerator.isFrontFacing(it) }
-        val selectedDevice = frontDevice ?: deviceNames.firstOrNull()
+            val frontDevice = deviceNames.find { enumerator.isFrontFacing(it) }
+            val selectedDevice = frontDevice ?: deviceNames.firstOrNull()
 
-        if (selectedDevice == null) {
-            Log.e(TAG, "Камера не найдена")
-            return
+            if (selectedDevice == null) {
+                Log.e(TAG, "Камера не найдена")
+                return
+            }
+
+            videoCapturer = enumerator.createCapturer(selectedDevice, null)
+            surface.setMirror(frontDevice != null)
+
+            surfaceTextureHelper = SurfaceTextureHelper.create("VideoCapture", rootEglBase.eglBaseContext)
+
+            val videoSource = factory.createVideoSource(false)
+            videoCapturer?.initialize(surfaceTextureHelper, context, videoSource.capturerObserver)
+            videoCapturer?.startCapture(1280, 720, 30)
+
+            localVideoTrack = factory.createVideoTrack("ARDAMSv0", videoSource)
+            localVideoTrack?.addSink(surface)
+
+            val audioSource = factory.createAudioSource(MediaConstraints())
+            localAudioTrack = factory.createAudioTrack("ARDAMSa0", audioSource)
+        } catch (e: Exception) {
+            Log.e(TAG, "Ошибка запуска локального видео: ${e.message}")
         }
-
-        videoCapturer = enumerator.createCapturer(selectedDevice, null)
-        surface.setMirror(frontDevice != null)
-
-        surfaceTextureHelper = SurfaceTextureHelper.create("VideoCapture", rootEglBase.eglBaseContext)
-
-        val videoSource = factory.createVideoSource(false)
-        videoCapturer?.initialize(surfaceTextureHelper, context, videoSource.capturerObserver)
-        videoCapturer?.startCapture(1280, 720, 30)
-
-        localVideoTrack = factory.createVideoTrack("ARDAMSv0", videoSource)
-        localVideoTrack?.addSink(surface)
-
-        val audioSource = factory.createAudioSource(MediaConstraints())
-        localAudioTrack = factory.createAudioTrack("ARDAMSa0", audioSource)
     }
 
     /** Инициация исходящего вызова */
@@ -142,7 +150,6 @@ class WebRtcManager(
 
         peerConnection = factory.createPeerConnection(rtcConfig, object : PeerConnection.Observer {
             override fun onIceCandidate(candidate: IceCandidate) {
-                // ИСПРАВЛЕНО: Чистый формат без лишних символов
                 val payload = "${candidate.sdpMid ?: ""}|${candidate.sdpMLineIndex}|${candidate.sdp}"
                 sendSignal(targetHash, "ICE", payload)
             }
@@ -165,10 +172,6 @@ class WebRtcManager(
 
             override fun onIceConnectionChange(state: PeerConnection.IceConnectionState?) {
                 Log.d(TAG, "Состояние ICE: $state")
-                if (state == PeerConnection.IceConnectionState.DISCONNECTED || 
-                    state == PeerConnection.IceConnectionState.FAILED) {
-                    // Здесь можно реализовать логику переподключения или закрытия
-                }
             }
 
             override fun onSignalingChange(state: PeerConnection.SignalingState?) {}
@@ -182,7 +185,7 @@ class WebRtcManager(
             override fun onAddTrack(receiver: RtpReceiver?, streams: Array<out MediaStream>?) {}
         })
 
-        // Добавляем локальные медиа-треки в соединение
+        // Добавляем локальные треки
         localAudioTrack?.let { peerConnection?.addTrack(it) }
         localVideoTrack?.let { peerConnection?.addTrack(it) }
     }
@@ -201,7 +204,7 @@ class WebRtcManager(
         }
     }
 
-    private fun onSignalingPacket(type: String, data: String, _: String, fromHash: String) {
+    private fun onSignalingPacket(type: String, data: String, fromHash: String) {
         if (type != "SIGNALING") return
 
         try {
@@ -235,8 +238,7 @@ class WebRtcManager(
                     }
                 }
                 "HANGUP" -> {
-                    // Обработка завершения звонка вызывающей стороной
-                    Log.d(TAG, "Получен сигнал завершения звонка")
+                    Log.d(TAG, "Завершение звонка от $fromHash")
                 }
             }
         } catch (e: Exception) {
@@ -253,7 +255,7 @@ class WebRtcManager(
 
     /** Очистка всех ресурсов WebRTC */
     fun release() {
-        identityRepository.removeListener(::onSignalingPacket)
+        identityRepository.removeListener(signalingListener)
         
         try {
             videoCapturer?.stopCapture()
@@ -281,7 +283,6 @@ class WebRtcManager(
     }
 }
 
-/** Вспомогательный класс для SDP наблюдателя */
 open class SimpleSdpObserver : SdpObserver {
     override fun onCreateSuccess(desc: SessionDescription) {}
     override fun onSetSuccess() {}
