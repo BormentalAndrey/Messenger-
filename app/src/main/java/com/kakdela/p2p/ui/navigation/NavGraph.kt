@@ -2,6 +2,7 @@ package com.kakdela.p2p.ui.navigation
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -41,6 +42,7 @@ import com.kakdela.p2p.ui.chat.ChatScreen
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.ui.slots.Slots1Screen
 import com.kakdela.p2p.ui.ChatViewModel
+import com.kakdela.p2p.ui.terminal.TerminalActivity
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
 @Composable
@@ -230,6 +232,15 @@ fun NavGraph(
                     NoInternetScreen { navController.popBackStack() }
                 }
             }
+
+            /* ================= TERMINAL ================= */
+
+            composable(Routes.TERMINAL) {
+                LaunchedEffect(Unit) {
+                    context.startActivity(Intent(context, TerminalActivity::class.java))
+                }
+            }
+
         }
     }
 }
@@ -319,8 +330,7 @@ fun rememberIsOnline(): State<Boolean> {
         onDispose {
             try {
                 cm.unregisterNetworkCallback(callback)
-            } catch (_: Exception) {
-            }
+            } catch (_: Exception) {}
         }
     }
 
