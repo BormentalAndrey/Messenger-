@@ -82,11 +82,11 @@
     <string name="error_run_command_service_invalid_intent_action">Неверное действие Intent: %1$s</string>
     <string name="error_run_command_service_invalid_execution_command_runner">Неверный раннер команды: %1$s</string>
     <string name="error_run_command_service_mandatory_extra_missing">Отсутствует обязательный параметр: %1$s</string>
-    <string name="error_termux_service_invalid_execution_command_runner">Неверный запуск команды: %1$s</string>
-    <string name="error_termux_service_unsupported_execution_command_runner">Неподдерживаемый тип запуска: %1$s</string>
-    <string name="error_termux_service_execution_command_shell_name_unset">Имя шелла не установлено для режима: %1$s</string>
-    <string name="error_termux_service_unsupported_execution_command_shell_create_mode">Неподдерживаемый режим создания шелла: %1$s</string>
-    <string name="error_display_over_other_apps_permission_not_granted_to_start_terminal">Разрешение на отображение поверх других окон не предоставлено.</string>
+    <string name="error_termux_service_invalid_execution_command_runner">Неверный раннер команды: %1$s</string>
+    <string name="error_termux_service_unsupported_execution_command_runner">Неподдерживаемый раннер: %1$s</string>
+    <string name="error_termux_service_execution_command_shell_name_unset">Shell name unset для: %1$s</string>
+    <string name="error_termux_service_unsupported_execution_command_shell_create_mode">Неподдерживаемый shell mode: %1$s</string>
+    <string name="error_display_over_other_apps_permission_not_granted_to_start_terminal">Нет разрешения на отображение поверх других окон.</string>
 
     <string name="bootstrap_installer_body">Установка системных компонентов…</string>
     <string name="bootstrap_error_title">Ошибка установки системы</string>
@@ -106,12 +106,22 @@
     <string name="msg_select_url_copied_to_clipboard">URL скопирован в буфер обмена</string>
     <string name="msg_generating_report">Генерация отчета...</string>
     <string name="msg_add_termux_debug_info">Добавить отладочную информацию?</string>
-    <string name="error_styling_not_installed">Приложение Termux:Styling не найдено.</string>
+    <string name="error_styling_not_installed">Termux:Styling не установлен.</string>
     <string name="action_styling_install">Установить</string>
 
-    <string name="notification_action_exit">Выйти</string>
-    <string name="notification_action_wake_lock">Удерживать Wake Lock</string>
-    <string name="notification_action_wake_unlock">Отпустить Wake Lock</string>
+    <string name="notification_action_exit">Выход</string>
+    <string name="notification_action_wake_lock">Wake Lock</string>
+    <string name="notification_action_wake_unlock">Wake Unlock</string>
+
+    <string name="action_share_transcript">Поделиться историей</string>
+    <string name="action_share_selected_text">Поделиться выделенным</string>
+    <string name="action_autofill_username">Имя пользователя</string>
+    <string name="action_autofill_password">Пароль</string>
+    <string name="action_reset_terminal">Сбросить терминал</string>
+    <string name="action_kill_process">Завершить процесс (%1$d)</string>
+    <string name="action_style_terminal">Стиль</string>
+    <string name="action_toggle_keep_screen_on">Не гасить экран</string>
+    <string name="action_open_help">Помощь</string>
 
     <string name="menu_select_url">Выбрать URL</string>
     <string name="action_select_url">Выбрать URL</string>
@@ -125,9 +135,9 @@
     <string name="menu_report">Сообщить о проблеме</string>
     <string name="action_report_issue">Сообщить о проблеме</string>
     <string name="title_share_transcript">Поделиться логом</string>
-    <string name="title_share_transcript_with">Поделиться логом через...</string>
+    <string name="title_share_transcript_with">Отправить лог через...</string>
     <string name="title_share_selected_text">Поделиться выделенным</string>
-    <string name="title_share_selected_text_with">Поделиться выделенным через...</string>
+    <string name="title_share_selected_text_with">Отправить выделение через...</string>
 
     <string name="button_yes">Да</string>
     <string name="button_no">Нет</string>
