@@ -49,7 +49,6 @@ class TerminalActivity : AppCompatActivity() {
                 "/system/bin/sh"
             }
 
-            // ИСПРАВЛЕНИЕ: Интерфейс требует строгого соответствия null/not-null типов
             val client = object : TerminalSessionClient {
                 override fun onTextChanged(session: TerminalSession) {
                     terminalView.onScreenUpdated()
@@ -65,7 +64,6 @@ class TerminalActivity : AppCompatActivity() {
 
                 override fun onCopyTextToClipboard(session: TerminalSession, text: String) {}
 
-                // ИСПРАВЛЕНО: Добавлен '?' согласно логу ошибки p0: TerminalSession?
                 override fun onPasteTextFromClipboard(session: TerminalSession?) {}
 
                 override fun onBell(session: TerminalSession) {}
@@ -74,8 +72,10 @@ class TerminalActivity : AppCompatActivity() {
 
                 override fun onTerminalCursorStateChange(state: Boolean) {}
 
-                // ИСПРАВЛЕНО: Изменена сигнатура или удалено, если метод не поддерживается
-                override fun setTerminalShellProcessId(session: TerminalSession, processId: Int) {}
+                // ИСПРАВЛЕНО: Правильное имя метода согласно логу ошибки
+                override fun setTerminalShellPid(session: TerminalSession, pid: Int) {
+                    Log.d(TAG, "Shell PID: $pid")
+                }
             }
 
             // Конструктор: [Path, CWD, Args, Env, TranscriptRows, Client]
