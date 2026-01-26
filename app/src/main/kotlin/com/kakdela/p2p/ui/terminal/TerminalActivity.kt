@@ -11,6 +11,7 @@ import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import com.google.android.material.button.MaterialButton
 import com.kakdela.p2p.R
+import com.termux.app.TermuxInstaller
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
@@ -28,10 +29,10 @@ class TerminalActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Установка контента из предоставленного XML
+        // 1. Установка контента из XML
         setContentView(R.layout.activity_termux)
 
-        // Инициализация View по ID из вашего XML
+        // 2. Инициализация View
         mTerminalView = findViewById(R.id.terminal_view)
         mDrawerLayout = findViewById(R.id.drawer_layout)
         
@@ -40,55 +41,60 @@ class TerminalActivity : AppCompatActivity() {
         val toggleKeyboardButton: MaterialButton = findViewById(R.id.toggle_keyboard_button)
         val sessionsListView: ListView = findViewById(R.id.terminal_sessions_list)
 
-        // Базовая настройка TerminalView
+        // 3. Базовая настройка View
         mTerminalView.apply {
             setTextSize(16)
             keepScreenOn = true
             requestFocus()
         }
 
-        // Логика кнопок
+        // 4. Логика кнопок
         settingsButton.setOnClickListener {
             Log.d(TAG, "Settings clicked")
-            // Здесь можно открыть настройки
         }
 
         newSessionButton.setOnClickListener {
-            setupTerminalSession() // Создаем новую сессию
+            if (mTerminalSession != null) {
+                setupTerminalSession() 
+            }
             mDrawerLayout.closeDrawer(GravityCompat.START)
         }
 
         toggleKeyboardButton.setOnClickListener {
-            // В данной разметке это просто кнопка, логику можно расширить
-            Log.d(TAG, "Toggle keyboard clicked")
+            mTerminalView.onCheckIsTextEditor() // Простейший триггер клавиатуры
         }
 
-        setupTerminalSession()
+        // 5. КРИТИЧЕСКИЙ ШАГ: Сначала проверяем Bootstrap, затем запускаем сессию
+        TermuxInstaller.setupBootstrapIfNeeded(this) {
+            setupTerminalSession()
+            // После установки bootstrap создаем симлинки на память
+            TermuxInstaller.setupStorageSymlinks(this)
+        }
     }
 
     private fun setupTerminalSession() {
         try {
-            // Настройка путей окружения (как в оригинальном Termux)
             val termuxPrefix = File(filesDir, "usr")
             val homeDir = File(filesDir, "home")
+            val tmpDir = File(termuxPrefix, "tmp")
 
             if (!termuxPrefix.exists()) termuxPrefix.mkdirs()
             if (!homeDir.exists()) homeDir.mkdirs()
+            if (!tmpDir.exists()) tmpDir.mkdirs()
 
-            // Формируем переменные окружения
+            // Переменные окружения для работы бинарников Termux
             val env = arrayOf(
-                "PATH=${termuxPrefix.absolutePath}/bin:/system/bin:/system/xbin",
+                "PATH=${termuxPrefix.absolutePath}/bin",
+                "LD_LIBRARY_PATH=${termuxPrefix.absolutePath}/lib",
                 "HOME=${homeDir.absolutePath}",
                 "TERM=xterm-256color",
                 "PREFIX=${termuxPrefix.absolutePath}",
-                "TMPDIR=${termuxPrefix.absolutePath}/tmp"
+                "TMPDIR=${tmpDir.absolutePath}"
             )
 
-            // Определяем путь к шеллу
-            val shellPath = when {
-                File(termuxPrefix, "bin/bash").exists() -> "${termuxPrefix.absolutePath}/bin/bash"
-                File(termuxPrefix, "bin/sh").exists() -> "${termuxPrefix.absolutePath}/bin/sh"
-                else -> "/system/bin/sh"
+            // Проверка наличия bash, иначе fallback на системный sh
+            val shellPath = File(termuxPrefix, "bin/bash").let {
+                if (it.exists()) it.absolutePath else "/system/bin/sh"
             }
 
             val client = object : TerminalSessionClient {
@@ -105,23 +111,24 @@ class TerminalActivity : AppCompatActivity() {
                 }
 
                 override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
-                    // Реализация копирования если нужно
+                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    val clip = android.content.ClipData.newPlainText("Termux", text)
+                    clipboard.setPrimaryClip(clip)
                 }
 
                 override fun onPasteTextFromClipboard(session: TerminalSession?) {
-                    // Реализация вставки если нужно
+                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    val clip = clipboard.primaryClip
+                    if (clip != null && clip.itemCount > 0) {
+                        val text = clip.getItemAt(0).coerceToText(this@TerminalActivity).toString()
+                        mTerminalSession?.write(text)
+                    }
                 }
 
                 override fun onBell(session: TerminalSession) {}
-
                 override fun onColorsChanged(session: TerminalSession) {}
-
                 override fun onTerminalCursorStateChange(state: Boolean) {}
-
-                override fun setTerminalShellPid(session: TerminalSession, pid: Int) {
-                    Log.d(TAG, "Shell PID: $pid")
-                }
-
+                override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
                 override fun getTerminalCursorStyle(): Int = 0 
 
                 override fun logError(tag: String?, message: String?) { Log.e(tag, message ?: "") }
@@ -139,18 +146,18 @@ class TerminalActivity : AppCompatActivity() {
                 }
             }
 
-            // Инициализация новой сессии
-            // Параметры: [Путь к шеллу, Рабочая директория, Аргументы, Окружение, Лимит строк, Клиент]
+            // Завершаем старую сессию перед созданием новой, если нужно
+            mTerminalSession?.finishIfRunning()
+
             mTerminalSession = TerminalSession(
                 shellPath,
                 homeDir.absolutePath,
-                arrayOf("-l"),
+                arrayOf("-l"), // -l запускает shell как login shell
                 env,
                 10000, 
                 client
             )
 
-            // Привязываем сессию к View
             mTerminalView.attachSession(mTerminalSession)
 
         } catch (e: Exception) {
@@ -158,17 +165,19 @@ class TerminalActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        mTerminalView.onScreenUpdated()
+    }
+
+    @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (mDrawerLayout.isDrawerOpen(GravityCompat.START)) {
             mDrawerLayout.closeDrawer(GravityCompat.START)
         } else {
+            @Suppress("DEPRECATION")
             super.onBackPressed()
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        mTerminalView.onScreenUpdated()
     }
 
     override fun onDestroy() {
