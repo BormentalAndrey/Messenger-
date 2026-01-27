@@ -39,7 +39,7 @@ fun FileManagerScreen(vm: FileManagerViewModel = viewModel()) {
 
     BackHandler(enabled = true) {
         if (!vm.goBack()) {
-            // закрытие экрана при необходимости
+            // выход с экрана при необходимости
         }
     }
 
@@ -79,7 +79,6 @@ fun FileManagerScreen(vm: FileManagerViewModel = viewModel()) {
                     .padding(padding)
             ) {
 
-                // Поиск
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
@@ -98,7 +97,6 @@ fun FileManagerScreen(vm: FileManagerViewModel = viewModel()) {
                         .padding(8.dp)
                 )
 
-                // Хлебные крошки
                 Row(
                     modifier = Modifier
                         .horizontalScroll(scrollState)
@@ -120,7 +118,6 @@ fun FileManagerScreen(vm: FileManagerViewModel = viewModel()) {
                     }
                 }
 
-                // Список файлов
                 LazyColumn(
                     modifier = Modifier.fillMaxSize()
                 ) {
@@ -167,7 +164,6 @@ fun FileManagerScreen(vm: FileManagerViewModel = viewModel()) {
                     }
                 }
 
-                // Диалог создания папки
                 if (showNewFolderDialog) {
                     NewFolderDialog(
                         onDismiss = { showNewFolderDialog = false },
@@ -192,7 +188,7 @@ fun FileListItem(
     onRename: (String) -> Unit,
     onCopy: () -> Unit,
     onProperties: () -> Unit,
-    onDropOn: (String) -> Unit
+    onDropOn: (FileItem) -> Unit
 ) {
     var showOptions by remember { mutableStateOf(false) }
 
@@ -204,7 +200,7 @@ fun FileListItem(
         modifier = Modifier
             .fillMaxWidth()
             .background(bgColor)
-            .pointerInput(Unit) {
+            .pointerInput(item) {
                 detectDragGesturesAfterLongPress(
                     onDragStart = { onLongClick() },
                     onDragEnd = {},
