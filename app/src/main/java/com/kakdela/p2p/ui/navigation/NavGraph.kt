@@ -42,6 +42,7 @@ import com.kakdela.p2p.ui.chat.ChatScreen
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.ui.slots.Slots1Screen
 import com.kakdela.p2p.ui.ChatViewModel
+import com.kakdela.p2p.ui.screens.FileManagerScreen
 import com.kakdela.p2p.ui.terminal.TerminalActivity
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
 
@@ -217,6 +218,11 @@ fun NavGraph(
 
             composable(Routes.CALCULATOR) { CalculatorScreen() }
             composable(Routes.TEXT_EDITOR) { TextEditorScreen(navController) }
+            // Подключаем экран файлового менеджера
+            composable(Routes.FILE_MANAGER) {
+                FileManagerScreen(onExit = { navController.popBackStack() })
+            }
+            
             composable(Routes.SLOTS_1) { Slots1Screen(navController) }
 
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
