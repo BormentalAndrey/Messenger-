@@ -13,7 +13,7 @@ import android.view.WindowManager;
 import com.kakdela.p2p.R;
 import com.termux.shared.file.FileUtils;
 import com.termux.shared.termux.crash.TermuxCrashUtils;
-import com.termuxshared.termux.file.TermuxFileUtils;
+import com.termux.shared.termux.file.TermuxFileUtils;
 import com.termux.shared.interact.MessageDialogUtils;
 import com.termux.shared.logger.Logger;
 import com.termux.shared.markdown.MarkdownUtils;
