@@ -1,3 +1,5 @@
+App/build.gradle.kts
+
 import java.util.Properties
 import java.io.FileInputStream
 import org.gradle.api.tasks.Copy
@@ -49,6 +51,9 @@ val copyAndroidNatives = tasks.register<Copy>("copyAndroidNatives") {
 android {
     namespace = "com.kakdela.p2p"
     compileSdk = 35
+
+    // Рекомендуемая версия NDK для работы с современными нативными библиотеками (Llama)
+    ndkVersion = "26.1.10909125"
 
     defaultConfig {
         applicationId = "com.kakdela.p2p"
@@ -214,6 +219,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    // JSON Processing (для стабильного парсинга в WebSearcher)
+    implementation("org.json:json:20231013")
 
     // Room
     implementation("androidx.room:room-runtime:$roomVersion")
