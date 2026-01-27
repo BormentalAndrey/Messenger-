@@ -30,6 +30,7 @@ object Routes {
     const val CALCULATOR = "calculator"
     const val TEXT_EDITOR = "text_editor"
     const val AI_CHAT = "ai_chat"
+    const val FILE_MANAGER = "file_manager"
 
     // --- ДОСУГ И МЕДИА (ENTERTAINMENT) ---
     const val MUSIC = "music"
