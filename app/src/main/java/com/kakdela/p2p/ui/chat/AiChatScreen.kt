@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColor
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -42,10 +43,10 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
     val listState = rememberLazyListState()
     val keyboardController = LocalSoftwareKeyboardController.current
 
-    // Auto-scroll logic
+    // Логика автопрокрутки при новых сообщениях
     LaunchedEffect(vm.messages.size, vm.isTyping.value) {
         if (vm.messages.isNotEmpty()) {
-            listState.animateScrollToItem(vm.messages.size + (if (vm.isTyping.value) 1 else 0))
+            listState.animateScrollToItem(vm.messages.size)
         }
     }
 
@@ -67,11 +68,12 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Chat List
+            // Список сообщений
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .weight(1f)
+                    .fillMaxWidth()
                     .padding(horizontal = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
@@ -88,7 +90,7 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
                 item { Spacer(modifier = Modifier.height(16.dp)) }
             }
 
-            // Download Logic / Input Area
+            // Блок загрузки или поле ввода
             if (!vm.modelReady.value) {
                 ModelDownloadCard(
                     isDownloading = vm.isDownloading.value,
@@ -125,7 +127,8 @@ fun ModelDownloadCard(
             .padding(16.dp),
         colors = CardDefaults.cardColors(containerColor = SurfaceColor),
         shape = RoundedCornerShape(16.dp),
-        border = androidx.compose.foundation.border(1.dp, NeonGreen.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+        // ИСПРАВЛЕНО: Для Card используется BorderStroke, а не Modifier.border
+        border = BorderStroke(1.dp, NeonGreen.copy(alpha = 0.3f))
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -136,7 +139,10 @@ fun ModelDownloadCard(
                 Spacer(Modifier.height(8.dp))
                 LinearProgressIndicator(
                     progress = { progress / 100f },
-                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp)),
                     color = NeonGreen,
                     trackColor = Color.Gray.copy(alpha = 0.3f),
                 )
@@ -227,6 +233,14 @@ fun AiChatBubble(msg: ChatMessage) {
     val themeColor = if (isMine) NeonGreen else NeonPink
     val align = if (isMine) Alignment.End else Alignment.Start
     val containerColor = if (isMine) themeColor.copy(alpha = 0.15f) else SurfaceColor
+    
+    // Формируем форму пузырька в зависимости от отправителя
+    val bubbleShape = RoundedCornerShape(
+        topStart = 18.dp,
+        topEnd = 18.dp,
+        bottomStart = if (isMine) 18.dp else 4.dp,
+        bottomEnd = if (isMine) 4.dp else 18.dp
+    )
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -235,23 +249,9 @@ fun AiChatBubble(msg: ChatMessage) {
         Box(
             modifier = Modifier
                 .widthIn(max = 300.dp)
-                .clip(
-                    RoundedCornerShape(
-                        topStart = 18.dp,
-                        topEnd = 18.dp,
-                        bottomStart = if (isMine) 18.dp else 4.dp,
-                        bottomEnd = if (isMine) 4.dp else 18.dp
-                    )
-                )
+                .clip(bubbleShape)
                 .background(containerColor)
-                .border(1.dp, themeColor.copy(alpha = 0.3f),
-                    RoundedCornerShape(
-                        topStart = 18.dp,
-                        topEnd = 18.dp,
-                        bottomStart = if (isMine) 18.dp else 4.dp,
-                        bottomEnd = if (isMine) 4.dp else 18.dp
-                    )
-                )
+                .border(1.dp, themeColor.copy(alpha = 0.3f), bubbleShape)
                 .padding(12.dp)
         ) {
             Text(
@@ -278,7 +278,7 @@ fun TypingIndicator() {
         Spacer(modifier = Modifier.width(8.dp))
         Text(
             "Анализ данных...",
-            color = NeonPink.copy(0.7f),
+            color = NeonPink.copy(alpha = 0.7f),
             fontSize = 12.sp
         )
     }
