@@ -33,10 +33,10 @@ import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-import static com.termux.shared.termux.TermuxConstants.TERMUX_PREFIX_DIR;
-import static com.termux.shared.termux.TermuxConstants.TERMUX_PREFIX_DIR_PATH;
-import static com.termux.shared.termux.TermuxConstants.TERMUX_STAGING_PREFIX_DIR;
-import static com.termux.shared.termux.TermuxConstants.TERMUX_STAGING_PREFIX_DIR_PATH;
+import static com.kakdela.p2p.shared.termux.TermuxConstants.TERMUX_PREFIX_DIR;
+import static com.kakdela.p2p.shared.termux.TermuxConstants.TERMUX_PREFIX_DIR_PATH;
+import static com.kakdela.p2p.shared.termux.TermuxConstants.TERMUX_STAGING_PREFIX_DIR;
+import static com.kakdela.p2p.shared.termux.TermuxConstants.TERMUX_STAGING_PREFIX_DIR_PATH;
 
 /**
  * Install the Termux bootstrap packages if necessary by following the below steps:
