@@ -18,25 +18,25 @@
 }
 
 # ================================================================================
-# AI & JNI INTEGRATION (Критически важно для LlamaBridge)
+# AI & JNI INTEGRATION (Критически важно для работы LlamaBridge)
 # ================================================================================
 
-# Запрещаем переименовывать классы моделей данных (чтобы логика ИИ понимала поля)
--keep class com.kakdela.p2p.model.ChatMessage { *; }
+# Запрещаем переименовывать модели данных
+-keep class com.kakdela.p2p.model.** { *; }
 
-# ЗАПРЕЩАЕМ обфускацию LlamaBridge. 
-# C++ код ищет методы строго по имени пакета и класса.
+# ЗАПРЕЩАЕМ обфускацию моста JNI.
+# Библиотека libllama.so ожидает строгое имя: Java_com_kakdela_p2p_ai_LlamaBridge_init
 -keep class com.kakdela.p2p.ai.LlamaBridge {
     native <methods>;
     <fields>;
     public *;
 }
 
-# Защищаем ViewModel и их конструкторы от удаления
+# Защищаем ViewModel и их конструкторы. 
+# Ошибка "Cannot create an instance" лечится сохранением конструкторов.
 -keep class com.kakdela.p2p.viewmodel.AiChatViewModel { *; }
 -keepclassmembers class * extends androidx.lifecycle.ViewModel {
-    public <init>(android.app.Application);
-    public <init>();
+    public <init>(...);
 }
 
 # ================================================================================
@@ -113,7 +113,7 @@
 -keep class kotlinx.coroutines.** { *; }
 -keep class kotlin.** { *; }
 
-# OkHttp (для корректной работы ModelDownloadManager)
+# OkHttp (необходимо для работы ModelDownloadManager)
 -keep class okhttp3.** { *; }
 -dontwarn okhttp3.**
 -dontwarn org.conscrypt.**
