@@ -57,7 +57,7 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("KAKDELA AI", color = NeonGreen, fontSize = 20.sp, fontWeight = FontWeight.Bold) },
+                title = { Text("Как дела? ИИ", color = NeonGreen, fontSize = 20.sp, fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = DarkBg)
             )
         },
