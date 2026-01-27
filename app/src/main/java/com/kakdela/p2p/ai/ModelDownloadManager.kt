@@ -29,8 +29,9 @@ object ModelDownloadManager {
         file.parentFile?.mkdirs()
 
         val client = OkHttpClient()
-        val request = Request.Builder().url(MODEL_URL).build()
-        val response = client.newCall(request).execute()
+        val response = client.newCall(
+            Request.Builder().url(MODEL_URL).build()
+        ).execute()
 
         val body = response.body ?: error("Empty body")
         val total = body.contentLength()
