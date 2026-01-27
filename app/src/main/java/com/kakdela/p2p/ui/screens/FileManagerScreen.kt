@@ -30,16 +30,20 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FileManagerScreen(vm: FileManagerViewModel = viewModel()) {
+fun FileManagerScreen(
+    onExit: () -> Unit,
+    vm: FileManagerViewModel = viewModel()
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scrollState = rememberScrollState()
     var searchQuery by remember { mutableStateOf("") }
     var showNewFolderDialog by remember { mutableStateOf(false) }
 
+    // Обработка кнопки "Назад" на устройстве
     BackHandler(enabled = true) {
         if (!vm.goBack()) {
-            // выход с экрана при необходимости
+            onExit() // Если мы в корне, выходим с экрана
         }
     }
 
@@ -52,7 +56,11 @@ fun FileManagerScreen(vm: FileManagerViewModel = viewModel()) {
                         containerColor = Color.Black
                     ),
                     navigationIcon = {
-                        IconButton(onClick = { vm.goBack() }) {
+                        IconButton(onClick = {
+                            if (!vm.goBack()) {
+                                onExit()
+                            }
+                        }) {
                             Icon(
                                 Icons.Default.ArrowBack,
                                 contentDescription = null,
@@ -97,6 +105,7 @@ fun FileManagerScreen(vm: FileManagerViewModel = viewModel()) {
                         .padding(8.dp)
                 )
 
+                // Хлебные крошки (путь)
                 Row(
                     modifier = Modifier
                         .horizontalScroll(scrollState)
@@ -137,11 +146,16 @@ fun FileManagerScreen(vm: FileManagerViewModel = viewModel()) {
                                 } else if (item.isDirectory) {
                                     vm.navigateTo(item.path)
                                 } else {
-                                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                                        setDataAndType(Uri.parse(item.path), "*/*")
-                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    // Открытие файла через Intent
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                                            setDataAndType(Uri.parse(item.path), "*/*")
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        // Обработка ошибки открытия
                                     }
-                                    context.startActivity(intent)
                                 }
                             },
                             onLongClick = { vm.toggleSelection(item) },
