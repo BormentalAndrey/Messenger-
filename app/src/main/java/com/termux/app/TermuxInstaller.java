@@ -11,17 +11,17 @@ import android.util.Pair;
 import android.view.WindowManager;
 
 import com.kakdela.p2p.R;
-import com.termux.shared.file.FileUtils;
-import com.termux.shared.termux.crash.TermuxCrashUtils;
-import com.termux.shared.termux.file.TermuxFileUtils;
-import com.termux.shared.interact.MessageDialogUtils;
-import com.termux.shared.logger.Logger;
-import com.termux.shared.markdown.MarkdownUtils;
-import com.termux.shared.errors.Error;
-import com.termux.shared.android.PackageUtils;
-import com.termux.shared.termux.TermuxConstants;
-import com.termux.shared.termux.TermuxUtils;
-import com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment;
+import com.kakdela.p2p.shared.file.FileUtils;
+import com.kakdela.p2p.shared.termux.crash.TermuxCrashUtils;
+import com.kakdela.p2p.shared.termux.file.TermuxFileUtils;
+import com.kakdela.p2p.shared.interact.MessageDialogUtils;
+import com.kakdela.p2p.shared.logger.Logger;
+import com.kakdela.p2p.shared.markdown.MarkdownUtils;
+import com.kakdela.p2p.shared.errors.Error;
+import com.kakdela.p2p.shared.android.PackageUtils;
+import com.kakdela.p2p.shared.termux.TermuxConstants;
+import com.kakdela.p2p.shared.termux.TermuxUtils;
+import com.kakdela.p2p.shared.termux.shell.command.environment.TermuxShellEnvironment;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
