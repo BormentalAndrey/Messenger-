@@ -14,6 +14,7 @@ import com.kakdela.p2p.ai.WebSearcher
 import com.kakdela.p2p.model.ChatMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class AiChatViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -33,12 +34,12 @@ class AiChatViewModel(app: Application) : AndroidViewModel(app) {
         if (modelReady.value) {
             try {
                 LlamaBridge.init(ModelDownloadManager.modelFile(getApplication()).absolutePath)
-                messages.add(ChatMessage("Система готова. Чем могу помочь?", false))
+                messages.add(ChatMessage(text = "Система готова. Чем могу помочь?", isMine = false))
             } catch (e: Exception) {
-                messages.add(ChatMessage("Ошибка инициализации ядра: ${e.message}", false))
+                messages.add(ChatMessage(text = "Ошибка инициализации ядра: ${e.message}", isMine = false))
             }
         } else {
-            messages.add(ChatMessage("Требуется загрузка AI модели (~2.4 GB). Нажмите кнопку загрузки.", false))
+            messages.add(ChatMessage(text = "Требуется загрузка AI модели (~2.4 GB). Нажмите кнопку загрузки.", isMine = false))
         }
     }
 
@@ -48,14 +49,16 @@ class AiChatViewModel(app: Application) : AndroidViewModel(app) {
         isDownloading.value = true
         viewModelScope.launch {
             try {
-                ModelDownloadManager.download(getApplication()) { progress ->
-                    downloadProgress.intValue = progress
+                withContext(Dispatchers.IO) {
+                    ModelDownloadManager.download(getApplication()) { progress ->
+                        downloadProgress.intValue = progress
+                    }
                 }
                 modelReady.value = true
                 LlamaBridge.init(ModelDownloadManager.modelFile(getApplication()).absolutePath)
-                messages.add(ChatMessage("Модель успешно установлена! Можно общаться.", false))
+                messages.add(ChatMessage(text = "Модель успешно установлена! Можно общаться.", isMine = false))
             } catch (e: Exception) {
-                messages.add(ChatMessage("Ошибка загрузки: ${e.localizedMessage}", false))
+                messages.add(ChatMessage(text = "Ошибка загрузки: ${e.localizedMessage}", isMine = false))
             } finally {
                 isDownloading.value = false
             }
@@ -65,11 +68,11 @@ class AiChatViewModel(app: Application) : AndroidViewModel(app) {
     fun sendMessage(text: String) {
         if (text.isBlank()) return
         
-        // 1. Отображаем сообщение юзера
-        messages.add(ChatMessage(text, true))
+        // 1. Отображаем сообщение юзера (используем именованные аргументы под вашу модель)
+        messages.add(ChatMessage(text = text, isMine = true))
         
         if (!modelReady.value) {
-            messages.add(ChatMessage("Сначала скачайте модель.", false))
+            messages.add(ChatMessage(text = "Сначала скачайте модель.", isMine = false))
             return
         }
 
@@ -81,18 +84,18 @@ class AiChatViewModel(app: Application) : AndroidViewModel(app) {
                 AiMemoryStore.remember(text)
                 val relevantDocs = RagEngine.relevant(text)
                 
-                // 3. Поиск в сети (параллельно или последовательно)
-                val webInfo = WebSearcher.search(text)
+                // 3. Поиск в сети
+                val webInfo = try { WebSearcher.search(text) } catch (e: Exception) { "" }
                 if (webInfo.isNotBlank()) {
                     RagEngine.addWeb(webInfo)
                 }
 
                 // 4. Формирование промпта (формат Phi-3)
-                // Очень важно использовать правильные теги для конкретной модели
                 val contextBlock = buildString {
                     if (relevantDocs.isNotBlank()) append("Relevant Info: $relevantDocs\n")
                     if (webInfo.isNotBlank()) append("Web Info: $webInfo\n")
-                    append("History:\n${AiMemoryStore.context()}")
+                    val history = AiMemoryStore.context()
+                    if (history.isNotBlank()) append("History:\n$history")
                 }
 
                 val fullPrompt = """
@@ -108,21 +111,29 @@ class AiChatViewModel(app: Application) : AndroidViewModel(app) {
                 // 5. Генерация
                 val response = LlamaBridge.prompt(fullPrompt)
                 
-                // Очистка ответа от системных тегов, если они пролезли
+                // Очистка ответа от системных тегов
                 val cleanResponse = response
                     .replace("<|assistant|>", "")
                     .replace("<|end|>", "")
+                    .replace("<|user|>", "")
                     .trim()
 
-                // 6. UI Update
-                messages.add(ChatMessage(cleanResponse, false))
+                // 6. UI Update (переключаемся на Main для обновления списка)
+                withContext(Dispatchers.Main) {
+                    messages.add(ChatMessage(text = cleanResponse, isMine = false))
+                }
+                
                 AiMemoryStore.remember(cleanResponse) // Запоминаем свой ответ тоже
 
             } catch (e: Exception) {
                 e.printStackTrace()
-                messages.add(ChatMessage("Ошибка генерации: ${e.message}", false))
+                withContext(Dispatchers.Main) {
+                    messages.add(ChatMessage(text = "Ошибка генерации: ${e.message}", isMine = false))
+                }
             } finally {
-                isTyping.value = false
+                withContext(Dispatchers.Main) {
+                    isTyping.value = false
+                }
             }
         }
     }
