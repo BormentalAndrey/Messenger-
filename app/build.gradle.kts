@@ -1,5 +1,3 @@
-App/build.gradle.kts
-
 import java.util.Properties
 import java.io.FileInputStream
 import org.gradle.api.tasks.Copy
