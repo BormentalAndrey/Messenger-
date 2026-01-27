@@ -17,7 +17,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -39,7 +38,9 @@ fun FileManagerScreen(vm: FileManagerViewModel = viewModel()) {
     var showNewFolderDialog by remember { mutableStateOf(false) }
 
     BackHandler(enabled = true) {
-        if (!vm.goBack()) { /* Закрыть менеджер */ }
+        if (!vm.goBack()) {
+            // закрытие экрана при необходимости
+        }
     }
 
     KakdelaTheme {
@@ -47,32 +48,50 @@ fun FileManagerScreen(vm: FileManagerViewModel = viewModel()) {
             topBar = {
                 TopAppBar(
                     title = { Text("Файлы", color = Color(0xFF00FFF0)) },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black),
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Black
+                    ),
                     navigationIcon = {
                         IconButton(onClick = { vm.goBack() }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = null, tint = Color.White)
+                            Icon(
+                                Icons.Default.ArrowBack,
+                                contentDescription = null,
+                                tint = Color.White
+                            )
                         }
                     },
                     actions = {
                         IconButton(onClick = { showNewFolderDialog = true }) {
-                            Icon(Icons.Default.CreateNewFolder, contentDescription = null, tint = Color.White)
+                            Icon(
+                                Icons.Default.CreateNewFolder,
+                                contentDescription = null,
+                                tint = Color.White
+                            )
                         }
                     }
                 )
             },
             containerColor = Color.Black
         ) { padding ->
-            Column(modifier = Modifier.padding(padding)) {
-                // Search Bar
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            ) {
+
+                // Поиск
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Поиск...", color = Color.Gray) },
-                    colors = TextFieldDefaults.outlinedTextFieldColors(
-                        textColor = Color.White,
+                    placeholder = { Text("Поиск...") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = Color(0xFF00FFF0),
                         focusedBorderColor = Color(0xFF00FFF0),
                         unfocusedBorderColor = Color.Gray,
-                        cursorColor = Color(0xFF00FFF0)
+                        focusedPlaceholderColor = Color.Gray,
+                        unfocusedPlaceholderColor = Color.Gray
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -85,7 +104,8 @@ fun FileManagerScreen(vm: FileManagerViewModel = viewModel()) {
                         .horizontalScroll(scrollState)
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {
-                    vm.currentPath.split("/").filter { it.isNotEmpty() }.forEachIndexed { idx, folder ->
+                    val parts = vm.currentPath.split("/").filter { it.isNotEmpty() }
+                    parts.forEachIndexed { idx, folder ->
                         Text(
                             text = folder,
                             color = Color.Gray,
@@ -94,16 +114,21 @@ fun FileManagerScreen(vm: FileManagerViewModel = viewModel()) {
                                 vm.navigateTo(vm.pathUpToIndex(idx + 1))
                             }
                         )
-                        if (idx != vm.currentPath.split("/").size - 2) {
+                        if (idx != parts.lastIndex) {
                             Text(" / ", color = Color.Gray, fontSize = 12.sp)
                         }
                     }
                 }
 
-                // Файлы с мульти-выбором и drag & drop
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    val filteredList = if (searchQuery.isEmpty()) vm.filesList
-                    else vm.filesList.filter { it.name.contains(searchQuery, ignoreCase = true) }
+                // Список файлов
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    val filteredList =
+                        if (searchQuery.isEmpty()) vm.filesList
+                        else vm.filesList.filter {
+                            it.name.contains(searchQuery, ignoreCase = true)
+                        }
 
                     items(filteredList) { item ->
                         FileListItem(
@@ -115,23 +140,34 @@ fun FileManagerScreen(vm: FileManagerViewModel = viewModel()) {
                                 } else if (item.isDirectory) {
                                     vm.navigateTo(item.path)
                                 } else {
-                                    val intent = Intent(Intent.ACTION_VIEW)
-                                    intent.setDataAndType(Uri.parse(item.path), "*/*")
-                                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                                        setDataAndType(Uri.parse(item.path), "*/*")
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
                                     context.startActivity(intent)
                                 }
                             },
                             onLongClick = { vm.toggleSelection(item) },
-                            onDelete = { scope.launch { vm.deleteFileWithConfirmation(item) } },
-                            onRename = { newName -> vm.renameFile(item, newName) },
+                            onDelete = {
+                                scope.launch {
+                                    vm.deleteFileWithConfirmation(item)
+                                }
+                            },
+                            onRename = { newName ->
+                                vm.renameFile(item, newName)
+                            },
                             onCopy = { vm.copyFile(item) },
-                            onProperties = { vm.showFileProperties(item, context) },
-                            onDropOn = { targetFolder -> vm.moveFilesTo(targetFolder) }
+                            onProperties = {
+                                vm.showFileProperties(item, context)
+                            },
+                            onDropOn = { targetFolder ->
+                                vm.moveFilesTo(targetFolder)
+                            }
                         )
                     }
                 }
 
-                // Создание новой папки
+                // Диалог создания папки
                 if (showNewFolderDialog) {
                     NewFolderDialog(
                         onDismiss = { showNewFolderDialog = false },
@@ -159,7 +195,10 @@ fun FileListItem(
     onDropOn: (String) -> Unit
 ) {
     var showOptions by remember { mutableStateOf(false) }
-    val bgColor = if (isSelected) Color(0xFF00FFF0).copy(alpha = 0.3f) else Color.Transparent
+
+    val bgColor =
+        if (isSelected) Color(0xFF00FFF0).copy(alpha = 0.3f)
+        else Color.Transparent
 
     Column(
         modifier = Modifier
@@ -181,22 +220,49 @@ fun FileListItem(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+
             Icon(
-                imageVector = if (item.isDirectory) Icons.Default.Folder else Icons.Default.Description,
+                imageVector = if (item.isDirectory)
+                    Icons.Default.Folder
+                else
+                    Icons.Default.Description,
                 contentDescription = null,
-                tint = if (item.isDirectory) Color(0xFFFF00C8) else Color(0xFFD700FF),
+                tint = if (item.isDirectory)
+                    Color(0xFFFF00C8)
+                else
+                    Color(0xFFD700FF),
                 modifier = Modifier.size(32.dp)
             )
-            Column(modifier = Modifier.weight(1f).padding(horizontal = 16.dp)) {
-                Text(text = item.name, color = Color.White, fontSize = 16.sp)
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 16.dp)
+            ) {
+                Text(
+                    text = item.name,
+                    color = Color.White,
+                    fontSize = 16.sp
+                )
+
                 if (!item.isDirectory) {
-                    Text(text = "${item.size / 1024} KB", color = Color.Gray, fontSize = 12.sp)
+                    Text(
+                        text = "${item.size / 1024} KB",
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
                 }
             }
+
             IconButton(onClick = { showOptions = !showOptions }) {
-                Icon(Icons.Default.MoreVert, contentDescription = null, tint = Color(0xFFE0E0E0))
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = null,
+                    tint = Color(0xFFE0E0E0)
+                )
             }
         }
+
         if (showOptions) {
             Row(
                 modifier = Modifier
@@ -223,8 +289,12 @@ fun FileListItem(
 }
 
 @Composable
-fun NewFolderDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
+fun NewFolderDialog(
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit
+) {
     var folderName by remember { mutableStateOf("") }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Новая папка") },
@@ -236,12 +306,20 @@ fun NewFolderDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
             )
         },
         confirmButton = {
-            TextButton(onClick = { if (folderName.isNotEmpty()) onCreate(folderName) }) {
+            TextButton(
+                onClick = {
+                    if (folderName.isNotBlank()) {
+                        onCreate(folderName)
+                    }
+                }
+            ) {
                 Text("Создать")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            TextButton(onClick = onDismiss) {
+                Text("Отмена")
+            }
         }
     )
 }
