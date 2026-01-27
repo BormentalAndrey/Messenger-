@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material3.*
@@ -44,7 +45,10 @@ data class DealItem(
     val iconVector: ImageVector
         get() = when (type) {
             DealType.CALCULATOR -> Icons.Filled.Calculate
-            DealType.TOOL -> Icons.Filled.Edit
+            DealType.TOOL -> {
+                if (id == "file_manager") Icons.Filled.Folder
+                else Icons.Filled.Edit
+            }
             DealType.ACTIVITY -> {
                 when (id) {
                     "browser" -> Icons.Filled.Public
@@ -72,6 +76,12 @@ private val dealItems = listOf(
     ),
 
     // ===== Инструменты =====
+    DealItem(
+        id = "file_manager",
+        title = "Файловый менеджер",
+        description = "Управление файлами",
+        type = DealType.TOOL
+    ),
     DealItem(
         id = "calculator",
         title = "Калькулятор",
@@ -181,6 +191,8 @@ fun DealNeonItem(item: DealItem, navController: NavHostController) {
                 DealType.TOOL ->
                     if (item.id == "text_editor") {
                         navController.navigate(Routes.TEXT_EDITOR)
+                    } else if (item.id == "file_manager") {
+                        navController.navigate(Routes.FILE_MANAGER)
                     }
 
                 DealType.WEB -> item.url?.let {
