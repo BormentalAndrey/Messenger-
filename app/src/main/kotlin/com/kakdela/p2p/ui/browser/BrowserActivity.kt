@@ -8,6 +8,10 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
@@ -17,20 +21,11 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.AlphaAnimation
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import android.widget.Button
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ProgressBar
-import android.widget.TextView
-import android.widget.Toast
+import android.webkit.*
+import android.widget.*
 import androidx.core.view.ViewCompat
 
 class BrowserActivity : Activity() {
@@ -38,370 +33,423 @@ class BrowserActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var urlEditText: EditText
     private lateinit var progressBar: ProgressBar
-    
-    // Кнопки навигации
-    private lateinit var backButton: TextView
-    private lateinit var forwardButton: TextView
-    private lateinit var refreshButton: TextView
-    private lateinit var homeButton: TextView
-    private lateinit var goButton: TextView
 
-    // Цветовая палитра Neon / Cyberpunk
-    private val colorBg = Color.parseColor("#121212") // Глубокий черный
-    private val colorSurface = Color.parseColor("#1E1E1E") // Чуть светлее
-    private val colorNeonCyan = Color.parseColor("#00E5FF") // Неоновый голубой
-    private val colorNeonPink = Color.parseColor("#FF4081") // Неоновый розовый
-    private val colorText = Color.WHITE
-    private val colorTextHint = Color.parseColor("#80FFFFFF")
+    // Навигация
+    private lateinit var topBack: TextView
+    private lateinit var topForward: TextView
+    private lateinit var topRefresh: TextView
+    private lateinit var topHome: TextView
+
+    private lateinit var bottomBack: TextView
+    private lateinit var bottomForward: TextView
+    private lateinit var bottomRefresh: TextView
+    private lateinit var bottomHome: TextView
+
+    // Overlay
+    private lateinit var offlineOverlay: View
+    private lateinit var networkIndicator: TextView
+
+    private val colorBg = Color.parseColor("#121212")
+    private val colorSurface = Color.parseColor("#1E1E1E")
+    private val colorCyan = Color.parseColor("#00E5FF")
+    private val colorPink = Color.parseColor("#FF4081")
+    private val colorHint = Color.parseColor("#80FFFFFF")
 
     private val homeUrl = "https://www.google.com"
 
-    @SuppressLint("SetJavaScriptEnabled")
+    private lateinit var connectivityManager: ConnectivityManager
+    private lateinit var networkCallback: ConnectivityManager.NetworkCallback
+
+    private var lastUrl: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        // Настройка окна и статус бара (черный цвет)
+
         window.statusBarColor = colorBg
         window.navigationBarColor = colorBg
 
-        // --- КОРНЕВОЙ LAYOUT ---
-        val rootLayout = LinearLayout(this).apply {
+        connectivityManager =
+            getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
             setBackgroundColor(colorBg)
         }
 
-        // --- ВЕРХНЯЯ ПАНЕЛЬ (Top Bar) ---
+        // ───── TOP BAR ─────
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
             gravity = Gravity.CENTER_VERTICAL
-            val p = dpToPx(12)
-            setPadding(p, p, p, p)
-            background = createBackgroundDrawable(colorSurface, 0f, 0, 0) // Плоский фон
-            elevation = dpToPx(4).toFloat()
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setBackgroundColor(colorSurface)
         }
 
-        // Поле ввода URL
         urlEditText = EditText(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, dpToPx(44), 1f).apply {
-                marginEnd = dpToPx(8)
+            layoutParams = LinearLayout.LayoutParams(0, dp(44), 1f).apply {
+                marginEnd = dp(8)
             }
-            hint = "Search or enter URL..."
-            setHintTextColor(colorTextHint)
-            setTextColor(colorText)
-            textSize = 14f
-            maxLines = 1
+            hint = "Search or enter URL…"
+            setTextColor(Color.WHITE)
+            setHintTextColor(colorHint)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             imeOptions = EditorInfo.IME_ACTION_GO
-            // Неоновый стиль для инпута
-            background = createBackgroundDrawable(Color.parseColor("#2C2C2C"), dpToPx(22).toFloat(), 2, colorNeonCyan)
-            setPadding(dpToPx(16), 0, dpToPx(16), 0)
+            background = bg(Color.parseColor("#2C2C2C"), 22f, 2, colorCyan)
+            setPadding(dp(16), 0, dp(16), 0)
+
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == EditorInfo.IME_ACTION_GO) {
+                    processUrlInput()
+                    true
+                } else false
+            }
         }
 
-        // Кнопка GO (вместо обновить в верхнем баре, так логичнее)
-        goButton = createNeonButton("➜", colorNeonPink).apply {
-            layoutParams = LinearLayout.LayoutParams(dpToPx(44), dpToPx(44))
-            setOnClickListener { processUrlInput() }
-        }
+        val go = neonButton("➜", colorPink) { processUrlInput() }
 
         topBar.addView(urlEditText)
-        topBar.addView(goButton)
+        topBar.addView(go)
 
-        // --- ПРОГРЕСС БАР ---
-        // Стильный тонкий прогресс бар прямо под тулбаром
-        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dpToPx(3)).apply {
-                topMargin = -dpToPx(3) // Наложение
-            }
+        // ───── TOP NAV ─────
+        val topNav = navBar(36)
+        topBack = smallNav("❮")
+        topForward = smallNav("❯")
+        topRefresh = smallNav("↻", colorPink)
+        topHome = smallNav("⌂")
+        addNav(topNav, topBack, topForward, topRefresh, topHome)
+
+        // ───── NETWORK INDICATOR ─────
+        networkIndicator = TextView(this).apply {
+            textSize = 12f
+            setPadding(dp(12), dp(4), dp(12), dp(4))
+            setTextColor(colorCyan)
+            setBackgroundColor(colorSurface)
+            text = "● Online"
+        }
+
+        // ───── PROGRESS ─────
+        progressBar = ProgressBar(
+            this,
+            null,
+            android.R.attr.progressBarStyleHorizontal
+        ).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(2)
+            )
             max = 100
-            progressTintList = ColorStateList.valueOf(colorNeonPink) // Розовый прогресс
+            progressTintList = ColorStateList.valueOf(colorPink)
             visibility = View.GONE
         }
 
-        // --- WEBVIEW ---
+        // ───── WEB + OVERLAY ─────
+        val webContainer = FrameLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(-1, 0, 1f)
+        }
+
         webView = WebView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+            setBackgroundColor(colorBg)
             id = ViewCompat.generateViewId()
-            setBackgroundColor(colorBg) // Чтобы не мигало белым при загрузке
         }
 
-        // --- НИЖНЯЯ ПАНЕЛЬ (Bottom Bar) ---
-        val bottomBar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 
-                dpToPx(56) // Фиксированная высота для удобства нажатия
-            )
-            gravity = Gravity.CENTER
-            setBackgroundColor(colorSurface)
-            setPadding(dpToPx(8), 0, dpToPx(8), 0)
-        }
+        offlineOverlay = offlineOverlay()
 
-        // Создание кнопок с Unicode иконками
-        backButton = createNavButton("❮", colorNeonCyan)
-        forwardButton = createNavButton("❯", colorNeonCyan)
-        refreshButton = createNavButton("↻", colorNeonPink) // Refresh выделен цветом
-        homeButton = createNavButton("⌂", colorNeonCyan) // Домик
+        webContainer.addView(webView)
+        webContainer.addView(offlineOverlay)
 
-        // Распределение кнопок равномерно
-        val spacerParams = LinearLayout.LayoutParams(0, 1, 1f)
-        
-        bottomBar.addView(backButton)
-        bottomBar.addView(View(this).apply { layoutParams = spacerParams })
-        bottomBar.addView(forwardButton)
-        bottomBar.addView(View(this).apply { layoutParams = spacerParams })
-        bottomBar.addView(refreshButton)
-        bottomBar.addView(View(this).apply { layoutParams = spacerParams })
-        bottomBar.addView(homeButton)
+        // ───── BOTTOM NAV ─────
+        val bottomNav = navBar(56)
+        bottomBack = bigNav("❮")
+        bottomForward = bigNav("❯")
+        bottomRefresh = bigNav("↻", colorPink)
+        bottomHome = bigNav("⌂")
+        addNav(bottomNav, bottomBack, bottomForward, bottomRefresh, bottomHome)
 
-        // Сборка Layout
-        rootLayout.addView(topBar)
-        rootLayout.addView(progressBar)
-        rootLayout.addView(webView)
-        rootLayout.addView(bottomBar)
+        // ───── ASSEMBLY ─────
+        root.addView(topBar)
+        root.addView(topNav)
+        root.addView(networkIndicator)
+        root.addView(progressBar)
+        root.addView(webContainer)
+        root.addView(bottomNav)
 
-        setContentView(rootLayout)
+        setContentView(root)
 
-        // --- НАСТРОЙКИ WEBVIEW ---
-        initWebViewSettings()
+        initWebView()
+        bindNav()
+        registerNetworkCallback()
 
-        // --- ЛОГИКА ---
         loadUrl(homeUrl)
-
-        urlEditText.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_DONE) {
-                processUrlInput()
-                true
-            } else false
-        }
-
-        // Обработчики нажатий
-        backButton.setOnClickListener { if (webView.canGoBack()) webView.goBack() }
-        forwardButton.setOnClickListener { if (webView.canGoForward()) webView.goForward() }
-        refreshButton.setOnClickListener { webView.reload() }
-        homeButton.setOnClickListener { loadUrl(homeUrl) }
     }
 
+    // ─────────────────────────────────────────────
+    // OFFLINE OVERLAY
+    // ─────────────────────────────────────────────
+    private fun offlineOverlay(): View =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.parseColor("#DD121212"))
+            visibility = View.GONE
+
+            val title = TextView(context).apply {
+                text = "Как дела?"
+                textSize = 32f
+                setTextColor(colorPink)
+            }
+
+            val sub = TextView(context).apply {
+                text = "Нет подключения к интернету"
+                setTextColor(colorCyan)
+                setPadding(0, dp(8), 0, dp(24))
+            }
+
+            val retry = neonButton("Повторить", colorCyan) {
+                if (isOnline()) {
+                    hideOverlay()
+                    lastUrl?.let { webView.loadUrl(it) }
+                }
+            }
+
+            val back = neonButton("Вернуться", colorPink) {
+                hideOverlay()
+                if (webView.canGoBack()) webView.goBack()
+                else loadUrl(homeUrl)
+            }
+
+            addView(title)
+            addView(sub)
+            addView(retry)
+            addView(back)
+        }
+
+    private fun showOverlay() {
+        if (offlineOverlay.visibility != View.VISIBLE) {
+            offlineOverlay.visibility = View.VISIBLE
+            offlineOverlay.startAnimation(
+                AlphaAnimation(0f, 1f).apply { duration = 250 }
+            )
+        }
+    }
+
+    private fun hideOverlay() {
+        offlineOverlay.visibility = View.GONE
+    }
+
+    // ─────────────────────────────────────────────
+    // WEBVIEW
+    // ─────────────────────────────────────────────
     @SuppressLint("SetJavaScriptEnabled")
-    private fun initWebViewSettings() {
+    private fun initWebView() {
         webView.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
-            loadWithOverviewMode = true
             useWideViewPort = true
+            loadWithOverviewMode = true
             builtInZoomControls = true
             displayZoomControls = false
-            databaseEnabled = true
-            cacheMode = WebSettings.LOAD_DEFAULT
-            
-            // Поддержка смешанного контента (HTTP картинки на HTTPS сайте)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-            }
-            
-            // 🔥 DARK MODE FOR WEB CONTENT
-            // Принудительно затемняем веб-страницы, чтобы соответствовать стилю браузера
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (Build.VERSION.SDK_INT >= 29) {
                 forceDark = WebSettings.FORCE_DARK_ON
             }
         }
 
-        webView.webViewClient = MyWebViewClient()
-        webView.webChromeClient = MyWebChromeClient()
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(v: WebView?, url: String?, f: Bitmap?) {
+                lastUrl = url
+                progressBar.visibility = View.VISIBLE
+                updateNav()
+            }
+
+            override fun onPageFinished(v: WebView?, url: String?) {
+                progressBar.visibility = View.GONE
+                hideOverlay()
+                updateNav()
+            }
+
+            override fun onReceivedError(
+                v: WebView?,
+                r: WebResourceRequest?,
+                e: WebResourceError?
+            ) {
+                progressBar.visibility = View.GONE
+                if (!isOnline()) showOverlay()
+            }
+        }
+
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onProgressChanged(v: WebView?, p: Int) {
+                progressBar.progress = p
+            }
+        }
     }
 
+    // ─────────────────────────────────────────────
+    // NETWORK
+    // ─────────────────────────────────────────────
+    private fun registerNetworkCallback() {
+        val req = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+
+        networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                runOnUiThread {
+                    networkIndicator.text = "● Online"
+                    networkIndicator.setTextColor(colorCyan)
+                    hideOverlay()
+                }
+            }
+
+            override fun onLost(network: Network) {
+                runOnUiThread {
+                    networkIndicator.text = "● Offline"
+                    networkIndicator.setTextColor(colorPink)
+                    showOverlay()
+                }
+            }
+        }
+
+        connectivityManager.registerNetworkCallback(req, networkCallback)
+    }
+
+    private fun isOnline(): Boolean {
+        val net = connectivityManager.activeNetwork ?: return false
+        val caps = connectivityManager.getNetworkCapabilities(net) ?: return false
+        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    // ─────────────────────────────────────────────
+    // NAV / UTILS
+    // ─────────────────────────────────────────────
     private fun processUrlInput() {
         val input = urlEditText.text.toString().trim()
         if (input.isEmpty()) return
-
         hideKeyboard()
-        
-        // Простая проверка: это URL или поисковый запрос?
-        if (Patterns.WEB_URL.matcher(input).matches() || input.contains(".") && !input.contains(" ")) {
-            loadUrl(input)
-        } else {
-            // Если это не URL, ищем в Google
-            loadUrl("https://www.google.com/search?q=$input")
+
+        if (!isOnline()) {
+            showOverlay()
+            return
         }
+
+        loadUrl(
+            if (Patterns.WEB_URL.matcher(input).matches() || input.contains("."))
+                input
+            else "https://www.google.com/search?q=$input"
+        )
     }
 
     private fun loadUrl(url: String) {
-        var formattedUrl = url
-        // Добавляем протокол, если его нет
-        if (!url.startsWith("http://") && !url.startsWith("https://") && !url.startsWith("file://")) {
-            formattedUrl = "https://$url"
+        val u = if (url.startsWith("http")) url else "https://$url"
+        webView.loadUrl(u)
+    }
+
+    private fun bindNav() {
+        listOf(topBack, bottomBack).forEach {
+            it.setOnClickListener { if (webView.canGoBack()) webView.goBack() }
         }
-        webView.loadUrl(formattedUrl)
-        // Не меняем текст в поле сразу, ждем onPageStarted
+        listOf(topForward, bottomForward).forEach {
+            it.setOnClickListener { if (webView.canGoForward()) webView.goForward() }
+        }
+        listOf(topRefresh, bottomRefresh).forEach {
+            it.setOnClickListener { webView.reload() }
+        }
+        listOf(topHome, bottomHome).forEach {
+            it.setOnClickListener { loadUrl(homeUrl) }
+        }
     }
 
-    private fun hideKeyboard() {
-        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-        imm?.hideSoftInputFromWindow(urlEditText.windowToken, 0)
-        urlEditText.clearFocus()
+    private fun updateNav() {
+        val b = webView.canGoBack()
+        val f = webView.canGoForward()
+        listOf(topBack, bottomBack).forEach { it.alpha = if (b) 1f else 0.3f }
+        listOf(topForward, bottomForward).forEach { it.alpha = if (f) 1f else 0.3f }
     }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+    override fun onKeyDown(keyCode: Int, e: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
             webView.goBack()
             return true
         }
-        return super.onKeyDown(keyCode, event)
+        return super.onKeyDown(keyCode, e)
     }
 
-    // --- CLIENTS ---
-
-    private inner class MyWebViewClient : WebViewClient() {
-        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-            // Возвращаем false, чтобы WebView сам обрабатывал переходы (стандартное поведение браузера)
-            return false 
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            connectivityManager.unregisterNetworkCallback(networkCallback)
+        } catch (_: Exception) {
         }
+        webView.destroy()
+    }
 
-        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-            super.onPageStarted(view, url, favicon)
-            progressBar.visibility = View.VISIBLE
-            progressBar.progress = 0
-            url?.let {
-                if (!urlEditText.isFocused) {
-                    urlEditText.setText(it)
-                }
-            }
-            updateNavButtons()
-        }
+    private fun hideKeyboard() {
+        (getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
+            ?.hideSoftInputFromWindow(urlEditText.windowToken, 0)
+    }
 
-        override fun onPageFinished(view: WebView?, url: String?) {
-            super.onPageFinished(view, url)
-            progressBar.visibility = View.GONE
-            updateNavButtons()
-        }
+    // ─────────────────────────────────────────────
+    // UI HELPERS
+    // ─────────────────────────────────────────────
+    private fun navBar(h: Int) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER
+        setBackgroundColor(colorSurface)
+        layoutParams = LinearLayout.LayoutParams(-1, dp(h))
+    }
 
-        override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-            // Игнорируем ошибки net::ERR_CACHE_MISS и подобные мелкие сбои
-            if (error?.errorCode != WebViewClient.ERROR_HOST_LOOKUP) {
-               // Можно логировать, но тосты раздражают пользователей
-            }
-            progressBar.visibility = View.GONE
+    private fun addNav(p: LinearLayout, vararg v: View) {
+        val sp = LinearLayout.LayoutParams(0, 1, 1f)
+        v.forEachIndexed { i, b ->
+            p.addView(b)
+            if (i != v.lastIndex) p.addView(View(this).apply { layoutParams = sp })
         }
     }
 
-    private inner class MyWebChromeClient : WebChromeClient() {
-        override fun onProgressChanged(view: WebView?, newProgress: Int) {
-            progressBar.progress = newProgress
-            if (newProgress == 100) {
-                progressBar.visibility = View.GONE
-            } else {
-                progressBar.visibility = View.VISIBLE
-            }
-        }
+    private fun smallNav(t: String, c: Int = colorCyan) =
+        navBtn(t, c, 18f)
 
-        override fun onReceivedTitle(view: WebView?, title: String?) {
-            super.onReceivedTitle(view, title)
-            // Обновляем заголовок активити, если нужно, или просто оставляем название приложения
-        }
-    }
-    
-    private fun updateNavButtons() {
-        // Меняем прозрачность кнопок, если действие недоступно
-        backButton.alpha = if (webView.canGoBack()) 1.0f else 0.3f
-        backButton.isEnabled = webView.canGoBack()
-        
-        forwardButton.alpha = if (webView.canGoForward()) 1.0f else 0.3f
-        forwardButton.isEnabled = webView.canGoForward()
-    }
+    private fun bigNav(t: String, c: Int = colorCyan) =
+        navBtn(t, c, 28f)
 
-    // --- UI HELPER FUNCTIONS (NEON STYLE GENERATORS) ---
-
-    /**
-     * Создает кнопку в стиле нижней панели навигации
-     */
-    private fun createNavButton(textIcon: String, color: Int): TextView {
-        return TextView(this).apply {
-            text = textIcon
-            textSize = 24f
-            setTextColor(createColorStateList(color, Color.GRAY))
+    private fun navBtn(t: String, c: Int, s: Float) =
+        TextView(this).apply {
+            text = t
+            textSize = s
             gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(dpToPx(48), dpToPx(48))
-            // Эффект нажатия (ripple без xml)
-            background = getRippleDrawable(color)
+            setTextColor(c)
+            layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
+            background = ripple(c)
         }
-    }
 
-    /**
-     * Создает основную яркую кнопку (например, GO)
-     */
-    private fun createNeonButton(text: String, accentColor: Int): Button {
-        return Button(this).apply {
-            setText(text)
+    private fun neonButton(text: String, c: Int, onClick: () -> Unit) =
+        Button(this).apply {
+            this.text = text
             setTextColor(Color.WHITE)
-            textSize = 18f
-            gravity = Gravity.CENTER
-            // Фон: Нормальный = цвет акцента, Нажат = темнее
-            val bgNormal = createBackgroundDrawable(accentColor, dpToPx(22).toFloat(), 0, 0)
-            val bgPressed = createBackgroundDrawable(darkenColor(accentColor), dpToPx(22).toFloat(), 0, 0)
-            
-            val stateList = StateListDrawable().apply {
-                addState(intArrayOf(android.R.attr.state_pressed), bgPressed)
-                addState(intArrayOf(), bgNormal)
-            }
-            background = stateList
-            elevation = dpToPx(4).toFloat()
+            background = bg(c, 22f, 0, 0)
+            setOnClickListener { onClick() }
         }
-    }
 
-    /**
-     * Генерирует Drawable с закругленными углами и обводкой
-     */
-    private fun createBackgroundDrawable(fillColor: Int, radius: Float, strokeWidth: Int, strokeColor: Int): GradientDrawable {
-        return GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = radius
-            setColor(fillColor)
-            if (strokeWidth > 0) {
-                setStroke(strokeWidth, strokeColor)
-            }
+    private fun ripple(c: Int) =
+        StateListDrawable().apply {
+            addState(
+                intArrayOf(android.R.attr.state_pressed),
+                GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.argb(50, Color.red(c), Color.green(c), Color.blue(c)))
+                }
+            )
         }
-    }
-    
-    /**
-     * Эффект нажатия для текстовых кнопок
-     */
-    private fun getRippleDrawable(color: Int): StateListDrawable {
-        val drawable = StateListDrawable()
-        val pressed = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(Color.argb(30, Color.red(color), Color.green(color), Color.blue(color)))
+
+    private fun bg(c: Int, r: Float, s: Int, sc: Int) =
+        GradientDrawable().apply {
+            cornerRadius = dp(r.toInt()).toFloat()
+            setColor(c)
+            if (s > 0) setStroke(s, sc)
         }
-        drawable.addState(intArrayOf(android.R.attr.state_pressed), pressed)
-        drawable.addState(intArrayOf(), null)
-        return drawable
-    }
 
-    private fun createColorStateList(normal: Int, pressed: Int): ColorStateList {
-        return ColorStateList(
-            arrayOf(intArrayOf(android.R.attr.state_pressed), intArrayOf()),
-            intArrayOf(pressed, normal)
-        )
-    }
-    
-    private fun darkenColor(color: Int): Int {
-        val hsv = FloatArray(3)
-        Color.colorToHSV(color, hsv)
-        hsv[2] *= 0.8f // Темнее на 20%
-        return Color.HSVToColor(hsv)
-    }
-
-    private fun dpToPx(dp: Int): Int {
-        return TypedValue.applyDimension(
+    private fun dp(v: Int) =
+        TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP,
-            dp.toFloat(),
+            v.toFloat(),
             resources.displayMetrics
         ).toInt()
-    }
 }
