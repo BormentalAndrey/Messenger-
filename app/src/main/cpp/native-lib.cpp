@@ -3,14 +3,14 @@
 #include <vector>
 #include <android/log.h>
 #include <thread>
-#include "llama.h"   // Требует наличия llama.cpp/include/llama.h
-#include "common.h"  // Требует наличия llama.cpp/common/common.h
+#include "llama.h"   
+#include "common.h"  // Обязательно: содержит common_batch_add и llama_tokenize helper
 
 #define LOG_TAG "LlamaNative"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// Глобальное состояние (в продакшене лучше использовать класс-обертку)
+// Глобальное состояние
 static llama_model *model = nullptr;
 static llama_context *ctx = nullptr;
 static llama_sampler *sampler = nullptr;
@@ -29,7 +29,7 @@ Java_com_kakdela_p2p_ai_LlamaBridge_init(JNIEnv *env, jobject thiz, jstring mode
 
     // Настройка параметров модели
     llama_model_params model_params = llama_model_default_params();
-    model_params.n_gpu_layers = 0; // На CPU (для Android GPU нужен OpenCL/Vulkan backend)
+    model_params.n_gpu_layers = 0; // CPU only
 
     model = llama_load_model_from_file(path, model_params);
     
@@ -42,16 +42,16 @@ Java_com_kakdela_p2p_ai_LlamaBridge_init(JNIEnv *env, jobject thiz, jstring mode
 
     // Настройка контекста
     llama_context_params ctx_params = llama_context_default_params();
-    ctx_params.n_ctx = 2048; // Длина контекста (2k токенов)
-    ctx_params.n_threads = std::thread::hardware_concurrency(); // Использовать все ядра
+    ctx_params.n_ctx = 2048; 
+    ctx_params.n_threads = std::thread::hardware_concurrency();
     ctx_params.n_threads_batch = ctx_params.n_threads;
 
     ctx = llama_new_context_with_model(model, ctx_params);
     
-    // Инициализация сэмплера (для разнообразия ответов)
+    // Инициализация сэмплера
     llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
     sampler = llama_sampler_chain_init(sparams);
-    llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.6f)); // Температура 0.6
+    llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.6f));
     llama_sampler_chain_add(sampler, llama_sampler_init_top_k(40));
 
     if (ctx == nullptr) {
@@ -75,61 +75,71 @@ Java_com_kakdela_p2p_ai_LlamaBridge_prompt(JNIEnv *env, jobject thiz, jstring in
     std::string prompt(text);
     env->ReleaseStringUTFChars(input_text, text);
 
-    // Токенизация промпта
+    // Токенизация (используем хелпер из common.h или llama.h)
     std::vector<llama_token> tokens_list;
+    // common::llama_tokenize корректно обрабатывает string -> vector<token>
     tokens_list = ::llama_tokenize(model, prompt, true, true);
     
     const int n_ctx = llama_n_ctx(ctx);
-    const int n_kv_req = tokens_list.size() + 32; // Запас на ответ
+    const int n_kv_req = tokens_list.size() + 32; 
 
     if (n_kv_req > n_ctx) {
         return env->NewStringUTF("Error: Prompt too long for context window");
     }
 
-    // Очистка KV-кэша для нового запроса (для упрощения, в сложном чате нужно сдвигать окно)
+    // Очистка KV-кэша
     llama_kv_cache_clear(ctx);
 
-    // Обработка промпта (Batch decoding)
-    llama_batch batch = llama_batch_init(512, 0, 1);
+    // Инициализация батча
+    llama_batch batch = llama_batch_init(2048, 0, 1); // Увеличил размер буфера батча на всякий случай
     
+    // Заполняем батч токенами промпта
     for (size_t i = 0; i < tokens_list.size(); i++) {
-        llama_batch_add(batch, tokens_list[i], i, { 0 }, false);
+        // common_batch_add(batch, id, pos, seq_ids, logits)
+        common_batch_add(batch, tokens_list[i], i, { 0 }, false);
     }
-    // Последний токен должен запустить генерацию
+    // Для последнего токена требуем логиты
     batch.logits[batch.n_tokens - 1] = true;
 
     if (llama_decode(ctx, batch) != 0) {
+        llama_batch_free(batch);
         return env->NewStringUTF("Error: llama_decode failed");
     }
 
     std::string result_str = "";
     int n_cur = batch.n_tokens;
     int n_decode = 0;
-    const int max_tokens = 256; // Ограничение длины ответа
+    const int max_tokens = 256;
 
-    // Цикл генерации
+    // Получаем словарь для декодирования токенов
+    const struct llama_vocab * vocab = llama_model_get_vocab(model);
+
     while (n_decode < max_tokens) {
-        // Сэмплирование следующего токена
+        // Сэмплирование
         llama_token new_token_id = llama_sampler_sample(sampler, ctx, batch.n_tokens - 1);
 
-        // Проверка на конец генерации (EOS)
+        // Проверка EOG / EOS
         if (llama_token_is_eog(model, new_token_id) || new_token_id == llama_token_eos(model)) {
             break;
         }
 
-        // Конвертация токена в строку
+        // Конвертация токена в строку (ИСПРАВЛЕНО: передаем vocab)
         char buf[256];
-        int n = llama_token_to_piece(model, new_token_id, buf, sizeof(buf), 0, true);
+        int n = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true);
+        
         if (n < 0) {
-            // Ошибка конвертации
+            // Ошибка или пустой токен
         } else {
             std::string piece(buf, n);
             result_str += piece;
         }
 
         // Подготовка следующего шага
-        llama_batch_clear(batch);
-        llama_batch_add(batch, new_token_id, n_cur, { 0 }, true);
+        // "Очистка" батча - просто сбрасываем счетчик
+        batch.n_tokens = 0; 
+        
+        // Добавляем новый токен (ИСПРАВЛЕНО: используем common_batch_add)
+        common_batch_add(batch, new_token_id, n_cur, { 0 }, true);
         
         n_decode++;
         n_cur++;
