@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.22.1)
 project("p2p-ai-engine")
 
-# 1. КОНФИГУРАЦИЯ СТАНДАРТОВ И ФЛАГОВ
+# 1. КОНФИГУРАЦИЯ СТАНДАРТОВ
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
@@ -9,18 +9,13 @@ set(CMAKE_C_STANDARD 11)
 # Флаги оптимизации
 set(COMMON_FLAGS "-O3 -funroll-loops -fPIC -DNDEBUG -DGGML_USE_K_QUANTS")
 
-if(NOT DEFINED GGML_VERSION)
-    add_definitions(-DGGML_VERSION="1")
-endif()
-if(NOT DEFINED GGML_COMMIT)
-    add_definitions(-DGGML_COMMIT="unknown")
-endif()
+add_definitions(-DGGML_VERSION="1")
+add_definitions(-DGGML_COMMIT="unknown")
 
-# 2. АРХИТЕКТУРНЫЕ ОПТИМИЗАЦИИ (ARM64 NEON / DotProd / FP16)
+# 2. АРХИТЕКТУРНЫЕ ОПТИМИЗАЦИИ ARM64
 if(${ANDROID_ABI} STREQUAL "arm64-v8a")
     add_definitions(-DGGML_USE_NEON)
     add_definitions(-DGGML_USE_CPU_AARCH64)
-    # Эти флаги критичны для скорости на современных Android-флагманах
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${COMMON_FLAGS} -march=armv8.2-a+fp16+dotprod")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_FLAGS} -march=armv8.2-a+fp16+dotprod")
 else()
@@ -38,8 +33,9 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/llama/ggml/src/ggml-cpu
 )
 
-# 4. СБОР ИСХОДНЫХ ФАЙЛОВ
-file(GLOB_RECURSE LLAMA_SOURCES
+# 4. СБОР ИСХОДНЫХ ФАЙЛОВ (Логика "Белого списка")
+# Собираем основные файлы библиотеки
+file(GLOB LLAMA_CORE_SOURCES
     "llama/src/*.cpp"
     "llama/src/*.c"
     "llama/ggml/src/*.c"
@@ -48,19 +44,22 @@ file(GLOB_RECURSE LLAMA_SOURCES
     "llama/common/sampling.cpp"
 )
 
-# --- ЖЕСТКАЯ ПРОДАКШН-ФИЛЬТРАЦИЯ (Удаляем всё лишнее) ---
+# Собираем только CPU бэкенд (игнорируя все остальные папки в ggml/src)
+file(GLOB_RECURSE LLAMA_CPU_SOURCES
+    "llama/ggml/src/ggml-cpu/*.c"
+    "llama/ggml/src/ggml-cpu/*.cpp"
+)
 
-# 1. Удаляем все специфические бэкенды (Hexagon, CUDA, Vulkan, и т.д.)
-# Мы оставляем только файлы в корне ggml/src и папку ggml-cpu
-list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/ggml-(blas|cann|cuda|hexagon|kompute|metal|musa|opencl|rpc|sycl|vulkan)/.*")
+# Объединяем разрешенные файлы
+set(LLAMA_SOURCES ${LLAMA_CORE_SOURCES} ${LLAMA_CPU_SOURCES})
 
-# 2. Удаляем специфические оптимизаторы (KleidiAI, Spacemit)
-list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/(kleidiai|spacemit)/.*")
+# --- ЖЕСТКАЯ ФИЛЬТРАЦИЯ (Очистка от мусора) ---
 
-# 3. Удаляем другие процессорные архитектуры (кроме ARM)
-list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/(amx|avx|x86|loongarch|powerpc|riscv|s390|wasm)/.*")
-
-# 4. Удаляем тесты и примеры
+# Удаляем любые упоминания других архитектур и экспериментальных модулей внутри отобранных файлов
+list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/(amx|avx|x86|loongarch|powerpc|riscv|s390|wasm|kleidiai|spacemit)/.*")
+# Удаляем всё, что связано с внешними API (на случай, если GLOB что-то зацепил)
+list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/ggml-(blas|cann|cuda|hexagon|kompute|metal|musa|opencl|rpc|sycl|vulkan|virtgpu)/.*")
+# Удаляем тесты
 list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/(test-|tests|examples)/.*")
 
 # 5. СБОРКА И ЛИНКОВКА
