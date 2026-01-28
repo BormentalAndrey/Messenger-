@@ -67,8 +67,18 @@ android {
             arg("room.schemaLocation", "$projectDir/schemas")
         }
 
+        // Настройка фильтров архитектур
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+        }
+
+        // Параметры компиляции C++ для LlamaBridge
+        externalNativeBuild {
+            cmake {
+                // Оптимизация -O3 критична для скорости работы ИИ
+                cppFlags("-std=c++17", "-O3", "-frtti", "-fexceptions")
+                arguments("-DANDROID_STL=c++_shared")
+            }
         }
 
         buildConfigField(
@@ -77,6 +87,14 @@ android {
             "\"${System.getenv("GEMINI_API_KEY")
                 ?: localProperties.getProperty("GEMINI_API_KEY", "")}\""
         )
+    }
+
+    // Указываем путь к вашему CMakeLists.txt
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     signingConfigs {
@@ -151,12 +169,14 @@ android {
         }
         jniLibs {
             pickFirsts += "**/*.so"
+            // Включаем поддержку старой упаковки для совместимости с библиотеками GDX и JNI
             useLegacyPackaging = true
         }
     }
 
     sourceSets {
         getByName("main") {
+            // Совмещаем нативные библиотеки GDX и наши скомпилированные CMake
             jniLibs.srcDirs("src/main/jniLibs")
         }
     }
@@ -218,7 +238,7 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.work:work-runtime-ktx:2.9.1")
 
-    // JSON Processing (для стабильного парсинга в WebSearcher)
+    // JSON Processing
     implementation("org.json:json:20231013")
 
     // Room
@@ -233,7 +253,7 @@ dependencies {
     implementation("androidx.media3:media3-ui:$media3Version")
     implementation("androidx.media3:media3-session:$media3Version")
 
-    // WebRTC (ТОЛЬКО Stream SDK — без дублей)
+    // WebRTC
     implementation("io.getstream:stream-webrtc-android:1.2.0")
     implementation("io.getstream:stream-webrtc-android-compose:1.1.2")
 
