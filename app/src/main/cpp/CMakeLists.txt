@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
 
-# Флаги оптимизации для продакшена
+# Флаги оптимизации
 set(COMMON_FLAGS "-O3 -funroll-loops -fPIC -DNDEBUG -DGGML_USE_K_QUANTS")
 
 if(NOT DEFINED GGML_VERSION)
@@ -20,7 +20,7 @@ endif()
 if(${ANDROID_ABI} STREQUAL "arm64-v8a")
     add_definitions(-DGGML_USE_NEON)
     add_definitions(-DGGML_USE_CPU_AARCH64)
-    # march=armv8.2-a+fp16+dotprod — маст-хэв для производительности LLM на Android
+    # Эти флаги критичны для скорости на современных Android-флагманах
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${COMMON_FLAGS} -march=armv8.2-a+fp16+dotprod")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_FLAGS} -march=armv8.2-a+fp16+dotprod")
 else()
@@ -48,19 +48,20 @@ file(GLOB_RECURSE LLAMA_SOURCES
     "llama/common/sampling.cpp"
 )
 
-# --- ЖЕСТКАЯ ФИЛЬТРАЦИЯ ДЛЯ СТАБИЛЬНОЙ СБОРКИ (Exclude non-ARM backends) ---
+# --- ЖЕСТКАЯ ПРОДАКШН-ФИЛЬТРАЦИЯ (Удаляем всё лишнее) ---
 
-# 1. Удаляем KleidiAI и Spacemit (требуют специфических RISC-V/внешних хедеров)
+# 1. Удаляем все специфические бэкенды (Hexagon, CUDA, Vulkan, и т.д.)
+# Мы оставляем только файлы в корне ggml/src и папку ggml-cpu
+list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/ggml-(blas|cann|cuda|hexagon|kompute|metal|musa|opencl|rpc|sycl|vulkan)/.*")
+
+# 2. Удаляем специфические оптимизаторы (KleidiAI, Spacemit)
 list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/(kleidiai|spacemit)/.*")
 
-# 2. Удаляем внешние API (CUDA, Vulkan, OpenCL и прочее)
-list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/ggml-(blas|cann|cuda|kompute|metal|musa|opencl|rpc|sycl|vulkan)/.*")
-
-# 3. Удаляем специфичный код других архитектур
+# 3. Удаляем другие процессорные архитектуры (кроме ARM)
 list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/(amx|avx|x86|loongarch|powerpc|riscv|s390|wasm)/.*")
 
-# 4. Удаляем тесты
-list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/test-.*")
+# 4. Удаляем тесты и примеры
+list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/(test-|tests|examples)/.*")
 
 # 5. СБОРКА И ЛИНКОВКА
 add_library(llama SHARED 
