@@ -50,7 +50,6 @@ android {
     namespace = "com.kakdela.p2p"
     compileSdk = 35
 
-    // Рекомендуемая версия NDK для работы с современными нативными библиотеками (Llama)
     ndkVersion = "26.1.10909125"
 
     defaultConfig {
@@ -67,15 +66,12 @@ android {
             arg("room.schemaLocation", "$projectDir/schemas")
         }
 
-        // Настройка фильтров архитектур
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
         }
 
-        // Параметры компиляции C++ для LlamaBridge
         externalNativeBuild {
             cmake {
-                // Оптимизация -O3 критична для скорости работы ИИ
                 cppFlags("-std=c++17", "-O3", "-frtti", "-fexceptions")
                 arguments("-DANDROID_STL=c++_shared")
             }
@@ -89,7 +85,6 @@ android {
         )
     }
 
-    // Указываем путь к вашему CMakeLists.txt
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
@@ -169,14 +164,12 @@ android {
         }
         jniLibs {
             pickFirsts += "**/*.so"
-            // Включаем поддержку старой упаковки для совместимости с библиотеками GDX и JNI
             useLegacyPackaging = true
         }
     }
 
     sourceSets {
         getByName("main") {
-            // Совмещаем нативные библиотеки GDX и наши скомпилированные CMake
             jniLibs.srcDirs("src/main/jniLibs")
         }
     }
@@ -191,6 +184,8 @@ tasks.whenTaskAdded {
 
 /* ------------------------- Dependencies ------------------------- */
 dependencies {
+    // --- ИСПРАВЛЕНИЕ: Добавлена библиотека для Gemini AI (GenerativeModel) ---
+    implementation("com.google.ai.client.generativeai:generativeai:0.9.0") 
 
     // TERMUX
     implementation(project(":termux-shared"))
