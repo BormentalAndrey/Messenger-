@@ -5,14 +5,15 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
 
-# 1. ФЛАГИ И МАКРОСЫ (Устраняем ошибки undefined symbol для версий и логов)
-set(COMMON_FLAGS "-O3 -funroll-loops -fPIC -DNDEBUG -DGGML_USE_K_QUANTS")
+# 1. МАКРОСЫ (Заменяют отсутствующий build-info.cpp)
 add_definitions(-DGGML_VERSION="1")
 add_definitions(-DGGML_COMMIT="unknown")
 add_definitions(-DLLAMA_BUILD_NUMBER=1)
 add_definitions(-DLLAMA_COMMIT="unknown")
-add_definitions(-DLLAMA_COMPILER="clang-${CMAKE_CXX_COMPILER_VERSION}")
+add_definitions(-DLLAMA_COMPILER="clang-android")
 add_definitions(-DLLAMA_BUILD_TARGET="${ANDROID_ABI}")
+
+set(COMMON_FLAGS "-O3 -funroll-loops -fPIC -DNDEBUG -DGGML_USE_K_QUANTS")
 
 # 2. АРХИТЕКТУРНЫЕ ОПТИМИЗАЦИИ
 if(${ANDROID_ABI} STREQUAL "arm64-v8a")
@@ -25,7 +26,7 @@ else()
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_FLAGS}")
 endif()
 
-# 3. ПУТИ
+# 3. ПУТИ К ЗАГОЛОВКАМ
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/llama
     ${CMAKE_CURRENT_SOURCE_DIR}/llama/include
@@ -35,54 +36,30 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/llama/ggml/src/ggml-cpu
 )
 
-# 4. ИСХОДНИКИ (Добавляем недостающий log.cpp)
+# 4. СБОР ИСХОДНИКОВ
+file(GLOB_RECURSE CORE_SRC "llama/src/*.cpp" "llama/src/*.c")
+file(GLOB GGML_SRC "llama/ggml/src/*.c" "llama/ggml/src/*.cpp")
+file(GLOB_RECURSE GGML_CPU_SRC "llama/ggml/src/ggml-cpu/*.c" "llama/ggml/src/ggml-cpu/*.cpp")
 
-# Все модели и ядро
-file(GLOB_RECURSE LLAMA_CORE_SOURCES
-    "llama/src/*.cpp"
-    "llama/src/*.c"
-)
-
-# Файлы GGML
-file(GLOB GGML_SOURCES
-    "llama/ggml/src/*.c"
-    "llama/ggml/src/*.cpp"
-)
-
-# CPU бэкенд
-file(GLOB_RECURSE GGML_CPU_SOURCES
-    "llama/ggml/src/ggml-cpu/*.c"
-    "llama/ggml/src/ggml-cpu/*.cpp"
-)
-
-# Вспомогательные файлы (ДОБАВЛЕН log.cpp)
-set(COMMON_SOURCES
+# Собираем COMMON вручную (БЕЗ build-info.cpp)
+set(COMMON_SRC
     "llama/common/common.cpp"
     "llama/common/sampling.cpp"
     "llama/common/log.cpp"
-    "llama/common/build-info.cpp"
 )
 
-# Объединяем
-set(LLAMA_SOURCES 
-    ${LLAMA_CORE_SOURCES} 
-    ${GGML_SOURCES} 
-    ${GGML_CPU_SOURCES} 
-    ${COMMON_SOURCES}
-)
+set(ALL_SOURCES ${CORE_SRC} ${GGML_SRC} ${GGML_CPU_SRC} ${COMMON_SRC})
 
-# Фильтрация
-list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/(amx|avx|x86|loongarch|powerpc|riscv|s390|wasm|kleidiai|spacemit)/.*")
-list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/ggml-(blas|cann|cuda|hexagon|kompute|metal|musa|opencl|rpc|sycl|vulkan|virtgpu)/.*")
-list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/(test-|tests|examples)/.*")
+# ФИЛЬТРАЦИЯ
+list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/(amx|avx|x86|loongarch|powerpc|riscv|s390|wasm|kleidiai|spacemit)/.*")
+list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/ggml-(blas|cann|cuda|hexagon|kompute|metal|musa|opencl|rpc|sycl|vulkan|virtgpu)/.*")
+list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/(test-|tests|examples)/.*")
 
 # 5. СБОРКА
-# Собираем модели отдельно (статикой), чтобы не перегружать линковщик
-add_library(llama_objs OBJECT ${LLAMA_SOURCES})
-
+# Используем обычную библиотеку, но со всеми исходниками сразу
 add_library(llama SHARED 
     native-lib.cpp 
-    $<TARGET_OBJECTS:llama_objs>
+    ${ALL_SOURCES}
 )
 
 find_library(log-lib log)
