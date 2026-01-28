@@ -34,32 +34,42 @@ include_directories(
 )
 
 # 4. СБОР ИСХОДНЫХ ФАЙЛОВ (Логика "Белого списка")
-# Собираем основные файлы библиотеки
-file(GLOB LLAMA_CORE_SOURCES
+
+# Основные файлы llama (включая папку models для устранения undefined symbol)
+file(GLOB_RECURSE LLAMA_CORE_SOURCES
     "llama/src/*.cpp"
     "llama/src/*.c"
-    "llama/ggml/src/*.c"
-    "llama/ggml/src/*.cpp"
-    "llama/common/common.cpp"
-    "llama/common/sampling.cpp"
 )
 
-# Собираем только CPU бэкенд (игнорируя все остальные папки в ggml/src)
-file(GLOB_RECURSE LLAMA_CPU_SOURCES
+# Файлы GGML в корне
+file(GLOB GGML_SOURCES
+    "llama/ggml/src/*.c"
+    "llama/ggml/src/*.cpp"
+)
+
+# Только CPU бэкенд
+file(GLOB_RECURSE GGML_CPU_SOURCES
     "llama/ggml/src/ggml-cpu/*.c"
     "llama/ggml/src/ggml-cpu/*.cpp"
 )
 
-# Объединяем разрешенные файлы
-set(LLAMA_SOURCES ${LLAMA_CORE_SOURCES} ${LLAMA_CPU_SOURCES})
+# Вспомогательные файлы common
+set(COMMON_SOURCES
+    "llama/common/common.cpp"
+    "llama/common/sampling.cpp"
+)
 
-# --- ЖЕСТКАЯ ФИЛЬТРАЦИЯ (Очистка от мусора) ---
+# Объединяем всё вместе
+set(LLAMA_SOURCES 
+    ${LLAMA_CORE_SOURCES} 
+    ${GGML_SOURCES} 
+    ${GGML_CPU_SOURCES} 
+    ${COMMON_SOURCES}
+)
 
-# Удаляем любые упоминания других архитектур и экспериментальных модулей внутри отобранных файлов
+# --- ЖЕСТКАЯ ФИЛЬТРАЦИЯ (Удаляем всё лишнее) ---
 list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/(amx|avx|x86|loongarch|powerpc|riscv|s390|wasm|kleidiai|spacemit)/.*")
-# Удаляем всё, что связано с внешними API (на случай, если GLOB что-то зацепил)
 list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/ggml-(blas|cann|cuda|hexagon|kompute|metal|musa|opencl|rpc|sycl|vulkan|virtgpu)/.*")
-# Удаляем тесты
 list(FILTER LLAMA_SOURCES EXCLUDE REGEX ".*/(test-|tests|examples)/.*")
 
 # 5. СБОРКА И ЛИНКОВКА
