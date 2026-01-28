@@ -1,5 +1,11 @@
 package com.kakdela.p2p.ai
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import androidx.room.*
+import com.google.ai.client.generativeai.GenerativeModel
+import com.kakdela.p2p.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -9,139 +15,159 @@ import org.json.JSONObject
 import java.util.Collections
 import java.util.concurrent.TimeUnit
 
-// --- Memory Store ---
-/**
- * Хранилище контекста диалога.
- * Позволяет ИИ "помнить" последние реплики.
- */
-object AiMemoryStore {
-    // Используем потокобезопасный список
-    private val memory = Collections.synchronizedList(mutableListOf<String>())
-    private const val MAX_MEMORY_SIZE = 50
+// --- 1. Database for Learning (Persistent RAG) ---
 
-    fun remember(text: String) {
-        val cleanText = text.trim()
-        if (cleanText.length > 20) {
-            synchronized(memory) {
-                memory.add(cleanText)
-                if (memory.size > MAX_MEMORY_SIZE) {
-                    memory.removeAt(0)
-                }
+@Entity(tableName = "knowledge_table")
+data class KnowledgeEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "query_text") val query: String,
+    @ColumnInfo(name = "ai_answer") val answer: String,
+    @ColumnInfo(name = "timestamp") val timestamp: Long = System.currentTimeMillis()
+)
+
+@Dao
+interface KnowledgeDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(knowledge: KnowledgeEntity)
+
+    // Простой полнотекстовый поиск (можно улучшить до FTS)
+    @Query("SELECT * FROM knowledge_table WHERE query_text LIKE '%' || :search || '%' ORDER BY timestamp DESC LIMIT 3")
+    suspend fun findSimilar(search: String): List<KnowledgeEntity>
+
+    @Query("SELECT COUNT(*) FROM knowledge_table")
+    suspend fun getCount(): Int
+}
+
+@Database(entities = [KnowledgeEntity::class], version = 1, exportSchema = false)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun knowledgeDao(): KnowledgeDao
+
+    companion object {
+        @Volatile private var INSTANCE: AppDatabase? = null
+        fun getDatabase(context: Context): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "ai_teacher_db"
+                ).build()
+                INSTANCE = instance
+                instance
             }
         }
     }
-
-    fun context(): String {
-        synchronized(memory) {
-            return if (memory.isEmpty()) "" else memory.joinToString("\n")
-        }
-    }
-
-    fun clear() {
-        memory.clear()
-    }
 }
 
-// --- RAG Engine ---
-/**
- * Простая реализация RAG (Retrieval-Augmented Generation).
- * Ищет релевантную информацию в локальных документах и вебе по ключевым словам.
- */
-object RagEngine {
-    private val docs = Collections.synchronizedList(mutableListOf<String>())
-    private const val MAX_DOCS_SIZE = 100
+// --- 2. Hybrid AI Engine (The Brain) ---
 
-    fun addLocal(text: String) = addToDocs(text)
+object HybridAiEngine {
+    private var geminiModel: GenerativeModel? = null
 
-    fun addWeb(text: String) = addToDocs(text)
+    private fun getGemini(): GenerativeModel {
+        if (geminiModel == null) {
+            // Инициализация Gemini Flash (быстрая модель)
+            geminiModel = GenerativeModel(
+                modelName = "gemini-1.5-flash",
+                apiKey = BuildConfig.GEMINI_API_KEY
+            )
+        }
+        return geminiModel!!
+    }
 
-    private fun addToDocs(text: String) {
-        val cleanText = text.trim()
-        if (cleanText.isBlank()) return
+    suspend fun getResponse(context: Context, userPrompt: String): String = withContext(Dispatchers.IO) {
+        val db = AppDatabase.getDatabase(context).knowledgeDao()
+        val hasInternet = NetworkUtils.isNetworkAvailable(context)
         
-        synchronized(docs) {
-            // Предотвращаем дубликаты
-            if (!docs.contains(cleanText)) {
-                docs.add(cleanText)
-                if (docs.size > MAX_DOCS_SIZE) docs.removeAt(0)
+        // 1. Формируем контекст (ищем в локальной памяти, чему мы уже научились)
+        // Используем ключевые слова для простого поиска
+        val keywords = userPrompt.split(" ").filter { it.length > 4 }.joinToString(" ")
+        val similarKnowledge = if (keywords.isNotEmpty()) db.findSimilar(keywords) else emptyList()
+        
+        val learnedContext = similarKnowledge.joinToString("\n") { 
+            "Q: ${it.query}\nA: ${it.answer}" 
+        }
+
+        // 2. Сценарий: ЕСТЬ Интернет (Учимся у Учителя)
+        if (hasInternet && BuildConfig.GEMINI_API_KEY.isNotBlank()) {
+            try {
+                // Добавляем веб-поиск для Gemini (опционально)
+                val webInfo = try { WebSearcher.search(userPrompt) } catch (e: Exception) { "" }
+                
+                val prompt = """
+                    Контекст из прошлого опыта:
+                    $learnedContext
+                    Инфо из веба: $webInfo
+                    
+                    Вопрос пользователя: $userPrompt
+                    Ответь кратко и полезно на русском языке.
+                """.trimIndent()
+
+                val response = getGemini().generateContent(prompt).text ?: ""
+                
+                if (response.isNotBlank()) {
+                    // --- DISTILLATION: Сохраняем знания ---
+                    db.insert(KnowledgeEntity(query = userPrompt, answer = response))
+                    return@withContext response
+                }
+            } catch (e: Exception) {
+                // Если Gemini упал, идем к локальной модели (Fallback)
+                e.printStackTrace()
             }
         }
-    }
 
-    fun relevant(query: String): String {
-        val tokens = query.lowercase().split(Regex("\\s+"))
-            .filter { it.length > 3 }
-            .take(10) // Ограничиваем количество токенов для скорости
-
-        if (tokens.isEmpty()) return ""
-
-        synchronized(docs) {
-            return docs.filter { doc ->
-                val lowerDoc = doc.lowercase()
-                tokens.any { token -> lowerDoc.contains(token) }
-            }
-            .takeLast(5) // Берем самые свежие совпадения
-            .joinToString("\n\n")
+        // 3. Сценарий: НЕТ Интернета (Студент отвечает сам)
+        if (LlamaBridge.isReady() && ModelDownloadManager.isInstalled(context)) {
+            val localPrompt = """
+                <|system|>
+                Ты полезный ассистент. Отвечай на русском языке. Используй эти знания:
+                $learnedContext
+                <|user|>
+                $userPrompt
+                <|assistant|>
+            """.trimIndent()
+            
+            return@withContext LlamaBridge.prompt(localPrompt)
         }
+
+        return@withContext "Нет сети и локальная модель не готова. Пожалуйста, подключитесь к интернету или скачайте модель в настройках."
     }
 }
 
-// --- Web Searcher ---
-/**
- * Поисковый движок на базе DuckDuckGo Instant Answer API.
- * Работает без ключей API, идеально для P2P решений.
- */
+// --- 3. Utilities ---
+
+object NetworkUtils {
+    fun isNetworkAvailable(context: Context): Boolean {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = connectivityManager.activeNetwork ?: return false
+        val activeNetwork = connectivityManager.getNetworkCapabilities(network) ?: return false
+        return activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+               activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+    }
+}
+
+object AiMemoryStore {
+    private val memory = Collections.synchronizedList(mutableListOf<String>())
+    fun remember(text: String) {
+        if (text.length > 20) memory.add(text.take(200)) // Храним только начало для экономии
+        if (memory.size > 20) memory.removeAt(0)
+    }
+    fun context(): String = memory.joinToString("\n")
+    fun clear() = memory.clear()
+}
+
 object WebSearcher {
-    // Настраиваем клиент с таймаутами, чтобы не ждать вечно при плохом интернете
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .build()
+    private val client = OkHttpClient.Builder().callTimeout(10, TimeUnit.SECONDS).build()
 
     suspend fun search(query: String): String = withContext(Dispatchers.IO) {
-        if (query.isBlank()) return@withContext ""
-
-        // Правильное формирование URL с кодированием спецсимволов
-        val urlBuilder = "https://api.duckduckgo.com/".toHttpUrlOrNull()?.newBuilder()
-            ?.addQueryParameter("q", query)
-            ?.addQueryParameter("format", "json")
-            ?.addQueryParameter("no_redirect", "1")
-            ?.addQueryParameter("skip_disambig", "1")
-            ?.build() ?: return@withContext ""
-
-        val request = Request.Builder()
-            .url(urlBuilder)
-            .header("User-Agent", "Mozilla/5.0 (Android 14; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0")
-            .build()
-
         try {
-            // Используем .use для автоматического закрытия Response и Body (предотвращает утечки)
+            val url = "https://api.duckduckgo.com/?q=$query&format=json&no_redirect=1&skip_disambig=1".toHttpUrlOrNull() ?: return@withContext ""
+            val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext ""
-                
-                val bodyString = response.body?.string() ?: return@withContext ""
-                if (bodyString.isBlank()) return@withContext ""
-
-                val json = JSONObject(bodyString)
-                
-                // 1. Пробуем получить прямой ответ (Abstract)
-                var result = json.optString("AbstractText")
-
-                // 2. Если пусто, заглядываем в связанные темы
-                if (result.isNullOrBlank()) {
-                    val related = json.optJSONArray("RelatedTopics")
-                    if (related != null && related.length() > 0) {
-                        // Берем текст из первого связанного объекта
-                        result = related.optJSONObject(0)?.optString("Text") ?: ""
-                    }
-                }
-
-                return@withContext result.trim()
+                if (response.isSuccessful) {
+                    val json = JSONObject(response.body?.string() ?: "")
+                    json.optString("AbstractText")
+                } else ""
             }
-        } catch (e: Exception) {
-            // В продакшне лучше логировать через Log.e, но здесь оставляем для отладки
-            e.printStackTrace()
-            ""
-        }
+        } catch (e: Exception) { "" }
     }
 }
