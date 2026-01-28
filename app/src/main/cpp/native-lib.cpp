@@ -20,6 +20,7 @@ JNIEXPORT void JNICALL
 Java_com_kakdela_p2p_ai_LlamaBridge_init(JNIEnv *env, jobject thiz, jstring model_path) {
     const char *path = env->GetStringUTFChars(model_path, nullptr);
     
+    // Очистка перед инициализацией
     if (sampler) { llama_sampler_free(sampler); sampler = nullptr; }
     if (ctx) { llama_free(ctx); ctx = nullptr; }
     if (model) { llama_model_free(model); model = nullptr; }
@@ -29,6 +30,7 @@ Java_com_kakdela_p2p_ai_LlamaBridge_init(JNIEnv *env, jobject thiz, jstring mode
 
     model = llama_model_load_from_file(path, model_params);
     if (!model) {
+        LOGE("Failed to load model from %s", path);
         env->ReleaseStringUTFChars(model_path, path);
         return;
     }
@@ -39,20 +41,25 @@ Java_com_kakdela_p2p_ai_LlamaBridge_init(JNIEnv *env, jobject thiz, jstring mode
     ctx_params.n_threads_batch = ctx_params.n_threads;
 
     ctx = llama_init_from_model(model, ctx_params);
+    if (!ctx) {
+        LOGE("Failed to create context");
+        env->ReleaseStringUTFChars(model_path, path);
+        return;
+    }
     
     llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
     sampler = llama_sampler_chain_init(sparams);
     llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.7f));
     llama_sampler_chain_add(sampler, llama_sampler_init_top_k(40));
-    llama_sampler_chain_add(sampler, llama_sampler_init_top_p(0.9f, 1));
+    llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
+    LOGI("Llama model initialized successfully");
     env->ReleaseStringUTFChars(model_path, path);
-    LOGI("Model initialized successfully");
 }
 
 JNIEXPORT jstring JNICALL
 Java_com_kakdela_p2p_ai_LlamaBridge_prompt(JNIEnv *env, jobject thiz, jstring input_text) {
-    if (!model || !ctx || !sampler) return env->NewStringUTF("Error: Not initialized");
+    if (!model || !ctx || !sampler) return env->NewStringUTF("Error: AI not ready");
 
     const char *text = env->GetStringUTFChars(input_text, nullptr);
     std::string prompt(text);
@@ -62,20 +69,16 @@ Java_com_kakdela_p2p_ai_LlamaBridge_prompt(JNIEnv *env, jobject thiz, jstring in
 
     // Токенизация
     std::vector<llama_token> tokens_list(prompt.length() + 32);
-    int n_tokens = llama_tokenize(vocab, prompt.c_str(), prompt.length(), tokens_list.data(), tokens_list.size(), true, false);
+    int n_tokens = llama_tokenize(vocab, prompt.c_str(), prompt.length(), tokens_list.data(), (int)tokens_list.size(), true, false);
     if (n_tokens < 0) {
         tokens_list.resize(-n_tokens);
-        n_tokens = llama_tokenize(vocab, prompt.c_str(), prompt.length(), tokens_list.data(), tokens_list.size(), true, false);
+        n_tokens = llama_tokenize(vocab, prompt.c_str(), prompt.length(), tokens_list.data(), (int)tokens_list.size(), true, false);
     }
     tokens_list.resize(n_tokens);
 
-    // ВАЖНО: Если llama_kv_cache_clear не работает, в новых версиях используется этот метод:
-    // Мы его закомментируем, если он вызывает ошибки. Без него модель просто будет помнить контекст.
-    // llama_kv_cache_clear(ctx); 
-
     // Подготовка батча
-    llama_batch batch = llama_batch_init(tokens_list.size(), 0, 1);
-    for (int i = 0; i < (int)tokens_list.size(); i++) {
+    llama_batch batch = llama_batch_init(n_tokens, 0, 1);
+    for (int i = 0; i < n_tokens; i++) {
         common_batch_add(batch, tokens_list[i], i, { 0 }, false);
     }
     batch.logits[batch.n_tokens - 1] = true;
@@ -85,10 +88,12 @@ Java_com_kakdela_p2p_ai_LlamaBridge_prompt(JNIEnv *env, jobject thiz, jstring in
         return env->NewStringUTF("Error: Decode failed");
     }
 
+    // Генерация
     std::string result_str = "";
     int n_cur = batch.n_tokens;
-    
-    for (int i = 0; i < 256; i++) {
+    const int max_gen = 256;
+
+    for (int i = 0; i < max_gen; i++) {
         llama_token id = llama_sampler_sample(sampler, ctx, batch.n_tokens - 1);
 
         if (llama_vocab_is_eog(vocab, id)) break;
