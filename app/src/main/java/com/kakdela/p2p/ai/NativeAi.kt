@@ -7,27 +7,33 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.concurrent.TimeUnit
 
 // --- Llama Bridge ---
 /**
  * Объект для взаимодействия с нативным кодом llama.cpp через JNI.
+ * Обеспечивает безопасную загрузку библиотеки и вызов методов ИИ.
  */
 object LlamaBridge {
     private var isLoaded = false
 
     init {
         try {
-            // Загрузка библиотеки libllama.so
+            // Имя библиотеки должно соответствовать вашему CMakeLists.txt (обычно "llama")
             System.loadLibrary("llama")
             isLoaded = true
         } catch (e: UnsatisfiedLinkError) {
-            System.err.println("Native library 'llama' not found. Ensure CMake and NDK are configured: ${e.message}")
+            System.err.println("CRITICAL: Native library 'llama' not found: ${e.message}")
+        } catch (e: Exception) {
+            System.err.println("CRITICAL: Failed to load native library: ${e.message}")
         }
     }
 
     /**
-     * Инициализирует модель по указанному пути.
+     * Инициализирует модель по указанному пути. 
+     * ВНИМАНИЕ: Вызывайте только в Dispatchers.IO, так как это тяжелая операция.
      */
     external fun init(modelPath: String)
 
@@ -41,101 +47,105 @@ object LlamaBridge {
 
 // --- Download Manager ---
 /**
- * Управляет загрузкой и проверкой целостности файла весов ИИ.
+ * Управляет загрузкой файла весов (GGUF) и проверкой его целостности.
  */
 object ModelDownloadManager {
-    // Прямая стабильная ссылка от Microsoft (Phi-3-mini-4k-instruct-q4.gguf)
+    // Используем стабильную официальную ссылку от Microsoft
     private const val MODEL_URL = 
         "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf"
     
     private const val MODEL_NAME = "phi3-mini-q4.gguf"
 
     /**
-     * Возвращает путь к файлу модели в защищенном внутреннем хранилище приложения.
+     * Возвращает путь к файлу модели. Используем подпапку "models" во внутреннем хранилище.
      */
     fun modelFile(context: Context): File =
         File(context.filesDir, "models/$MODEL_NAME")
 
     /**
-     * Проверяет, установлена ли модель и не является ли файл поврежденным (проверка размера).
+     * Проверяет наличие и примерную целостность файла.
      */
     fun isInstalled(context: Context): Boolean {
         val file = modelFile(context)
-        // Модель Phi-3 Q4 весит примерно 2.2 ГБ. Проверка на > 1 ГБ отсекает пустые/битые файлы.
+        // Модель Microsoft Phi-3 Q4 весит ~2.3 ГБ. 1 ГБ — порог отсечения недокачанных файлов.
         return file.exists() && file.length() > 1_000_000_000
     }
 
     /**
-     * Скачивает модель с поддержкой редиректов и обработкой заголовков для предотвращения ошибки 401.
+     * Скачивает модель. Реализована защита от 401 ошибки и поддержка редиректов.
      */
     suspend fun download(
         context: Context,
         onProgress: (Int) -> Unit
     ) = withContext(Dispatchers.IO) {
         val file = modelFile(context)
-        file.parentFile?.mkdirs()
+        
+        // Создаем директорию, если её нет
+        val parent = file.parentFile
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs()
+        }
 
-        // Временный файл для безопасной загрузки (предотвращает использование недокачанного файла)
-        val tempFile = File(file.parentFile, "$MODEL_NAME.tmp")
+        // Временный файл, чтобы не заблокировать инициализацию битым файлом при обрыве связи
+        val tempFile = File(parent, "$MODEL_NAME.tmp")
 
         val client = OkHttpClient.Builder()
             .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
-            .followRedirects(true) // Критично для Hugging Face LFS
+            .followRedirects(true) // Обязательно для Hugging Face LFS
             .build()
 
         val request = Request.Builder()
             .url(MODEL_URL)
-            // Имитация браузера для обхода блокировок автоматических загрузок (ошибка 401/403)
-            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            // Имитация браузера позволяет избежать ошибки 401/403 на некоторых CDN
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36")
+            .header("Accept", "*/*")
             .build()
 
         try {
             val response = client.newCall(request).execute()
             if (!response.isSuccessful) {
-                throw IOException("Failed to download model: HTTP ${response.code} ${response.message}")
+                throw IOException("Ошибка сервера: ${response.code} ${response.message}")
             }
 
-            val body = response.body ?: throw IOException("Empty response body from server")
-            val total = body.contentLength()
+            val body = response.body ?: throw IOException("Тело ответа пустое")
+            val totalBytes = body.contentLength()
 
-            var downloaded = 0L
-            val buffer = ByteArray(16384) // Увеличенный буфер для быстрой записи тяжелых файлов
-            var lastProgress = -1
+            var bytesDownloaded = 0L
+            val buffer = ByteArray(16384) // 16KB буфер для оптимальной скорости на Android
+            var lastPublishedProgress = -1
 
             body.byteStream().use { input ->
                 tempFile.outputStream().use { output ->
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read == -1) break
-                        
-                        output.write(buffer, 0, read)
-                        downloaded += read
-                        
-                        // Частота обновления прогресса ограничена для экономии ресурсов CPU
-                        if (total > 0) {
-                            val currentProgress = ((downloaded * 100) / total).toInt()
-                            if (currentProgress > lastProgress) {
-                                lastProgress = currentProgress
+                    var bytesRead: Int
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                        bytesDownloaded += bytesRead
+
+                        if (totalBytes > 0) {
+                            val progress = ((bytesDownloaded * 100) / totalBytes).toInt()
+                            // Обновляем UI только при изменении процента
+                            if (progress != lastPublishedProgress) {
+                                lastPublishedProgress = progress
                                 withContext(Dispatchers.Main) {
-                                    onProgress(currentProgress)
+                                    onProgress(progress)
                                 }
                             }
                         }
                     }
                 }
             }
-            
-            // Замена старого файла новым только после успешного завершения записи
+
+            // Финализация: заменяем старый файл (если был) на новый
             if (tempFile.exists() && tempFile.length() > 1_000_000_000) {
                 if (file.exists()) file.delete()
                 if (!tempFile.renameTo(file)) {
-                    throw IOException("Failed to finalize model file (rename error)")
+                    throw IOException("Не удалось переименовать временный файл модели")
                 }
             } else {
-                throw IOException("Downloaded file is incomplete or corrupted")
+                throw IOException("Загруженный файл поврежден или имеет неверный размер")
             }
-            
+
         } catch (e: Exception) {
             if (tempFile.exists()) tempFile.delete()
             throw e
