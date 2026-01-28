@@ -1,16 +1,17 @@
 package com.kakdela.p2p.viewmodel
 
 import android.app.Application
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.kakdela.p2p.ai.AiMemoryStore
+import com.kakdela.p2p.ai.HybridAiEngine
 import com.kakdela.p2p.ai.LlamaBridge
 import com.kakdela.p2p.ai.ModelDownloadManager
-import com.kakdela.p2p.ai.RagEngine
-import com.kakdela.p2p.ai.WebSearcher
+import com.kakdela.p2p.ai.NetworkUtils
 import com.kakdela.p2p.model.ChatMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -18,164 +19,78 @@ import kotlinx.coroutines.withContext
 
 class AiChatViewModel(app: Application) : AndroidViewModel(app) {
 
-    // Список сообщений для UI (Compose отслеживает изменения автоматически)
-    val messages = mutableStateListOf<ChatMessage>()
-    
-    // Состояния интерфейса
+    // Вся история чата хранится здесь, но скрыта от UI
+    private val fullHistory = mutableStateListOf<ChatMessage>()
+
+    // UI видит только последние 2 сообщения: Вопрос и Ответ
+    val displayMessages by derivedStateOf {
+        fullHistory.takeLast(2)
+    }
+
     val isTyping = mutableStateOf(false)
     val isDownloading = mutableStateOf(false)
     val downloadProgress = mutableIntStateOf(0)
-    
-    // Проверка наличия модели на диске при старте
-    val modelReady = mutableStateOf(ModelDownloadManager.isInstalled(app))
+    val modelReady = mutableStateOf(false)
+    val isOnline = mutableStateOf(false) // Индикатор для UI
 
     init {
-        // Запуск инициализации в фоновом режиме, чтобы не блокировать Main Thread при старте
-        viewModelScope.launch(Dispatchers.IO) {
-            initializeSystem()
-        }
+        checkSystemStatus()
     }
 
-    private suspend fun initializeSystem() {
-        if (modelReady.value) {
-            try {
-                val modelFile = ModelDownloadManager.modelFile(getApplication())
-                if (!modelFile.exists()) {
-                    throw IllegalStateException("Файл модели не найден по пути: ${modelFile.absolutePath}")
-                }
-
-                // Инициализация нативного движка
-                LlamaBridge.init(modelFile.absolutePath)
-
-                withContext(Dispatchers.Main) {
-                    messages.add(ChatMessage(text = "Система ИИ готова к работе.", isMine = false))
-                }
-            } catch (t: Throwable) {
-                // Ловим Throwable, так как JNI может кинуть UnsatisfiedLinkError
-                withContext(Dispatchers.Main) {
-                    messages.add(ChatMessage(text = "Ошибка инициализации ядра: ${t.localizedMessage}", isMine = false))
-                    modelReady.value = false
-                }
-            }
-        } else {
-            withContext(Dispatchers.Main) {
-                messages.add(ChatMessage(text = "Для работы требуется локальная модель (~2.4 ГБ).", isMine = false))
-            }
-        }
-    }
-
-    fun downloadModel() {
-        if (isDownloading.value) return
+    private fun checkSystemStatus() {
+        val ctx = getApplication<Application>()
+        isOnline.value = NetworkUtils.isNetworkAvailable(ctx)
+        modelReady.value = ModelDownloadManager.isInstalled(ctx)
         
-        isDownloading.value = true
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                // Процесс загрузки
-                ModelDownloadManager.download(getApplication()) { progress ->
-                    // Обновляем прогресс на UI
-                    viewModelScope.launch(Dispatchers.Main) {
-                        downloadProgress.intValue = progress
-                    }
-                }
-
-                // Проверка после загрузки
-                val modelFile = ModelDownloadManager.modelFile(getApplication())
-                if (modelFile.exists()) {
-                    LlamaBridge.init(modelFile.absolutePath)
-                    
-                    withContext(Dispatchers.Main) {
-                        modelReady.value = true
-                        messages.add(ChatMessage(text = "Модель успешно установлена и готова!", isMine = false))
-                    }
-                }
-            } catch (t: Throwable) {
-                withContext(Dispatchers.Main) {
-                    messages.add(ChatMessage(text = "Ошибка загрузки: ${t.localizedMessage}", isMine = false))
-                }
-            } finally {
-                withContext(Dispatchers.Main) {
-                    isDownloading.value = false
+        if (modelReady.value) {
+            // Инициализация нативного моста в фоне
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val path = ModelDownloadManager.modelFile(ctx).absolutePath
+                    LlamaBridge.init(path)
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
             }
         }
     }
 
     fun sendMessage(text: String) {
-        val userText = text.trim()
-        if (userText.isBlank()) return
+        if (text.isBlank()) return
         
-        // 1. Отображаем сообщение пользователя
-        messages.add(ChatMessage(text = userText, isMine = true))
-        
-        if (!modelReady.value) {
-            messages.add(ChatMessage(text = "Пожалуйста, сначала скачайте модель.", isMine = false))
-            return
-        }
-
+        // Добавляем вопрос пользователя
+        fullHistory.add(ChatMessage(text = text, isMine = true))
         isTyping.value = true
 
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            
+            // Получаем ответ от Гибридного движка (Gemini или Local)
+            val response = HybridAiEngine.getResponse(ctx, text)
+            
+            fullHistory.add(ChatMessage(text = response, isMine = false))
+            
+            isTyping.value = false
+            // Обновляем статус сети для актуальности UI
+            isOnline.value = NetworkUtils.isNetworkAvailable(ctx)
+        }
+    }
+
+    fun downloadModel() {
+        if (isDownloading.value) return
+        isDownloading.value = true
+        
+        viewModelScope.launch {
             try {
-                // 2. RAG и Память
-                AiMemoryStore.remember(userText)
-                val relevantDocs = RagEngine.relevant(userText)
-                
-                // 3. Веб-поиск (с обработкой ошибок сети)
-                val webInfo = try { 
-                    WebSearcher.search(userText) 
-                } catch (e: Exception) { 
-                    "" 
+                ModelDownloadManager.download(getApplication()) { progress ->
+                    downloadProgress.intValue = progress
                 }
-                
-                if (webInfo.isNotBlank()) {
-                    RagEngine.addWeb(webInfo)
-                }
-
-                // 4. Формирование контекста и промпта
-                val contextBlock = buildString {
-                    if (relevantDocs.isNotBlank()) append("Local Documents:\n$relevantDocs\n")
-                    if (webInfo.isNotBlank()) append("Latest Web Data:\n$webInfo\n")
-                    val history = AiMemoryStore.context()
-                    if (history.isNotBlank()) append("Chat History:\n$history\n")
-                }
-
-                val fullPrompt = """
-                    <|user|>
-                    $contextBlock
-                    Question: $userText
-                    <|end|>
-                    <|assistant|>
-                """.trimIndent()
-
-                // 5. Генерация через LlamaBridge
-                val rawResponse = LlamaBridge.prompt(fullPrompt)
-                
-                // Глубокая очистка ответа от технических тегов
-                val cleanResponse = rawResponse
-                    .replace("<|assistant|>", "")
-                    .replace("<|end|>", "")
-                    .replace("<|user|>", "")
-                    .replace("<|system|>", "")
-                    .trim()
-
-                // 6. Финализация ответа в UI
-                withContext(Dispatchers.Main) {
-                    if (cleanResponse.isNotBlank()) {
-                        messages.add(ChatMessage(text = cleanResponse, isMine = false))
-                        AiMemoryStore.remember(cleanResponse)
-                    } else {
-                        messages.add(ChatMessage(text = "ИИ не смог сгенерировать ответ. Попробуйте другой вопрос.", isMine = false))
-                    }
-                }
-
-            } catch (t: Throwable) {
-                withContext(Dispatchers.Main) {
-                    messages.add(ChatMessage(text = "Критическая ошибка: ${t.localizedMessage}", isMine = false))
-                }
+                modelReady.value = true
+                checkSystemStatus() // Инициализация после загрузки
+            } catch (e: Exception) {
+                fullHistory.add(ChatMessage(text = "Ошибка загрузки: ${e.message}", isMine = false))
             } finally {
-                withContext(Dispatchers.Main) {
-                    isTyping.value = false
-                }
+                isDownloading.value = false
             }
         }
     }
