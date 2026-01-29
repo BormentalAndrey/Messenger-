@@ -10,7 +10,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ------------------------------------------------------------------------------
-# 2. BUILD INFO (необходим для llama.cpp)
+# 2. BUILD INFO (Критичен для инициализации llama.cpp)
 # ------------------------------------------------------------------------------
 set(BUILD_INFO_FILE "${CMAKE_CURRENT_BINARY_DIR}/build-info.cpp")
 file(WRITE "${BUILD_INFO_FILE}" "
@@ -28,7 +28,7 @@ add_compile_definitions(
     GGML_COMMIT=\"unknown\"
 )
 
-# -g0 нужен для CI, иначе линковка падает по OOM
+# -g0 критичен: без него линковщик съедает всю RAM и падает в CI (OOM)
 set(COMMON_FLAGS "-O3 -fPIC -DNDEBUG -g0 -DGGML_USE_K_QUANTS")
 
 # ------------------------------------------------------------------------------
@@ -70,20 +70,20 @@ include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/llama/ggml/include
     ${CMAKE_CURRENT_SOURCE_DIR}/llama/ggml/src
     ${CMAKE_CURRENT_SOURCE_DIR}/llama/ggml/src/ggml-cpu
+    ${CMAKE_CURRENT_SOURCE_DIR}/llama/ggml/src/ggml-cpu/cpp
 )
 
 # ------------------------------------------------------------------------------
-# 6. СБОР ИСХОДНИКОВ
+# 6. СБОР ИСХОДНИКОВ (РЕКУРСИВНЫЙ ДЛЯ GGML-CPU)
 # ------------------------------------------------------------------------------
-file(GLOB LLAMA_SRC "llama/src/*.cpp" "llama/src/*.c")
+file(GLOB_RECURSE LLAMA_SRC "llama/src/*.cpp" "llama/src/*.c")
 file(GLOB GGML_SRC  "llama/ggml/src/*.c" "llama/ggml/src/*.cpp")
-file(GLOB GGML_CPU_SRC "llama/ggml/src/ggml-cpu/*.c" "llama/ggml/src/ggml-cpu/*.cpp")
 
-# Добавляем ARM-специфичные исходники для ARM сборок
-if(ANDROID_ABI MATCHES "arm")
-    file(GLOB GGML_ARM_SRC "llama/ggml/src/ggml-cpu/arch/arm/*.cpp")
-    list(APPEND GGML_CPU_SRC ${GGML_ARM_SRC})
-endif()
+# Собираем ВСЕ из ggml-cpu (включая quants.c и подпапку cpp/ с generic функциями)
+file(GLOB_RECURSE GGML_CPU_SRC 
+    "llama/ggml/src/ggml-cpu/*.c" 
+    "llama/ggml/src/ggml-cpu/*.cpp"
+)
 
 set(COMMON_SRC
     "llama/common/common.cpp"
@@ -95,48 +95,41 @@ set(COMMON_SRC
 set(ALL_SOURCES ${LLAMA_SRC} ${GGML_SRC} ${GGML_CPU_SRC} ${COMMON_SRC})
 
 # ------------------------------------------------------------------------------
-# 7. ФИЛЬТРАЦИЯ
+# 7. ФИЛЬТРАЦИЯ И РЕШЕНИЕ КОНФЛИКТОВ
 # ------------------------------------------------------------------------------
-# Исключаем ненужные архитектуры, тесты, примеры и POC
+# 7.1. Удаляем все лишние бэкенды и тесты
 list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/(amx|avx|x86|loongarch|powerpc|riscv|s390|wasm|kleidiai|spacemit)/.*")
 list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/ggml-(blas|cann|cuda|hexagon|kompute|metal|musa|opencl|rpc|sycl|vulkan|virtgpu)/.*")
 list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/(test-|tests|examples|poc)/.*")
 
-# Убираем ARM-специфику для не-ARM сборок
-if(NOT ANDROID_ABI MATCHES "arm")
-    list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/arch/arm/.*")
-endif()
-
-# Фикс дубликатов repack.cpp
-# Убираем основной repack.cpp если есть ARM-реализация
+# 7.2. Решаем "Duplicate Symbol" для repack.cpp
+# В новых версиях есть ggml-cpu/repack.cpp и ggml-cpu/arch/arm/repack.cpp.
+# На Android (ARM) нам нужен оптимизированный.
 if(ANDROID_ABI MATCHES "arm")
-    list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/ggml-cpu/repack\\.cpp$")
+    list(FILTER ALL_SOURCES EXCLUDE REGEX "ggml-cpu/repack\\.cpp$")
+else()
+    # Для x86 убираем ARM-папку совсем
+    list(FILTER ALL_SOURCES EXCLUDE REGEX "ggml-cpu/arch/arm/.*")
 endif()
 
-# Удаляем llamafile для armeabi-v7a
+# 7.3. Фикс llamafile для armeabi-v7a (не поддерживает современные интринсики)
 if(ANDROID_ABI STREQUAL "armeabi-v7a")
     list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/llamafile/.*")
 endif()
 
 # ------------------------------------------------------------------------------
-# 8. СОЗДАНИЕ SHARED БИБЛИОТЕКИ
+# 8. СБОРКА И ЛИНКОВКА
 # ------------------------------------------------------------------------------
 add_library(llama SHARED native-lib.cpp ${ALL_SOURCES})
 
-# ------------------------------------------------------------------------------
-# 9. ЛИНКОВКА
-# ------------------------------------------------------------------------------
 find_library(log-lib log)
 find_library(android-lib android)
 
-target_link_libraries(llama PUBLIC
+target_link_libraries(llama
     ${log-lib}
     ${android-lib}
     atomic
     m
 )
 
-# Опции для продакшн-очистки и линковки
-set_target_properties(llama PROPERTIES CLEAN_DIRECT_OUTPUT 1
-                                        POSITION_INDEPENDENT_CODE ON
-                                        CXX_STANDARD 17)
+set_target_properties(llama PROPERTIES CLEAN_DIRECT_OUTPUT 1)
