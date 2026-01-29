@@ -16,7 +16,7 @@ import org.json.JSONObject
 import java.util.Collections
 import java.util.concurrent.TimeUnit
 
-// --- Database ---
+// --- Database (Память ИИ) ---
 
 @Entity(tableName = "knowledge_table")
 data class KnowledgeEntity(
@@ -58,14 +58,9 @@ abstract class AppDatabase : RoomDatabase() {
 
 object HybridAiEngine {
     private val modelPriorityList = listOf(
-        "gemini-2.5-flash",
-        "gemini-2.0-flash",
-        "gemini-3-flash-preview",
+        "gemini-2.0-flash", // Быстрый и новый
         "gemini-1.5-flash",
-        "gemini-1.5-pro",
-        "gemma-3-27b-it",
-        "gemma-3-12b-it",
-        "gemma-3-4b-it"
+        "gemini-1.5-pro"
     )
 
     private fun createModel(modelName: String) = GenerativeModel(modelName, BuildConfig.GEMINI_API_KEY)
@@ -74,16 +69,19 @@ object HybridAiEngine {
         val db = AppDatabase.getDatabase(context).knowledgeDao()
         val hasInternet = NetworkUtils.isNetworkAvailable(context)
 
+        // 1. Поиск знаний в локальной базе (Long Term Memory)
         val keywords = userPrompt.split(" ").filter { it.length > 4 }.joinToString(" ")
         val similarKnowledge = if (keywords.isNotEmpty()) db.findSimilar(keywords) else emptyList()
-        val learnedContext = similarKnowledge.joinToString("\n") { "Q: ${it.query}\nA: ${it.answer}" }
+        val learnedContext = similarKnowledge.joinToString("\n") { "Human: ${it.query}\nAI: ${it.answer}" }
 
+        // 2. Попытка использовать Gemini (Облако)
         if (hasInternet && BuildConfig.GEMINI_API_KEY.isNotBlank()) {
-            var retryDelay = 500L
+            var retryDelay = 1000L
             for (modelName in modelPriorityList) {
                 try {
                     val webInfo = try { WebSearcher.search(userPrompt) } catch (e: Exception) { "" }
-                    val prompt = """
+                    
+                    val systemPrompt = """
                         Контекст из прошлого опыта:
                         $learnedContext
                         Инфо из веба: $webInfo
@@ -92,40 +90,57 @@ object HybridAiEngine {
                         Ответь кратко и полезно на русском языке.
                     """.trimIndent()
 
-                    val response = createModel(modelName).generateContent(prompt).text ?: ""
+                    val response = createModel(modelName).generateContent(systemPrompt).text ?: ""
+                    
                     if (response.isNotBlank()) {
+                        // Обучение: сохраняем успешный ответ в базу
                         db.insert(KnowledgeEntity(query = userPrompt, answer = response))
                         return@withContext response
                     }
                 } catch (e: Exception) {
                     val msg = e.message ?: ""
-                    if (msg.contains("429") || msg.contains("quota") || msg.contains("500") || msg.contains("503") || msg.contains("404")) {
-                        if (msg.contains("429")) {
-                            delay(retryDelay)
-                            retryDelay *= 2
-                        }
-                        continue
-                    } else break
+                    if (msg.contains("429") || msg.contains("quota")) {
+                        delay(retryDelay)
+                        retryDelay *= 2
+                    } else {
+                        // Если ошибка не связана с квотой (например, 500), пробуем следующую модель или переходим к локальной
+                        continue 
+                    }
                 }
             }
         }
 
-        // Локальная Llama
+        // 3. Fallback: Локальная Llama (Оффлайн)
         try {
-            if (LlamaBridge.isReady() && ModelDownloadManager.isInstalled(context)) {
+            // Проверяем, инициализирована ли модель в памяти
+            if (LlamaBridge.isLibAvailable() && LlamaBridge.isReady()) {
+                
+                // Формат промпта специфичен для Phi-3
                 val localPrompt = """
                     <|system|>
-                    Ты полезный ассистент. Отвечай на русском языке. Используй эти знания:
+                    Ты полезный ассистент. Отвечай на русском языке.
+                    Используй этот контекст:
                     $learnedContext
+                    <|end|>
                     <|user|>
                     $userPrompt
+                    <|end|>
                     <|assistant|>
                 """.trimIndent()
+                
                 return@withContext LlamaBridge.prompt(localPrompt)
+            } else {
+                // Если модель не готова, проверяем файл
+                if (!ModelDownloadManager.isInstalled(context)) {
+                    return@withContext "Интернет недоступен, а локальная модель не скачана. Нажмите кнопку загрузки."
+                } else {
+                    return@withContext "Инициализация локального мозга... Попробуйте через пару секунд."
+                }
             }
-        } catch (e: Exception) { e.printStackTrace() }
-
-        return@withContext "Нет сети и локальная модель не готова. Подключитесь к интернету или скачайте модель."
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return@withContext "Ошибка: ${e.message}. Проверьте соединение или перезапустите приложение."
+        }
     }
 }
 
@@ -136,25 +151,16 @@ object NetworkUtils {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val network = cm.activeNetwork ?: return false
         val capabilities = cm.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
-}
-
-object AiMemoryStore {
-    private val memory = Collections.synchronizedList(mutableListOf<String>())
-    fun remember(text: String) {
-        if (text.length > 20) memory.add(text.take(200))
-        if (memory.size > 20) memory.removeAt(0)
-    }
-    fun context(): String = memory.joinToString("\n")
-    fun clear() = memory.clear()
 }
 
 object WebSearcher {
-    private val client = OkHttpClient.Builder().callTimeout(10, TimeUnit.SECONDS).build()
+    private val client = OkHttpClient.Builder().callTimeout(5, TimeUnit.SECONDS).build()
 
     suspend fun search(query: String): String = withContext(Dispatchers.IO) {
         try {
+            // DuckDuckGo Instant Answer API (простой пример)
             val url = "https://api.duckduckgo.com/?q=$query&format=json&no_redirect=1&skip_disambig=1".toHttpUrlOrNull() ?: return@withContext ""
             val request = Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
             client.newCall(request).execute().use { response ->
