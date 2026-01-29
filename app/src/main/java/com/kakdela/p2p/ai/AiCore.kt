@@ -7,6 +7,7 @@ import androidx.room.*
 import com.google.ai.client.generativeai.GenerativeModel
 import com.kakdela.p2p.BuildConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -30,7 +31,6 @@ interface KnowledgeDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(knowledge: KnowledgeEntity)
 
-    // Простой полнотекстовый поиск (можно улучшить до FTS)
     @Query("SELECT * FROM knowledge_table WHERE query_text LIKE '%' || :search || '%' ORDER BY timestamp DESC LIMIT 3")
     suspend fun findSimilar(search: String): List<KnowledgeEntity>
 
@@ -61,72 +61,99 @@ abstract class AppDatabase : RoomDatabase() {
 // --- 2. Hybrid AI Engine (The Brain) ---
 
 object HybridAiEngine {
-    private var geminiModel: GenerativeModel? = null
+    // Список текстовых моделей для перебора (от новых к стабильным + Gemma)
+    private val modelPriorityList = listOf(
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-3-flash-preview",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemma-3-27b-it",
+        "gemma-3-12b-it",
+        "gemma-3-4b-it"
+    )
 
-    private fun getGemini(): GenerativeModel {
-        if (geminiModel == null) {
-            // Инициализация Gemini Flash (быстрая модель)
-            geminiModel = GenerativeModel(
-                modelName = "gemini-1.5-flash",
-                apiKey = BuildConfig.GEMINI_API_KEY
-            )
-        }
-        return geminiModel!!
+    private fun createModel(modelName: String): GenerativeModel {
+        return GenerativeModel(
+            modelName = modelName,
+            apiKey = BuildConfig.GEMINI_API_KEY
+        )
     }
 
     suspend fun getResponse(context: Context, userPrompt: String): String = withContext(Dispatchers.IO) {
         val db = AppDatabase.getDatabase(context).knowledgeDao()
         val hasInternet = NetworkUtils.isNetworkAvailable(context)
         
-        // 1. Формируем контекст (ищем в локальной памяти, чему мы уже научились)
-        // Используем ключевые слова для простого поиска
+        // 1. Формируем контекст (RAG)
         val keywords = userPrompt.split(" ").filter { it.length > 4 }.joinToString(" ")
         val similarKnowledge = if (keywords.isNotEmpty()) db.findSimilar(keywords) else emptyList()
-        
         val learnedContext = similarKnowledge.joinToString("\n") { 
             "Q: ${it.query}\nA: ${it.answer}" 
         }
 
-        // 2. Сценарий: ЕСТЬ Интернет (Учимся у Учителя)
+        // 2. Сценарий: ЕСТЬ Интернет (Перебор облачных моделей)
         if (hasInternet && BuildConfig.GEMINI_API_KEY.isNotBlank()) {
-            try {
-                // Добавляем веб-поиск для Gemini (опционально)
-                val webInfo = try { WebSearcher.search(userPrompt) } catch (e: Exception) { "" }
-                
-                val prompt = """
-                    Контекст из прошлого опыта:
-                    $learnedContext
-                    Инфо из веба: $webInfo
-                    
-                    Вопрос пользователя: $userPrompt
-                    Ответь кратко и полезно на русском языке.
-                """.trimIndent()
+            var retryDelay = 500L // Начальная задержка при лимитах
 
-                val response = getGemini().generateContent(prompt).text ?: ""
-                
-                if (response.isNotBlank()) {
-                    // --- DISTILLATION: Сохраняем знания ---
-                    db.insert(KnowledgeEntity(query = userPrompt, answer = response))
-                    return@withContext response
+            for (modelName in modelPriorityList) {
+                try {
+                    val webInfo = try { WebSearcher.search(userPrompt) } catch (e: Exception) { "" }
+                    
+                    val prompt = """
+                        Контекст из прошлого опыта:
+                        $learnedContext
+                        Инфо из веба: $webInfo
+                        
+                        Вопрос пользователя: $userPrompt
+                        Ответь кратко и полезно на русском языке.
+                    """.trimIndent()
+
+                    val response = createModel(modelName).generateContent(prompt).text ?: ""
+                    
+                    if (response.isNotBlank()) {
+                        // Сохраняем знания для будущего использования
+                        db.insert(KnowledgeEntity(query = userPrompt, answer = response))
+                        return@withContext response
+                    }
+                } catch (e: Exception) {
+                    val errorMsg = e.message ?: ""
+                    // Если ошибка квоты (429) или сервера (500/503), пробуем следующую модель с задержкой
+                    if (errorMsg.contains("429") || errorMsg.contains("quota") || 
+                        errorMsg.contains("500") || errorMsg.contains("503") || errorMsg.contains("404")) {
+                        
+                        if (errorMsg.contains("429")) {
+                            delay(retryDelay)
+                            retryDelay *= 2 // Увеличиваем паузу
+                        }
+                        continue 
+                    } else {
+                        // Если ошибка критическая (например, Auth), выходим из цикла к Llama
+                        e.printStackTrace()
+                        break
+                    }
                 }
-            } catch (e: Exception) {
-                // Если Gemini упал, идем к локальной модели (Fallback)
-                e.printStackTrace()
             }
         }
 
-        // 3. Сценарий: НЕТ Интернета (Студент отвечает сам)
-        if (LlamaBridge.isReady() && ModelDownloadManager.isInstalled(context)) {
-            val localPrompt = """
-                <|system|>
-                Ты полезный ассистент. Отвечай на русском языке. Используй эти знания:
-                $learnedContext
-                <|user|>
-                $userPrompt
-                <|assistant|>
-            """.trimIndent()
-            
-            return@withContext LlamaBridge.prompt(localPrompt)
+        // 3. Сценарий: НЕТ Интернета или все облачные модели упали (Локальная Llama)
+        // Проверяем наличие LlamaBridge (заглушка должна быть реализована в твоем проекте)
+        try {
+            // Предполагаем, что LlamaBridge и ModelDownloadManager — это синглтоны или доступные объекты
+            // Внимание: проверь импорты для этих объектов!
+            if (LlamaBridge.isReady() && ModelDownloadManager.isInstalled(context)) {
+                val localPrompt = """
+                    <|system|>
+                    Ты полезный ассистент. Отвечай на русском языке. Используй эти знания:
+                    $learnedContext
+                    <|user|>
+                    $userPrompt
+                    <|assistant|>
+                """.trimIndent()
+                
+                return@withContext LlamaBridge.prompt(localPrompt)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
 
         return@withContext "Нет сети и локальная модель не готова. Пожалуйста, подключитесь к интернету или скачайте модель в настройках."
