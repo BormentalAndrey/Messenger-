@@ -7,11 +7,13 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,9 +35,20 @@ private val SurfaceColor = Color(0xFF1A1A1A)
 @Composable
 fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
     var input by remember { mutableStateOf("") }
-    
-    // Получаем список только актуальных сообщений (Вопрос-Ответ)
     val messages = vm.displayMessages
+    val listState = rememberLazyListState()
+
+    // Авто-скролл вниз при новом сообщении
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
+    }
+    
+    // Периодическая проверка статуса при открытии экрана
+    LaunchedEffect(Unit) {
+        vm.refreshSystemStatus()
+    }
 
     Scaffold(
         topBar = {
@@ -44,13 +57,15 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("AI Master", color = NeonGreen, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.width(8.dp))
-                        // Индикатор режима работы
-                        Icon(
-                            imageVector = if (vm.isOnline.value) Icons.Default.Cloud else Icons.Default.CloudOff,
-                            contentDescription = null,
-                            tint = if (vm.isOnline.value) NeonGreen else Color.Gray,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        
+                        // Иконка статуса
+                        if (vm.isOnline.value) {
+                             Icon(Icons.Default.Cloud, "Online", tint = NeonGreen, modifier = Modifier.size(16.dp))
+                        } else if (vm.isModelDownloaded.value) {
+                             Icon(Icons.Default.Memory, "Offline Local", tint = Color.Yellow, modifier = Modifier.size(16.dp))
+                        } else {
+                             Icon(Icons.Default.CloudOff, "Offline No Brain", tint = Color.Red, modifier = Modifier.size(16.dp))
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = DarkBg)
@@ -60,38 +75,48 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             
-            // Область чата (Single Response Mode)
+            // Список сообщений
             LazyColumn(
+                state = listState,
                 modifier = Modifier.weight(1f).padding(16.dp),
-                verticalArrangement = Arrangement.Bottom // Прижимаем к низу
             ) {
-                items(messages, key = { it.id }) { msg ->
-                    AnimatedVisibility(
-                        visible = true,
-                        enter = fadeIn() + expandVertically()
-                    ) {
-                        AiChatBubble(msg)
-                    }
+                items(messages) { msg ->
+                    AiChatBubble(msg)
                     Spacer(Modifier.height(8.dp))
                 }
 
                 if (vm.isTyping.value) {
                     item { 
-                        Text("Думаю...", color = NeonGreen, modifier = Modifier.padding(8.dp)) 
+                        Text("Генерирую ответ...", color = NeonGreen, fontSize = 12.sp, modifier = Modifier.padding(8.dp)) 
                     }
                 }
             }
 
-            // Зона загрузки модели (если нет интернета и модели нет)
-            if (!vm.modelReady.value && !vm.isOnline.value) {
-                ModelDownloadCard(
-                    isDownloading = vm.isDownloading.value,
-                    progress = vm.downloadProgress.intValue,
-                    onDownload = { vm.downloadModel() }
-                )
-            } 
-            // Поле ввода (активно всегда, если есть сеть ИЛИ модель)
-            else if (vm.isOnline.value || vm.modelReady.value) {
+            // Условия отображения элементов управления
+            val canChat = vm.isOnline.value || vm.isModelDownloaded.value
+            
+            if (!canChat) {
+                // Если нет интернета И нет модели -> Предлагаем скачать (если бы интернет был, мы бы чатились)
+                // Но скачать без интернета нельзя, поэтому показываем инфо.
+                // А вот если интернета нет, но юзер нажал кнопку раньше и скачивание идет...
+                
+                if (vm.isDownloading.value) {
+                     ModelDownloadCard(true, vm.downloadProgress.intValue) {}
+                } else {
+                    // Ситуация: Нет сети и нет модели. Тупик.
+                    Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                         Text("Нет интернета и базы знаний. Подключитесь к сети.", color = Color.Gray)
+                    }
+                }
+            } else if (vm.isOnline.value && !vm.isModelDownloaded.value) {
+                // Интернет есть, но модели нет. Можно чатиться, но предложим скачать на будущее.
+                ModelDownloadCard(vm.isDownloading.value, vm.downloadProgress.intValue) {
+                    vm.downloadModel()
+                }
+            }
+
+            // Поле ввода (Если есть хоть какая-то возможность ответить)
+            if (canChat) {
                 Row(
                     modifier = Modifier.padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -104,7 +129,8 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = SurfaceColor,
                             unfocusedContainerColor = SurfaceColor,
-                            focusedTextColor = Color.White
+                            focusedTextColor = Color.White,
+                            cursorColor = NeonGreen
                         ),
                         shape = RoundedCornerShape(24.dp)
                     )
@@ -139,8 +165,9 @@ fun AiChatBubble(msg: ChatMessage) {
         ) {
             Text(
                 text = msg.text,
-                modifier = Modifier.padding(16.dp),
-                color = Color.White
+                modifier = Modifier.padding(12.dp),
+                color = Color.White,
+                fontSize = 16.sp
             )
         }
     }
@@ -149,27 +176,28 @@ fun AiChatBubble(msg: ChatMessage) {
 @Composable
 fun ModelDownloadCard(isDownloading: Boolean, progress: Int, onDownload: () -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
-        border = BorderStroke(1.dp, NeonGreen),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        border = BorderStroke(1.dp, NeonGreen.copy(alpha = 0.5f)),
         colors = CardDefaults.cardColors(containerColor = SurfaceColor)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("Для работы офлайн нужна база знаний", color = Color.White)
-            Spacer(Modifier.height(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Офлайн режим", color = NeonGreen, fontWeight = FontWeight.Bold)
+                Text("Скачайте модель (2.3 ГБ), чтобы ИИ работал без интернета.", color = Color.Gray, fontSize = 12.sp)
+            }
+            
             if (isDownloading) {
-                LinearProgressIndicator(
-                    progress = { progress / 100f },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = NeonGreen,
-                )
-                Text("$progress%", color = NeonGreen)
+                Box(contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(progress = { progress / 100f }, color = NeonGreen, modifier = Modifier.size(40.dp))
+                    Text("${progress}%", color = Color.White, fontSize = 10.sp)
+                }
             } else {
-                Button(onClick = onDownload, colors = ButtonDefaults.buttonColors(containerColor = NeonGreen)) {
-                    Icon(Icons.Default.Download, null, tint = Color.Black)
-                    Text("Скачать Мозг (2.4 ГБ)", color = Color.Black)
+                IconButton(onClick = onDownload) {
+                    Icon(Icons.Default.Download, "Download", tint = NeonGreen)
                 }
             }
         }
