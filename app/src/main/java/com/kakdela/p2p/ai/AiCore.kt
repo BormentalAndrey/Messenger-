@@ -16,7 +16,7 @@ import org.json.JSONObject
 import java.util.Collections
 import java.util.concurrent.TimeUnit
 
-// --- 1. Database for Learning (Persistent RAG) ---
+// --- Database ---
 
 @Entity(tableName = "knowledge_table")
 data class KnowledgeEntity(
@@ -33,15 +33,11 @@ interface KnowledgeDao {
 
     @Query("SELECT * FROM knowledge_table WHERE query_text LIKE '%' || :search || '%' ORDER BY timestamp DESC LIMIT 3")
     suspend fun findSimilar(search: String): List<KnowledgeEntity>
-
-    @Query("SELECT COUNT(*) FROM knowledge_table")
-    suspend fun getCount(): Int
 }
 
 @Database(entities = [KnowledgeEntity::class], version = 1, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun knowledgeDao(): KnowledgeDao
-
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
         fun getDatabase(context: Context): AppDatabase {
@@ -58,10 +54,9 @@ abstract class AppDatabase : RoomDatabase() {
     }
 }
 
-// --- 2. Hybrid AI Engine (The Brain) ---
+// --- Hybrid AI Engine ---
 
 object HybridAiEngine {
-    // Список текстовых моделей для перебора (от новых к стабильным + Gemma)
     private val modelPriorityList = listOf(
         "gemini-2.5-flash",
         "gemini-2.0-flash",
@@ -73,32 +68,21 @@ object HybridAiEngine {
         "gemma-3-4b-it"
     )
 
-    private fun createModel(modelName: String): GenerativeModel {
-        return GenerativeModel(
-            modelName = modelName,
-            apiKey = BuildConfig.GEMINI_API_KEY
-        )
-    }
+    private fun createModel(modelName: String) = GenerativeModel(modelName, BuildConfig.GEMINI_API_KEY)
 
     suspend fun getResponse(context: Context, userPrompt: String): String = withContext(Dispatchers.IO) {
         val db = AppDatabase.getDatabase(context).knowledgeDao()
         val hasInternet = NetworkUtils.isNetworkAvailable(context)
-        
-        // 1. Формируем контекст (RAG)
+
         val keywords = userPrompt.split(" ").filter { it.length > 4 }.joinToString(" ")
         val similarKnowledge = if (keywords.isNotEmpty()) db.findSimilar(keywords) else emptyList()
-        val learnedContext = similarKnowledge.joinToString("\n") { 
-            "Q: ${it.query}\nA: ${it.answer}" 
-        }
+        val learnedContext = similarKnowledge.joinToString("\n") { "Q: ${it.query}\nA: ${it.answer}" }
 
-        // 2. Сценарий: ЕСТЬ Интернет (Перебор облачных моделей)
         if (hasInternet && BuildConfig.GEMINI_API_KEY.isNotBlank()) {
-            var retryDelay = 500L // Начальная задержка при лимитах
-
+            var retryDelay = 500L
             for (modelName in modelPriorityList) {
                 try {
                     val webInfo = try { WebSearcher.search(userPrompt) } catch (e: Exception) { "" }
-                    
                     val prompt = """
                         Контекст из прошлого опыта:
                         $learnedContext
@@ -109,37 +93,25 @@ object HybridAiEngine {
                     """.trimIndent()
 
                     val response = createModel(modelName).generateContent(prompt).text ?: ""
-                    
                     if (response.isNotBlank()) {
-                        // Сохраняем знания для будущего использования
                         db.insert(KnowledgeEntity(query = userPrompt, answer = response))
                         return@withContext response
                     }
                 } catch (e: Exception) {
-                    val errorMsg = e.message ?: ""
-                    // Если ошибка квоты (429) или сервера (500/503), пробуем следующую модель с задержкой
-                    if (errorMsg.contains("429") || errorMsg.contains("quota") || 
-                        errorMsg.contains("500") || errorMsg.contains("503") || errorMsg.contains("404")) {
-                        
-                        if (errorMsg.contains("429")) {
+                    val msg = e.message ?: ""
+                    if (msg.contains("429") || msg.contains("quota") || msg.contains("500") || msg.contains("503") || msg.contains("404")) {
+                        if (msg.contains("429")) {
                             delay(retryDelay)
-                            retryDelay *= 2 // Увеличиваем паузу
+                            retryDelay *= 2
                         }
-                        continue 
-                    } else {
-                        // Если ошибка критическая (например, Auth), выходим из цикла к Llama
-                        e.printStackTrace()
-                        break
-                    }
+                        continue
+                    } else break
                 }
             }
         }
 
-        // 3. Сценарий: НЕТ Интернета или все облачные модели упали (Локальная Llama)
-        // Проверяем наличие LlamaBridge (заглушка должна быть реализована в твоем проекте)
+        // Локальная Llama
         try {
-            // Предполагаем, что LlamaBridge и ModelDownloadManager — это синглтоны или доступные объекты
-            // Внимание: проверь импорты для этих объектов!
             if (LlamaBridge.isReady() && ModelDownloadManager.isInstalled(context)) {
                 val localPrompt = """
                     <|system|>
@@ -149,33 +121,29 @@ object HybridAiEngine {
                     $userPrompt
                     <|assistant|>
                 """.trimIndent()
-                
                 return@withContext LlamaBridge.prompt(localPrompt)
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        } catch (e: Exception) { e.printStackTrace() }
 
-        return@withContext "Нет сети и локальная модель не готова. Пожалуйста, подключитесь к интернету или скачайте модель в настройках."
+        return@withContext "Нет сети и локальная модель не готова. Подключитесь к интернету или скачайте модель."
     }
 }
 
-// --- 3. Utilities ---
+// --- Utilities ---
 
 object NetworkUtils {
     fun isNetworkAvailable(context: Context): Boolean {
-        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val network = connectivityManager.activeNetwork ?: return false
-        val activeNetwork = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-               activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = cm.activeNetwork ?: return false
+        val capabilities = cm.getNetworkCapabilities(network) ?: return false
+        return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) || capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)
     }
 }
 
 object AiMemoryStore {
     private val memory = Collections.synchronizedList(mutableListOf<String>())
     fun remember(text: String) {
-        if (text.length > 20) memory.add(text.take(200)) // Храним только начало для экономии
+        if (text.length > 20) memory.add(text.take(200))
         if (memory.size > 20) memory.removeAt(0)
     }
     fun context(): String = memory.joinToString("\n")
