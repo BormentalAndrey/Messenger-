@@ -175,9 +175,10 @@ fun NavGraph(
                     onSendMessage = vm::sendMessage,
                     onSendFile = vm::sendFile,
                     onSendAudio = { uri, duration ->
+                        // ИСПРАВЛЕНО: корректный синтаксис интерполяции Kotlin
                         vm.sendFile(
                             uri,
-                            "audio_msg_\( {System.currentTimeMillis()}_ \){duration}s.mp3"
+                            "audio_msg_${System.currentTimeMillis()}_${duration}s.mp3"
                         )
                     },
                     onScheduleMessage = vm::scheduleMessage,
@@ -231,7 +232,7 @@ fun NavGraph(
             composable(Routes.SUDOKU) { SudokuScreen() }
             composable(Routes.JEWELS) { JewelsBlastScreen() }
 
-            // ================= AI CHAT (всегда доступен — гибридный режим) =================
+            // ================= AI CHAT (ГИБРИДНЫЙ РЕЖИМ) =================
 
             composable(Routes.AI_CHAT) {
                 AiChatScreen()
@@ -242,7 +243,6 @@ fun NavGraph(
             composable(Routes.TERMINAL) {
                 LaunchedEffect(Unit) {
                     context.startActivity(Intent(context, TerminalActivity::class.java))
-                    // Можно добавить navController.popBackStack() если нужно вернуться после запуска
                 }
             }
         }
@@ -325,12 +325,8 @@ fun rememberIsOnline(): State<Boolean> {
 
             cm.registerNetworkCallback(request, callback)
 
-            // Начальная проверка
             val caps = cm.getNetworkCapabilities(cm.activeNetwork)
             state.value = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-        } catch (e: SecurityException) {
-            // Нет разрешения — считаем онлайн (fallback)
-            state.value = true
         } catch (e: Exception) {
             state.value = true
         }
@@ -338,8 +334,7 @@ fun rememberIsOnline(): State<Boolean> {
         onDispose {
             try {
                 cm.unregisterNetworkCallback(callback)
-            } catch (_: Exception) {
-            }
+            } catch (_: Exception) { }
         }
     }
 
