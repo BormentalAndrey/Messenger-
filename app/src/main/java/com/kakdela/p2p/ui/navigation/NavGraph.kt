@@ -84,7 +84,7 @@ fun NavGraph(
                 .background(Color.Black)
         ) {
 
-            /* ================= AUTH ================= */
+            // ================= AUTH =================
 
             composable(Routes.SPLASH) {
                 SplashScreen {
@@ -122,7 +122,7 @@ fun NavGraph(
                 }
             }
 
-            /* ================= MAIN ================= */
+            // ================= MAIN =================
 
             composable(Routes.CHATS) {
                 ChatsListScreen(navController = navController)
@@ -143,7 +143,7 @@ fun NavGraph(
                 )
             }
 
-            /* ================= CHAT ================= */
+            // ================= DIRECT CHAT =================
 
             composable(
                 route = Routes.CHAT_DIRECT,
@@ -177,7 +177,7 @@ fun NavGraph(
                     onSendAudio = { uri, duration ->
                         vm.sendFile(
                             uri,
-                            "audio_msg_${System.currentTimeMillis()}_${duration}s.mp3"
+                            "audio_msg_\( {System.currentTimeMillis()}_ \){duration}s.mp3"
                         )
                     },
                     onScheduleMessage = vm::scheduleMessage,
@@ -185,7 +185,7 @@ fun NavGraph(
                 )
             }
 
-            /* ================= SECTIONS ================= */
+            // ================= SECTIONS =================
 
             composable(Routes.DEALS) { DealsScreen(navController) }
             composable(Routes.ENTERTAINMENT) { EntertainmentScreen(navController) }
@@ -195,7 +195,7 @@ fun NavGraph(
 
             composable(Routes.MUSIC) { MusicPlayerScreen() }
 
-            /* ================= WEBVIEW ================= */
+            // ================= WEBVIEW (требует интернета) =================
 
             composable(
                 route = "webview/{url}/{title}",
@@ -214,15 +214,15 @@ fun NavGraph(
                 }
             }
 
-            /* ================= TOOLS & GAMES ================= */
+            // ================= TOOLS & GAMES =================
 
             composable(Routes.CALCULATOR) { CalculatorScreen() }
             composable(Routes.TEXT_EDITOR) { TextEditorScreen(navController) }
-            // Подключаем экран файлового менеджера
+
             composable(Routes.FILE_MANAGER) {
                 FileManagerScreen(onExit = { navController.popBackStack() })
             }
-            
+
             composable(Routes.SLOTS_1) { Slots1Screen(navController) }
 
             composable(Routes.TIC_TAC_TOE) { TicTacToeScreen() }
@@ -231,27 +231,25 @@ fun NavGraph(
             composable(Routes.SUDOKU) { SudokuScreen() }
             composable(Routes.JEWELS) { JewelsBlastScreen() }
 
+            // ================= AI CHAT (всегда доступен — гибридный режим) =================
+
             composable(Routes.AI_CHAT) {
-                if (isOnline) {
-                    AiChatScreen()
-                } else {
-                    NoInternetScreen { navController.popBackStack() }
-                }
+                AiChatScreen()
             }
 
-            /* ================= TERMINAL ================= */
+            // ================= TERMINAL =================
 
             composable(Routes.TERMINAL) {
                 LaunchedEffect(Unit) {
                     context.startActivity(Intent(context, TerminalActivity::class.java))
+                    // Можно добавить navController.popBackStack() если нужно вернуться после запуска
                 }
             }
-
         }
     }
 }
 
-/* ================= UI HELPERS ================= */
+// ================= UI HELPERS =================
 
 @Composable
 private fun AppBottomBar(
@@ -327,16 +325,21 @@ fun rememberIsOnline(): State<Boolean> {
 
             cm.registerNetworkCallback(request, callback)
 
+            // Начальная проверка
             val caps = cm.getNetworkCapabilities(cm.activeNetwork)
             state.value = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-        } catch (_: Exception) {
+        } catch (e: SecurityException) {
+            // Нет разрешения — считаем онлайн (fallback)
+            state.value = true
+        } catch (e: Exception) {
             state.value = true
         }
 
         onDispose {
             try {
                 cm.unregisterNetworkCallback(callback)
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
         }
     }
 
@@ -346,7 +349,7 @@ fun rememberIsOnline(): State<Boolean> {
 @Composable
 fun NoInternetScreen(onBack: () -> Unit) {
     Box(
-        Modifier
+        modifier = Modifier
             .fillMaxSize()
             .background(Color.Black),
         contentAlignment = Alignment.Center
