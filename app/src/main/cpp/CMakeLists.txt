@@ -18,7 +18,7 @@ char const * LLAMA_BUILD_TARGET = \"${ANDROID_ABI}\";
 
 # 3. ГЛОБАЛЬНЫЕ МАКРОСЫ
 add_compile_definitions(GGML_VERSION=\"1\" GGML_COMMIT=\"unknown\")
-# -g0 критичен для Github Actions, чтобы не упасть по памяти (OOM) при линковке
+# -g0 критичен для Github Actions/CI, чтобы линковщик не упал по памяти
 set(COMMON_FLAGS "-O3 -fPIC -DNDEBUG -g0 -DGGML_USE_K_QUANTS")
 
 # 4. АРХИТЕКТУРНЫЕ ОПТИМИЗАЦИИ
@@ -33,14 +33,12 @@ elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
         __ARM_FEATURE_FP16_SCALAR_ARITHMETIC=0
     )
     set(ARCH_FLAGS "-march=armv7-a -mfpu=neon -mfloat-abi=softfp")
-else()
-    set(ARCH_FLAGS "")
 endif()
 
 set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} ${COMMON_FLAGS} ${ARCH_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_FLAGS} ${ARCH_FLAGS}")
 
-# 5. INCLUDE PATHS
+# 5. ПУТИ ИНКЛЮДОВ
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/llama
     ${CMAKE_CURRENT_SOURCE_DIR}/llama/include
@@ -52,64 +50,54 @@ include_directories(
 )
 
 # 6. СБОР ИСХОДНИКОВ
-# Собираем ядро llama
-file(GLOB_RECURSE LLAMA_CORE_SRC 
-    "llama/src/*.cpp" 
-    "llama/src/*.h"
-)
-# Собираем модели (новые версии хранят их отдельно)
-file(GLOB_RECURSE LLAMA_MODELS_SRC "llama/src/models/*.cpp")
 
-# Собираем GGML ядро
-file(GLOB GGML_BASE_SRC 
-    "llama/ggml/src/*.c" 
-    "llama/ggml/src/*.cpp"
-)
+# GGML: ядро и бэкенд CPU (рекурсивно для подхвата /cpp/ и /arch/)
+file(GLOB GGML_CORE "llama/ggml/src/*.c" "llama/ggml/src/*.cpp")
+file(GLOB_RECURSE GGML_CPU "llama/ggml/src/ggml-cpu/*.c" "llama/ggml/src/ggml-cpu/*.cpp")
 
-# Собираем GGML-CPU (включая папку /cpp/ для generic функций)
-file(GLOB_RECURSE GGML_CPU_SRC 
-    "llama/ggml/src/ggml-cpu/*.c" 
-    "llama/ggml/src/ggml-cpu/*.cpp"
-)
+# LLAMA: всё ядро (здесь лежат llama.cpp, llama-vocab.cpp, llama-sampling.cpp и т.д.)
+file(GLOB LLAMA_CORE "llama/src/*.cpp")
+file(GLOB LLAMA_MODELS "llama/src/models/*.cpp")
 
-set(COMMON_SRC
+# COMMON: утилиты для работы с семплерами и логами
+set(LLAMA_COMMON_SRC
     "llama/common/common.cpp"
     "llama/common/sampling.cpp"
     "llama/common/log.cpp"
+    "llama/common/console.cpp"
+    "llama/common/arg.cpp"
     ${BUILD_INFO_FILE}
 )
 
 set(ALL_SOURCES 
-    ${LLAMA_CORE_SRC} 
-    ${LLAMA_MODELS_SRC} 
-    ${GGML_BASE_SRC} 
-    ${GGML_CPU_SRC} 
-    ${COMMON_SRC}
+    ${GGML_CORE} 
+    ${GGML_CPU} 
+    ${LLAMA_CORE} 
+    ${LLAMA_MODELS} 
+    ${LLAMA_COMMON_SRC}
 )
 
-# 7. ФИЛЬТРАЦИЯ (Критический этап для линковки)
-# 7.1. Удаляем все не-Android платформы
+# 7. ФИЛЬТРАЦИЯ
+# Исключаем другие архитектуры и ненужные бэкенды
 list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/(amx|avx|x86|loongarch|powerpc|riscv|s390|wasm|kleidiai|spacemit)/.*")
 list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/ggml-(blas|cann|cuda|hexagon|kompute|metal|musa|opencl|rpc|sycl|vulkan|virtgpu)/.*")
-list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/(test-|tests|examples|poc|main)/.*")
+list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/(test-|tests|examples|poc|main|server)/.*")
 
-# 7.2. Решаем конфликт Duplicate Symbols для repack.cpp
-# Новые версии llama.cpp имеют оптимизированный repack в arch/arm/
+# Решаем конфликт repack.cpp: оставляем версию из arch/arm/
 if(ANDROID_ABI MATCHES "arm")
-    # Удаляем базовый repack, оставляем arch/arm/repack
     list(FILTER ALL_SOURCES EXCLUDE REGEX "ggml-cpu/repack\\.cpp$")
 else()
-    # Если вдруг собираем под x86_64, удаляем ARM папку
     list(FILTER ALL_SOURCES EXCLUDE REGEX "ggml-cpu/arch/arm/.*")
 endif()
 
-# 7.3. Фикс для armeabi-v7a (llamafile не дружит со старыми 32-битными ARM)
+# Фикс llamafile для 32-bit ARM
 if(ANDROID_ABI STREQUAL "armeabi-v7a")
     list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/llamafile/.*")
 endif()
 
-# 8. СБОРКА БИБЛИОТЕКИ
-add_library(llama SHARED native-lib.cpp ${ALL_SOURCES})
+# 8. СБОРКА
+# native-lib.cpp идет последним, чтобы гарантированно видеть символы из библиотек
+add_library(llama SHARED ${ALL_SOURCES} native-lib.cpp)
 
 # 9. ЛИНКОВКА
 find_library(log-lib log)
@@ -122,9 +110,8 @@ target_link_libraries(llama
     m
 )
 
-# Выставляем свойства для корректного экспорта символов JNI
+# 10. PROPERTIES
 set_target_properties(llama PROPERTIES 
     CLEAN_DIRECT_OUTPUT 1
     POSITION_INDEPENDENT_CODE ON
-    VISIBILITY_INLINES_HIDDEN ON
 )
