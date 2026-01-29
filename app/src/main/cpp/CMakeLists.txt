@@ -10,30 +10,37 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ------------------------------------------------------------------------------
-# 2. BUILD INFO
+# 2. BUILD INFO (необходим для llama.cpp)
 # ------------------------------------------------------------------------------
 set(BUILD_INFO_FILE "${CMAKE_CURRENT_BINARY_DIR}/build-info.cpp")
 file(WRITE "${BUILD_INFO_FILE}" "
-    int LLAMA_BUILD_NUMBER = 1;
-    char const * LLAMA_COMMIT = \"unknown\";
-    char const * LLAMA_COMPILER = \"clang-android\";
-    char const * LLAMA_BUILD_TARGET = \"${ANDROID_ABI}\";
+int LLAMA_BUILD_NUMBER = 1;
+char const * LLAMA_COMMIT = \"unknown\";
+char const * LLAMA_COMPILER = \"clang-android\";
+char const * LLAMA_BUILD_TARGET = \"${ANDROID_ABI}\";
 ")
 
 # ------------------------------------------------------------------------------
 # 3. ГЛОБАЛЬНЫЕ МАКРОСЫ
 # ------------------------------------------------------------------------------
-add_compile_definitions(GGML_VERSION=\"1\" GGML_COMMIT=\"unknown\")
+add_compile_definitions(
+    GGML_VERSION=\"1\"
+    GGML_COMMIT=\"unknown\"
+)
 
-# -g0 критичен для CI: без него линковщик может упасть по OOM
+# -g0 нужен для CI, иначе линковка падает по OOM
 set(COMMON_FLAGS "-O3 -fPIC -DNDEBUG -g0 -DGGML_USE_K_QUANTS")
 
 # ------------------------------------------------------------------------------
 # 4. АРХИТЕКТУРНЫЕ ОПТИМИЗАЦИИ
 # ------------------------------------------------------------------------------
 if(ANDROID_ABI STREQUAL "arm64-v8a")
-    add_compile_definitions(GGML_USE_NEON GGML_USE_CPU_AARCH64)
+    add_compile_definitions(
+        GGML_USE_NEON
+        GGML_USE_CPU_AARCH64
+    )
     set(ARCH_FLAGS "-march=armv8.2-a+fp16+dotprod")
+
 elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
     add_compile_definitions(
         GGML_USE_NEON
@@ -45,6 +52,7 @@ elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
         __ARM_FEATURE_FP16_SCALAR_ARITHMETIC=0
     )
     set(ARCH_FLAGS "-march=armv7-a -mfpu=neon -mfloat-abi=softfp")
+
 else()
     set(ARCH_FLAGS "")
 endif()
@@ -71,7 +79,7 @@ file(GLOB LLAMA_SRC "llama/src/*.cpp" "llama/src/*.c")
 file(GLOB GGML_SRC  "llama/ggml/src/*.c" "llama/ggml/src/*.cpp")
 file(GLOB GGML_CPU_SRC "llama/ggml/src/ggml-cpu/*.c" "llama/ggml/src/ggml-cpu/*.cpp")
 
-# Добавляем ARM-специфичные файлы, если сборка ARM
+# Добавляем ARM-специфичные исходники для ARM сборок
 if(ANDROID_ABI MATCHES "arm")
     file(GLOB GGML_ARM_SRC "llama/ggml/src/ggml-cpu/arch/arm/*.cpp")
     list(APPEND GGML_CPU_SRC ${GGML_ARM_SRC})
@@ -89,19 +97,20 @@ set(ALL_SOURCES ${LLAMA_SRC} ${GGML_SRC} ${GGML_CPU_SRC} ${COMMON_SRC})
 # ------------------------------------------------------------------------------
 # 7. ФИЛЬТРАЦИЯ
 # ------------------------------------------------------------------------------
-# Исключаем тесты, примеры и неподдерживаемые архитектуры
+# Исключаем ненужные архитектуры, тесты, примеры и POC
 list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/(amx|avx|x86|loongarch|powerpc|riscv|s390|wasm|kleidiai|spacemit)/.*")
 list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/ggml-(blas|cann|cuda|hexagon|kompute|metal|musa|opencl|rpc|sycl|vulkan|virtgpu)/.*")
 list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/(test-|tests|examples|poc)/.*")
 
-# Убираем ARM-specific исходники при сборке для не-ARM
+# Убираем ARM-специфику для не-ARM сборок
 if(NOT ANDROID_ABI MATCHES "arm")
     list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/arch/arm/.*")
 endif()
 
-# Фикс дубликата repack.cpp для ARM
+# Фикс дубликатов repack.cpp
+# Убираем основной repack.cpp если есть ARM-реализация
 if(ANDROID_ABI MATCHES "arm")
-    list(REMOVE_ITEM ALL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/llama/ggml/src/ggml-cpu/repack.cpp")
+    list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/ggml-cpu/repack\\.cpp$")
 endif()
 
 # Удаляем llamafile для armeabi-v7a
@@ -110,7 +119,7 @@ if(ANDROID_ABI STREQUAL "armeabi-v7a")
 endif()
 
 # ------------------------------------------------------------------------------
-# 8. СБОРКА
+# 8. СОЗДАНИЕ SHARED БИБЛИОТЕКИ
 # ------------------------------------------------------------------------------
 add_library(llama SHARED native-lib.cpp ${ALL_SOURCES})
 
@@ -120,5 +129,14 @@ add_library(llama SHARED native-lib.cpp ${ALL_SOURCES})
 find_library(log-lib log)
 find_library(android-lib android)
 
-target_link_libraries(llama ${log-lib} ${android-lib} atomic m)
-set_target_properties(llama PROPERTIES CLEAN_DIRECT_OUTPUT 1)
+target_link_libraries(llama PUBLIC
+    ${log-lib}
+    ${android-lib}
+    atomic
+    m
+)
+
+# Опции для продакшн-очистки и линковки
+set_target_properties(llama PROPERTIES CLEAN_DIRECT_OUTPUT 1
+                                        POSITION_INDEPENDENT_CODE ON
+                                        CXX_STANDARD 17)
