@@ -1,10 +1,10 @@
 package com.kakdela.p2p.ui.auth
 
 import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.kakdela.p2p.auth.SmsCodeManager
 import com.kakdela.p2p.auth.SmsCodeStore
 import com.kakdela.p2p.data.AuthManager
@@ -20,9 +21,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @Composable
-fun PhoneAuthScreen(
-    onSuccess: () -> Unit
-) {
+fun PhoneAuthScreen(onSuccess: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val authManager = remember { AuthManager(context) }
@@ -33,27 +32,36 @@ fun PhoneAuthScreen(
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    // Запрос разрешений на SMS
+    // Внутренняя функция для отправки
+    fun handleSendSms() {
+        val code = SmsCodeManager.generateCode()
+        val success = SmsCodeManager.sendCode(context, phone, code)
+        if (success) {
+            sentCode = code
+            error = null
+        } else {
+            error = "Не удалось отправить SMS. Проверьте баланс или номер."
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions.values.all { it }) {
-            val code = SmsCodeManager.generateCode()
-            sentCode = code
-            SmsCodeManager.sendCode(context, phone, code)
+            handleSendSms()
         } else {
-            error = "Нужны разрешения на SMS"
+            error = "Без разрешений на SMS регистрация невозможна"
         }
     }
 
-    // Автозаполнение кода при получении SMS
+    // Автозаполнение
     LaunchedEffect(sentCode) {
         if (sentCode != null) {
             while (isActive) {
-                SmsCodeStore.lastReceivedCode?.let {
-                    if (it == sentCode) {
-                        inputCode = it
-                        SmsCodeStore.lastReceivedCode = null
+                SmsCodeStore.lastReceivedCode?.let { received ->
+                    if (received == sentCode) {
+                        inputCode = received
+                        SmsCodeStore.clear()
                     }
                 }
                 delay(1000)
@@ -63,43 +71,33 @@ fun PhoneAuthScreen(
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(32.dp),
+            modifier = Modifier.fillMaxSize().padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(
-                "Вход по номеру",
-                style = MaterialTheme.typography.headlineMedium,
-                color = Color.Cyan
-            )
+            Text("Вход по номеру", style = MaterialTheme.typography.headlineMedium, color = Color.Cyan)
             Spacer(Modifier.height(32.dp))
 
             if (sentCode == null) {
-                // Ввод номера телефона
                 OutlinedTextField(
                     value = phone,
                     onValueChange = { phone = it },
-                    label = { Text("Телефон") },
+                    label = { Text("Номер телефона (+7...)") },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color.Cyan,
-                        unfocusedBorderColor = Color.Gray
-                    )
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
                 )
                 Spacer(Modifier.height(24.dp))
                 Button(
                     onClick = {
                         if (phone.length >= 10) {
-                            permissionLauncher.launch(
-                                arrayOf(
-                                    Manifest.permission.SEND_SMS,
-                                    Manifest.permission.RECEIVE_SMS
-                                )
-                            )
+                            val hasSend = ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+                            val hasReceive = ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) == PackageManager.PERMISSION_GRANTED
+                            
+                            if (hasSend && hasReceive) {
+                                handleSendSms()
+                            } else {
+                                permissionLauncher.launch(arrayOf(Manifest.permission.SEND_SMS, Manifest.permission.RECEIVE_SMS))
+                            }
                         } else {
                             error = "Введите корректный номер"
                         }
@@ -110,18 +108,12 @@ fun PhoneAuthScreen(
                     Text("Получить код", color = Color.Black)
                 }
             } else {
-                // Ввод кода из SMS
                 OutlinedTextField(
                     value = inputCode,
                     onValueChange = { inputCode = it },
-                    label = { Text("Код из SMS") },
+                    label = { Text("Код подтверждения") },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color.Cyan,
-                        unfocusedBorderColor = Color.Gray
-                    )
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
                 )
                 Spacer(Modifier.height(24.dp))
                 Button(
@@ -129,12 +121,8 @@ fun PhoneAuthScreen(
                         if (inputCode == sentCode) {
                             isLoading = true
                             scope.launch {
-                                val success = authManager.registerOrLoginByPhone(
-                                    phone = phone,
-                                    otpCode = inputCode
-                                )
-                                if (success) onSuccess()
-                                else error = "Ошибка сети или регистрации"
+                                val success = authManager.registerOrLoginByPhone(phone, inputCode)
+                                if (success) onSuccess() else error = "Ошибка авторизации"
                                 isLoading = false
                             }
                         } else {
@@ -145,15 +133,11 @@ fun PhoneAuthScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan),
                     enabled = !isLoading
                 ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
-                    } else {
-                        Text("Войти", color = Color.Black)
-                    }
+                    if (isLoading) CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
+                    else Text("Войти", color = Color.Black)
                 }
             }
 
-            // Отображение ошибки
             error?.let {
                 Text(it, color = Color.Red, modifier = Modifier.padding(top = 16.dp))
             }
