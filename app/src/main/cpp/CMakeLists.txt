@@ -18,6 +18,7 @@ char const * LLAMA_BUILD_TARGET = \"${ANDROID_ABI}\";
 
 # 3. ГЛОБАЛЬНЫЕ МАКРОСЫ
 add_compile_definitions(GGML_VERSION=\"1\" GGML_COMMIT=\"unknown\")
+# -g0 критичен для Github Actions, чтобы не упасть по памяти (OOM) при линковке
 set(COMMON_FLAGS "-O3 -fPIC -DNDEBUG -g0 -DGGML_USE_K_QUANTS")
 
 # 4. АРХИТЕКТУРНЫЕ ОПТИМИЗАЦИИ
@@ -39,7 +40,7 @@ endif()
 set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} ${COMMON_FLAGS} ${ARCH_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${COMMON_FLAGS} ${ARCH_FLAGS}")
 
-# 5. ПУТИ (Добавлен путь к подпапке cpp)
+# 5. INCLUDE PATHS
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/llama
     ${CMAKE_CURRENT_SOURCE_DIR}/llama/include
@@ -51,10 +52,21 @@ include_directories(
 )
 
 # 6. СБОР ИСХОДНИКОВ
-file(GLOB_RECURSE LLAMA_SRC "llama/src/*.cpp" "llama/src/models/*.cpp")
-file(GLOB GGML_SRC "llama/ggml/src/*.c" "llama/ggml/src/*.cpp")
+# Собираем ядро llama
+file(GLOB_RECURSE LLAMA_CORE_SRC 
+    "llama/src/*.cpp" 
+    "llama/src/*.h"
+)
+# Собираем модели (новые версии хранят их отдельно)
+file(GLOB_RECURSE LLAMA_MODELS_SRC "llama/src/models/*.cpp")
 
-# РЕКУРСИВНО собираем всё из ggml-cpu, чтобы найти generic-функции в ggml-cpu/cpp/
+# Собираем GGML ядро
+file(GLOB GGML_BASE_SRC 
+    "llama/ggml/src/*.c" 
+    "llama/ggml/src/*.cpp"
+)
+
+# Собираем GGML-CPU (включая папку /cpp/ для generic функций)
 file(GLOB_RECURSE GGML_CPU_SRC 
     "llama/ggml/src/ggml-cpu/*.c" 
     "llama/ggml/src/ggml-cpu/*.cpp"
@@ -67,29 +79,36 @@ set(COMMON_SRC
     ${BUILD_INFO_FILE}
 )
 
-set(ALL_SOURCES ${LLAMA_SRC} ${GGML_SRC} ${GGML_CPU_SRC} ${COMMON_SRC})
+set(ALL_SOURCES 
+    ${LLAMA_CORE_SRC} 
+    ${LLAMA_MODELS_SRC} 
+    ${GGML_BASE_SRC} 
+    ${GGML_CPU_SRC} 
+    ${COMMON_SRC}
+)
 
-# 7. СТРОГАЯ ФИЛЬТРАЦИЯ
-# Удаляем платформы, не относящиеся к Android
+# 7. ФИЛЬТРАЦИЯ (Критический этап для линковки)
+# 7.1. Удаляем все не-Android платформы
 list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/(amx|avx|x86|loongarch|powerpc|riscv|s390|wasm|kleidiai|spacemit)/.*")
 list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/ggml-(blas|cann|cuda|hexagon|kompute|metal|musa|opencl|rpc|sycl|vulkan|virtgpu)/.*")
-list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/(test-|tests|examples|poc)/.*")
+list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/(test-|tests|examples|poc|main)/.*")
 
-# РЕШЕНИЕ DUPLICATE SYMBOLS:
-# Если мы на ARM, у нас два repack.cpp. Удаляем общий из корня ggml-cpu.
+# 7.2. Решаем конфликт Duplicate Symbols для repack.cpp
+# Новые версии llama.cpp имеют оптимизированный repack в arch/arm/
 if(ANDROID_ABI MATCHES "arm")
+    # Удаляем базовый repack, оставляем arch/arm/repack
     list(FILTER ALL_SOURCES EXCLUDE REGEX "ggml-cpu/repack\\.cpp$")
 else()
-    # Для x86 убираем ARM-папку
+    # Если вдруг собираем под x86_64, удаляем ARM папку
     list(FILTER ALL_SOURCES EXCLUDE REGEX "ggml-cpu/arch/arm/.*")
 endif()
 
-# Фикс для ARMv7
+# 7.3. Фикс для armeabi-v7a (llamafile не дружит со старыми 32-битными ARM)
 if(ANDROID_ABI STREQUAL "armeabi-v7a")
     list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/llamafile/.*")
 endif()
 
-# 8. СБОРКА
+# 8. СБОРКА БИБЛИОТЕКИ
 add_library(llama SHARED native-lib.cpp ${ALL_SOURCES})
 
 # 9. ЛИНКОВКА
@@ -103,4 +122,9 @@ target_link_libraries(llama
     m
 )
 
-set_target_properties(llama PROPERTIES CLEAN_DIRECT_OUTPUT 1)
+# Выставляем свойства для корректного экспорта символов JNI
+set_target_properties(llama PROPERTIES 
+    CLEAN_DIRECT_OUTPUT 1
+    POSITION_INDEPENDENT_CODE ON
+    VISIBILITY_INLINES_HIDDEN ON
+)
