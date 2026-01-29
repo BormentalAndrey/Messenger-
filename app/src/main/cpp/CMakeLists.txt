@@ -18,10 +18,10 @@ char const * LLAMA_BUILD_TARGET = \"${ANDROID_ABI}\";
 
 # 3. ГЛОБАЛЬНЫЕ МАКРОСЫ
 add_compile_definitions(GGML_VERSION=\"1\" GGML_COMMIT=\"unknown\")
-# Отключаем JSON на уровне препроцессора llama.cpp
+# Полная блокировка JSON на уровне кода llama.cpp
 add_compile_definitions(LLAMA_NO_JSON)
 
-# -g0 экономит RAM при линковке, предотвращая OOM на CI/Github Actions
+# -g0 критичен для Github Actions, чтобы не упасть по памяти (OOM) при линковке
 set(COMMON_FLAGS "-O3 -fPIC -DNDEBUG -g0 -DGGML_USE_K_QUANTS")
 
 # 4. АРХИТЕКТУРНЫЕ ОПТИМИЗАЦИИ
@@ -55,24 +55,23 @@ include_directories(
 )
 
 # 6. СБОР ИСХОДНИКОВ
-# Ядро
+# Ядро LLAMA и модели
 file(GLOB LLAMA_CORE_SRC "llama/src/*.cpp")
 file(GLOB LLAMA_MODELS_SRC "llama/src/models/*.cpp")
 
-# GGML (включая все подпапки для generic-реализаций)
+# Ядро GGML и CPU бэкенд
 file(GLOB GGML_BASE_SRC "llama/ggml/src/*.c" "llama/ggml/src/*.cpp")
 file(GLOB_RECURSE GGML_CPU_SRC 
     "llama/ggml/src/ggml-cpu/*.c" 
     "llama/ggml/src/ggml-cpu/*.cpp"
 )
 
-# Минимальный набор Common без JSON-зависимостей
+# COMMON: Только то, что НЕ зависит от JSON и парсеров аргументов
 set(COMMON_SRC
     "llama/common/common.cpp"
     "llama/common/sampling.cpp"
     "llama/common/log.cpp"
     "llama/common/console.cpp"
-    "llama/common/arg.cpp"
     ${BUILD_INFO_FILE}
 )
 
@@ -84,29 +83,29 @@ set(ALL_SOURCES
     ${COMMON_SRC}
 )
 
-# 7. ФИЛЬТРАЦИЯ (Production-очистка)
-# 7.1. Удаляем всё, что требует nlohmann/json (chat, grammar и т.д.)
-list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/(chat|json-schema-to-grammar|speculative|ngram-cache|json)\\..*")
+# 7. ФИЛЬТРАЦИЯ (Критический этап для Android)
+# 7.1. Удаляем все файлы, связанные с JSON, чатом и парсингом аргументов (arg.cpp)
+list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/(chat|arg|json-schema-to-grammar|speculative|ngram-cache|json)\\..*")
 
-# 7.2. Удаляем не-Android платформы
+# 7.2. Удаляем другие платформы
 list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/(amx|avx|x86|loongarch|powerpc|riscv|s390|wasm|kleidiai|spacemit)/.*")
 list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/ggml-(blas|cann|cuda|hexagon|kompute|metal|musa|opencl|rpc|sycl|vulkan|virtgpu)/.*")
 list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/(test-|tests|examples|poc|main|server)/.*")
 
-# 7.3. Решаем конфликт Duplicate Symbols для repack.cpp
+# 7.3. Конфликт repack.cpp
 if(ANDROID_ABI MATCHES "arm")
     list(FILTER ALL_SOURCES EXCLUDE REGEX "ggml-cpu/repack\\.cpp$")
 else()
     list(FILTER ALL_SOURCES EXCLUDE REGEX "ggml-cpu/arch/arm/.*")
 endif()
 
-# 7.4. Фикс для 32-bit ARM (llamafile)
+# 7.4. Фикс для 32-bit ARM
 if(ANDROID_ABI STREQUAL "armeabi-v7a")
     list(FILTER ALL_SOURCES EXCLUDE REGEX ".*/llamafile/.*")
 endif()
 
 # 8. СБОРКА БИБЛИОТЕКИ
-# native-lib.cpp в конце для корректного разрешения символов
+# native-lib.cpp идет последним для корректной линковки символов
 add_library(llama SHARED ${ALL_SOURCES} native-lib.cpp)
 
 # 9. ЛИНКОВКА
@@ -120,7 +119,7 @@ target_link_libraries(llama
     m
 )
 
-# Свойства для JNI и оптимизации размера
+# Свойства видимости для минимизации размера библиотеки
 set_target_properties(llama PROPERTIES 
     CLEAN_DIRECT_OUTPUT 1
     POSITION_INDEPENDENT_CODE ON
