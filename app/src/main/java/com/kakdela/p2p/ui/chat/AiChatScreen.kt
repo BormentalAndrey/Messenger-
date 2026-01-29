@@ -55,7 +55,7 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
             CenterAlignedTopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("AI Master", color = NeonGreen, fontWeight = FontWeight.Bold)
+                        Text("Как дела? ИИ", color = NeonGreen, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.width(8.dp))
                         
                         // Иконка статуса
