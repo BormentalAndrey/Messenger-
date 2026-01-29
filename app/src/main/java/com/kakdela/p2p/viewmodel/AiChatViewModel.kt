@@ -1,6 +1,7 @@
 package com.kakdela.p2p.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -20,18 +21,16 @@ class AiChatViewModel(app: Application) : AndroidViewModel(app) {
 
     private val fullHistory = mutableStateListOf<ChatMessage>()
 
-    // Для UI отдаем только последние сообщения
     val displayMessages by derivedStateOf {
-        fullHistory.takeLast(50) // Показываем больше контекста в UI, но логика гибридная
+        fullHistory.takeLast(50)
     }
 
-    val isTyping = mutableStateOf(false)
-    val isDownloading = mutableStateOf(false)
+    // Состояния UI
+    val isTyping = mutableStateOf(false) // ИИ думает
+    val isDownloading = mutableStateOf(false) // Идет загрузка файла
     val downloadProgress = mutableIntStateOf(0)
     
-    // Флаг: файл модели физически существует
     val isModelDownloaded = mutableStateOf(false)
-    // Флаг: есть интернет
     val isOnline = mutableStateOf(false)
 
     init {
@@ -42,11 +41,12 @@ class AiChatViewModel(app: Application) : AndroidViewModel(app) {
         val ctx = getApplication<Application>()
         isOnline.value = NetworkUtils.isNetworkAvailable(ctx)
         
-        // Проверка наличия файла
-        isModelDownloaded.value = ModelDownloadManager.isInstalled(ctx)
+        // Проверяем физическое наличие файла
+        val installed = ModelDownloadManager.isInstalled(ctx)
+        isModelDownloaded.value = installed
 
-        // Если файл есть, но модель еще не в памяти - инициализируем
-        if (isModelDownloaded.value && LlamaBridge.isLibAvailable() && !LlamaBridge.isReady()) {
+        // Если файл есть, и либа загружена, но еще не инитнули -> инитим
+        if (installed && LlamaBridge.isLibAvailable() && !LlamaBridge.isReady()) {
             initLocalModel(ctx)
         }
     }
@@ -55,8 +55,10 @@ class AiChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val modelFile = ModelDownloadManager.getModelFile(context)
-                // Передаем абсолютный путь в C++
-                LlamaBridge.init(modelFile.absolutePath)
+                if (modelFile.exists()) {
+                    LlamaBridge.init(modelFile.absolutePath)
+                    Log.d("AiVM", "Local Llama initialized")
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -66,43 +68,52 @@ class AiChatViewModel(app: Application) : AndroidViewModel(app) {
     fun sendMessage(text: String) {
         if (text.isBlank()) return
         
+        // Добавляем сообщение юзера сразу
         fullHistory.add(ChatMessage(text = text, isMine = true))
         isTyping.value = true
 
         viewModelScope.launch {
             val ctx = getApplication<Application>()
             
-            // Получаем ответ (логика выбора Gemini/Llama внутри)
+            // Обновляем статус сети перед запросом
+            isOnline.value = NetworkUtils.isNetworkAvailable(ctx)
+
+            // Запрашиваем ответ. 
+            // Это работает параллельно с загрузкой, если есть интернет.
             val response = HybridAiEngine.getResponse(ctx, text)
             
             fullHistory.add(ChatMessage(text = response, isMine = false))
             isTyping.value = false
-            
-            // Обновляем статус сети на случай изменений
-            refreshSystemStatus()
         }
     }
 
     fun downloadModel() {
-        if (isDownloading.value) return
+        if (isDownloading.value) return // Защита от двойного нажатия
+        
         isDownloading.value = true
+        downloadProgress.intValue = 0
         
         viewModelScope.launch {
             try {
+                fullHistory.add(ChatMessage(text = "Начинаю загрузку локального мозга...", isMine = false))
+                
                 ModelDownloadManager.download(getApplication()) { progress ->
                     downloadProgress.intValue = progress
                 }
-                // После успешной загрузки
+                
+                // Успех
                 isModelDownloaded.value = true
                 isDownloading.value = false
+                fullHistory.add(ChatMessage(text = "Загрузка завершена! Инициализирую...", isMine = false))
                 
-                // Сразу инициализируем, чтобы можно было пользоваться без интернета
+                // Инициализация
                 initLocalModel(getApplication())
                 
-                fullHistory.add(ChatMessage(text = "Мозг скачан! Теперь я работаю офлайн.", isMine = false))
             } catch (e: Exception) {
                 isDownloading.value = false
+                downloadProgress.intValue = 0
                 fullHistory.add(ChatMessage(text = "Ошибка загрузки: ${e.message}", isMine = false))
+                Log.e("AiVM", "Download error", e)
             }
         }
     }
