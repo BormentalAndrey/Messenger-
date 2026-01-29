@@ -11,45 +11,51 @@ import java.util.concurrent.TimeUnit
 
 // --- Llama Bridge ---
 object LlamaBridge {
-    private var isLoaded = false
+    private var isLibLoaded = false
 
     init {
         try {
             System.loadLibrary("llama")
-            isLoaded = true
+            isLibLoaded = true
         } catch (e: UnsatisfiedLinkError) {
-            // Библиотека не собрана или архитектура не совпадает
             e.printStackTrace()
+            // Если библиотека не загрузилась, флаг останется false
         }
     }
 
     external fun init(modelPath: String)
+    external fun isReady(): Boolean
     external fun prompt(text: String): String
 
-    fun isReady(): Boolean = isLoaded
+    fun isLibAvailable(): Boolean = isLibLoaded
 }
 
 // --- Download Manager ---
 object ModelDownloadManager {
-    // Ссылка на Q4_K_M версию (оптимальный баланс для Android)
+    // Используем Phi-3 Mini Instruct (формат GGUF Q4_K_M) - легкая и умная
     private const val MODEL_URL = "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf"
-    private const val MODEL_NAME = "phi3-mini-q4.gguf"
+    private const val MODEL_FILENAME = "phi3-mini-q4.gguf"
 
-    fun modelFile(context: Context): File = File(context.filesDir, "models/$MODEL_NAME")
+    // Централизованный метод получения пути к файлу
+    fun getModelFile(context: Context): File {
+        val modelsDir = File(context.filesDir, "models")
+        if (!modelsDir.exists()) modelsDir.mkdirs()
+        return File(modelsDir, MODEL_FILENAME)
+    }
 
+    // Проверка целостности файла (размер > 1ГБ)
     fun isInstalled(context: Context): Boolean {
-        val file = modelFile(context)
-        return file.exists() && file.length() > 1_000_000_000 // > 1GB
+        val file = getModelFile(context)
+        return file.exists() && file.length() > 1_000_000_000L
     }
 
     suspend fun download(context: Context, onProgress: (Int) -> Unit) = withContext(Dispatchers.IO) {
-        val file = modelFile(context)
-        file.parentFile?.mkdirs()
-        val tempFile = File(file.parent, "$MODEL_NAME.tmp")
+        val finalFile = getModelFile(context)
+        val tempFile = File(finalFile.parent, "$MODEL_FILENAME.tmp")
 
         val client = OkHttpClient.Builder()
             .connectTimeout(60, TimeUnit.SECONDS)
-            .readTimeout(120, TimeUnit.SECONDS) // Долгий таймаут для больших файлов
+            .readTimeout(180, TimeUnit.SECONDS) // Увеличенный таймаут
             .followRedirects(true)
             .build()
 
@@ -57,31 +63,34 @@ object ModelDownloadManager {
 
         try {
             val response = client.newCall(request).execute()
-            if (!response.isSuccessful) throw IOException("Server code: ${response.code}")
+            if (!response.isSuccessful) throw IOException("Failed to download: ${response.code}")
 
             val body = response.body ?: throw IOException("Empty body")
-            val total = body.contentLength()
-            var downloaded = 0L
+            val totalBytes = body.contentLength()
+            var downloadedBytes = 0L
             val buffer = ByteArray(8192)
 
             body.byteStream().use { input ->
                 tempFile.outputStream().use { output ->
-                    var read: Int
-                    while (input.read(buffer).also { read = it } != -1) {
-                        output.write(buffer, 0, read)
-                        downloaded += read
-                        if (total > 0) onProgress(((downloaded * 100) / total).toInt())
+                    var bytesRead: Int
+                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                        output.write(buffer, 0, bytesRead)
+                        downloadedBytes += bytesRead
+                        if (totalBytes > 0) {
+                            onProgress(((downloadedBytes * 100) / totalBytes).toInt())
+                        }
                     }
                 }
             }
 
-            if (tempFile.renameTo(file)) {
+            // Переименование после успешной загрузки (атомарная операция)
+            if (tempFile.renameTo(finalFile)) {
                 // Успех
             } else {
-                throw IOException("Rename failed")
+                throw IOException("Failed to rename temp file to model file")
             }
         } catch (e: Exception) {
-            tempFile.delete()
+            tempFile.delete() // Удаляем мусор при ошибке
             throw e
         }
     }
