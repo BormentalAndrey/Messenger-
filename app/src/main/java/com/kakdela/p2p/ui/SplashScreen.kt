@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -19,7 +20,8 @@ import kotlinx.coroutines.delay
 /**
  * SplashScreen — экран приветствия при запуске приложения.
  * Выполняет плавное появление текста и индикатора загрузки.
- * Гарантирует единоразовый вызов onTimeout.
+ * Гарантирует единоразовый вызов onTimeout даже при
+ * пересоздании Activity (например, после экрана разрешений).
  */
 @Composable
 fun SplashScreen(
@@ -27,27 +29,25 @@ fun SplashScreen(
 ) {
     val alpha = remember { Animatable(0f) }
 
-    // Защита от повторной навигации при пересоздании composable
-    var isNavigated by rememberSaveable { mutableStateOf(false) }
+    // Флаг, чтобы навигация не вызывалась повторно
+    var navigated by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
 
-        // Анимацию не повторяем при уже выполненной навигации
-        if (!isNavigated) {
+        if (navigated) return@LaunchedEffect
 
-            alpha.snapTo(0f)
+        alpha.snapTo(0f)
 
-            alpha.animateTo(
-                targetValue = 1f,
-                animationSpec = tween(durationMillis = 800)
-            )
+        alpha.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 800)
+        )
 
-            delay(1200)
+        delay(1200)
 
-            if (!isNavigated) {
-                isNavigated = true
-                onTimeout()
-            }
+        if (!navigated) {
+            navigated = true
+            onTimeout()
         }
     }
 
