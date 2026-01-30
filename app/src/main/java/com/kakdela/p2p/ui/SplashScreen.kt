@@ -19,36 +19,49 @@ import kotlinx.coroutines.delay
 /**
  * SplashScreen — экран приветствия при запуске приложения.
  * Выполняет плавное появление текста и индикатора загрузки.
- * После задержки вызывает [onTimeout] для навигации дальше.
+ * Гарантирует единоразовый вызов onTimeout.
  */
 @Composable
-fun SplashScreen(onTimeout: () -> Unit) {
-    // Анимация прозрачности текста и индикатора
+fun SplashScreen(
+    onTimeout: () -> Unit
+) {
     val alpha = remember { Animatable(0f) }
 
-    // Эффект при монтировании Composable
+    // Защита от повторной навигации при пересоздании composable
+    var isNavigated by rememberSaveable { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
-        // Анимация появления текста
-        alpha.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(durationMillis = 800)
-        )
-        // Задержка перед переходом на следующий экран
-        delay(1200)
-        onTimeout()
+
+        // Анимацию не повторяем при уже выполненной навигации
+        if (!isNavigated) {
+
+            alpha.snapTo(0f)
+
+            alpha.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 800)
+            )
+
+            delay(1200)
+
+            if (!isNavigated) {
+                isNavigated = true
+                onTimeout()
+            }
+        }
     }
 
-    // Основной контейнер экрана
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black),
         contentAlignment = Alignment.Center
     ) {
+
         Column(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Название приложения / приветствие
+
             Text(
                 text = "Как дела?",
                 color = Color.Cyan,
@@ -59,7 +72,6 @@ fun SplashScreen(onTimeout: () -> Unit) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Линейный индикатор прогресса
             LinearProgressIndicator(
                 modifier = Modifier
                     .width(120.dp)
