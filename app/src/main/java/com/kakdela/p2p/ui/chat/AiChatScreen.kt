@@ -1,13 +1,12 @@
 package com.kakdela.p2p.ui.chat
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
@@ -27,9 +26,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kakdela.p2p.model.ChatMessage
 import com.kakdela.p2p.viewmodel.AiChatViewModel
 
-private val NeonGreen = Color(0xFF00FFB3)
+private val NeonGreen = Color(0xFF00FF9D)
+private val NeonCyan = Color(0xFF00FFFF)
+private val NeonPurple = Color(0xFFB042FF)
 private val DarkBg = Color(0xFF0A0A0A)
-private val SurfaceColor = Color(0xFF1A1A1A)
+private val SurfaceColor = Color(0xFF1E1E1E)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,33 +39,31 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
     val messages = vm.displayMessages
     val listState = rememberLazyListState()
 
-    // Авто-скролл
+    // Автоскролл к последнему сообщению
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
         }
     }
-    
-    // Периодически обновляем статус (при входе)
-    LaunchedEffect(Unit) {
-        vm.refreshSystemStatus()
-    }
+
+    // Периодически обновляем статус системы
+    LaunchedEffect(Unit) { vm.refreshSystemStatus() }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { 
+                title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Как дела? ИИ", color = NeonGreen, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.width(8.dp))
-                        
-                        // Иконки статуса
                         if (vm.isOnline.value) {
-                             Icon(Icons.Default.Cloud, "Online", tint = NeonGreen, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Cloud, "Online", tint = NeonGreen, modifier = Modifier.size(16.dp))
+                        } else {
+                            Icon(Icons.Default.CloudOff, "Offline", tint = Color.Gray, modifier = Modifier.size(16.dp))
                         }
                         Spacer(Modifier.width(4.dp))
                         if (vm.isModelDownloaded.value) {
-                             Icon(Icons.Default.Memory, "Local Ready", tint = Color.Yellow, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Memory, "Local Ready", tint = Color.Yellow, modifier = Modifier.size(16.dp))
                         }
                     }
                 },
@@ -74,11 +73,11 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
         containerColor = DarkBg
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            
+
             // 1. СПИСОК СООБЩЕНИЙ
             LazyColumn(
                 state = listState,
-                modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+                modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
                 items(messages) { msg ->
@@ -87,17 +86,19 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
                 }
 
                 if (vm.isTyping.value) {
-                    item { 
-                        Text("Печатает...", color = NeonGreen, fontSize = 12.sp, modifier = Modifier.padding(8.dp)) 
+                    item {
+                        Text(
+                            "Печатает...",
+                            color = NeonGreen,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(8.dp)
+                        )
                     }
                 }
             }
 
-            // 2. ЗОНА ЗАГРУЗКИ (Показываем, если идет загрузка ИЛИ если модели нет и интернета нет)
-            // Если модели нет, но интернет есть - показываем кнопку "Скачать", но не блокируем чат
-            
-            val showDownloadCard = !vm.isModelDownloaded.value 
-            
+            // 2. ЗОНА ЗАГРУЗКИ МОДЕЛИ
+            val showDownloadCard = !vm.isModelDownloaded.value
             if (showDownloadCard) {
                 ModelDownloadCard(
                     isDownloading = vm.isDownloading.value,
@@ -108,9 +109,7 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
             }
 
             // 3. ПОЛЕ ВВОДА
-            // Активно, если (Есть Интернет) ИЛИ (Есть Локальная Модель)
             val canChat = vm.isOnline.value || vm.isModelDownloaded.value
-
             if (canChat) {
                 Row(
                     modifier = Modifier.padding(16.dp),
@@ -125,7 +124,7 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
                             focusedContainerColor = SurfaceColor,
                             unfocusedContainerColor = SurfaceColor,
                             focusedTextColor = Color.White,
-                            cursorColor = NeonGreen
+                            cursorColor = NeonGreen,
                         ),
                         shape = RoundedCornerShape(24.dp),
                         singleLine = true
@@ -148,7 +147,6 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
                     }
                 }
             } else {
-                // Если чатиться нельзя (нет сети и нет модели)
                 Box(
                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                     contentAlignment = Alignment.Center
@@ -164,31 +162,48 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
 fun AiChatBubble(msg: ChatMessage) {
     val isMine = msg.isMine
     val align = if (isMine) Alignment.End else Alignment.Start
-    val bg = if (isMine) NeonGreen.copy(alpha = 0.2f) else SurfaceColor
-    
-    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = align) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = bg),
-            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = if (isMine) 16.dp else 2.dp, bottomEnd = if (isMine) 2.dp else 16.dp)
+    val bg = if (isMine) NeonCyan.copy(alpha = 0.2f) else SurfaceColor
+    val border = if (isMine) NeonGreen.copy(alpha = 0.5f) else NeonPurple.copy(alpha = 0.5f)
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = align
+    ) {
+        Surface(
+            color = bg,
+            shape = RoundedCornerShape(
+                topStart = 16.dp,
+                topEnd = 16.dp,
+                bottomStart = if (isMine) 16.dp else 4.dp,
+                bottomEnd = if (isMine) 4.dp else 16.dp
+            ),
+            border = BorderStroke(1.dp, border),
+            shadowElevation = 4.dp,
+            modifier = Modifier.widthIn(max = 280.dp)
         ) {
             Text(
                 text = msg.text,
                 modifier = Modifier.padding(12.dp),
                 color = Color.White,
-                fontSize = 16.sp
+                fontSize = 15.sp,
+                lineHeight = 20.sp
             )
         }
     }
 }
 
 @Composable
-fun ModelDownloadCard(isDownloading: Boolean, progress: Int, hasInternet: Boolean, onDownload: () -> Unit) {
-    // Не показываем кнопку, если интернета нет и загрузка не идет (скачать всё равно нельзя)
+fun ModelDownloadCard(
+    isDownloading: Boolean,
+    progress: Int,
+    hasInternet: Boolean,
+    onDownload: () -> Unit
+) {
     if (!hasInternet && !isDownloading) return
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-        border = BorderStroke(1.dp, if(isDownloading) NeonGreen else Color.Gray),
+        border = BorderStroke(1.dp, if (isDownloading) NeonGreen else Color.Gray),
         colors = CardDefaults.cardColors(containerColor = SurfaceColor)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -198,28 +213,41 @@ fun ModelDownloadCard(isDownloading: Boolean, progress: Int, hasInternet: Boolea
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(if(isDownloading) "Загрузка мозга..." else "Доступен Офлайн Режим", color = NeonGreen, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (isDownloading) "Загрузка мозга..." else "Доступен Офлайн Режим",
+                        color = NeonGreen,
+                        fontWeight = FontWeight.Bold
+                    )
                     if (!isDownloading) {
-                        Text("Скачайте модель (2.3 ГБ) для работы без интернета.", color = Color.Gray, fontSize = 12.sp)
+                        Text(
+                            "Скачайте модель (2.3 ГБ) для работы без интернета.",
+                            color = Color.Gray,
+                            fontSize = 12.sp
+                        )
                     }
                 }
-                
+
                 if (!isDownloading) {
                     IconButton(onClick = onDownload) {
                         Icon(Icons.Default.Download, "Download", tint = NeonGreen)
                     }
                 }
             }
-            
+
             if (isDownloading) {
                 Spacer(Modifier.height(8.dp))
                 LinearProgressIndicator(
-                    progress = { progress / 100f },
+                    progress = progress / 100f,
                     modifier = Modifier.fillMaxWidth().height(4.dp),
                     color = NeonGreen,
                     trackColor = Color.DarkGray,
                 )
-                Text("$progress%", color = Color.White, fontSize = 10.sp, modifier = Modifier.align(Alignment.End))
+                Text(
+                    "$progress%",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    modifier = Modifier.align(Alignment.End)
+                )
             }
         }
     }
