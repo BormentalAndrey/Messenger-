@@ -56,8 +56,8 @@ android {
         applicationId = "com.kakdela.p2p"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 1.000001
+        versionName = "1.000001"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
