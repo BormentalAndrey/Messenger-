@@ -28,9 +28,21 @@ class MainActivity : ComponentActivity() {
     private lateinit var identityRepository: IdentityRepository
     private val TAG = "P2P_MAIN"
 
+    private val permPrefs by lazy {
+        getSharedPreferences("perm_prefs", Context.MODE_PRIVATE)
+    }
+
+    private var serviceStarted = false
+
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
             handlePermissionsResult(it)
+        }
+
+    private val manageAllFilesLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            // После возврата из настроек продолжаем обычный флоу разрешений
+            requestRuntimePermissions()
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,10 +58,7 @@ class MainActivity : ComponentActivity() {
         // 3. Старт сети (один раз)
         identityRepository.startNetwork()
 
-        // 4. Сервис
-        startP2PService()
-
-        // 5. Разрешения
+        // 4. Разрешения
         checkAndRequestPermissions()
 
         val prefs = getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
@@ -71,30 +80,54 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startP2PService() {
+        if (serviceStarted) return
+
         try {
             val intent = Intent(this, P2PService::class.java)
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(intent)
             } else {
                 startService(intent)
             }
+
+            serviceStarted = true
+
         } catch (e: Exception) {
             Log.e(TAG, "Service Start Error", e)
         }
     }
 
     private fun checkAndRequestPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-            !Environment.isExternalStorageManager()
+
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            !Environment.isExternalStorageManager() &&
+            !permPrefs.getBoolean("asked_all_files", false)
         ) {
+
+            permPrefs.edit()
+                .putBoolean("asked_all_files", true)
+                .apply()
+
             try {
-                startActivity(
-                    Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                        data = Uri.parse("package:$packageName")
-                    }
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:$packageName")
                 )
-            } catch (_: Exception) {}
+
+                manageAllFilesLauncher.launch(intent)
+                return
+
+            } catch (e: Exception) {
+                Log.w(TAG, "Cannot open all files permission screen", e)
+            }
         }
+
+        requestRuntimePermissions()
+    }
+
+    private fun requestRuntimePermissions() {
 
         val permissions = mutableListOf(
             Manifest.permission.READ_CONTACTS,
@@ -114,11 +147,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handlePermissionsResult(permissions: Map<String, Boolean>) {
+
         if (
             permissions[Manifest.permission.READ_MEDIA_AUDIO] == true ||
             permissions[Manifest.permission.READ_EXTERNAL_STORAGE] == true
         ) {
             MusicManager.loadTracks(this)
         }
+
+        // Сервис запускаем после флоу разрешений
+        startP2PService()
     }
 }
