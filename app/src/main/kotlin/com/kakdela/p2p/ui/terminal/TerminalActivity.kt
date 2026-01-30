@@ -1,209 +1,103 @@
-package com.kakdela.p2p.ui.terminal
+private fun showNeonPlaceholder() {
+    // Убираем TerminalView временно, чтобы не мешал
+    mTerminalView.visibility = View.GONE
 
-import android.annotation.SuppressLint
-import android.content.ClipboardManager
-import android.content.Context
-import android.os.Bundle
-import android.util.Log
-import android.view.inputmethod.InputMethodManager
-import android.widget.ImageButton
-import android.widget.ListView
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.GravityCompat
-import androidx.drawerlayout.widget.DrawerLayout
-import com.google.android.material.button.MaterialButton
-import com.kakdela.p2p.R
-import com.termux.app.TermuxInstaller
-import com.termux.terminal.TerminalSession
-import com.termux.terminal.TerminalSessionClient
-import com.termux.view.TerminalView
-import java.io.File
-
-class TerminalActivity : AppCompatActivity() {
-
-    private lateinit var mTerminalView: TerminalView
-    private lateinit var mDrawerLayout: DrawerLayout
-    private var mTerminalSession: TerminalSession? = null
-    
-    private val TAG = "TerminalActivity"
-
-    @SuppressLint("ClickableViewAccessibility")
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-
-        // 1. Установка контента
-        setContentView(R.layout.activity_termux)
-
-        // 2. Инициализация View
-        mTerminalView = findViewById(R.id.terminal_view)
-        mDrawerLayout = findViewById(R.id.drawer_layout)
-        
-        val settingsButton: ImageButton = findViewById(R.id.settings_button)
-        val newSessionButton: MaterialButton = findViewById(R.id.new_session_button)
-        val toggleKeyboardButton: MaterialButton = findViewById(R.id.toggle_keyboard_button)
-
-        // 3. Настройка TerminalView
-        mTerminalView.apply {
-            setTextSize(16)
-            keepScreenOn = true
-            requestFocus()
-            // Важно для ввода текста
-            setOnFocusChangeListener { _, hasFocus ->
-                if (hasFocus) {
-                    showSoftKeyboard()
-                }
-            }
-        }
-
-        // 4. Логика кнопок
-        settingsButton.setOnClickListener {
-            // Открыть боковую панель как альтернатива настройкам
-            mDrawerLayout.openDrawer(GravityCompat.START)
-        }
-
-        newSessionButton.setOnClickListener {
-            setupTerminalSession() 
-            mDrawerLayout.closeDrawer(GravityCompat.START)
-        }
-
-        toggleKeyboardButton.setOnClickListener {
-            showSoftKeyboard()
-        }
-
-        // 5. Инициализация окружения и запуск
-        // Используем public методы из исправленного TermuxInstaller.java
-        TermuxInstaller.setupBootstrapIfNeeded(this) {
-            runOnUiThread {
-                setupTerminalSession()
-                TermuxInstaller.setupStorageSymlinks(this)
-            }
-        }
+    // Создаём overlay-панель прямо в коде
+    val placeholder = LinearLayout(this).apply {
+        layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+        )
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        setBackgroundColor(0xFF0A0015.toInt())  // очень тёмный фиолетовый
+        id = View.generateViewId()
+        tag = "neon_placeholder"
     }
 
-    private fun setupTerminalSession() {
-        try {
-            val termuxPrefix = File(filesDir, "usr")
-            val homeDir = File(filesDir, "home")
-            val tmpDir = File(termuxPrefix, "tmp")
+    // Главный текст "Как дела?"
+    val mainText = TextView(this).apply {
+        text = "Как дела?"
+        textSize = 68f
+        setTextColor(0xFF00F5FF.toInt())          // яркий циан
+        typeface = Typeface.MONOSPACE
+        letterSpacing = 0.12f
+        setShadowLayer(24f, 0f, 0f, 0xFF00F5FF.toInt())
+        elevation = 16f
+        gravity = Gravity.CENTER
+        setPadding(32, 32, 32, 32)
+    }
 
-            // Создание необходимых директорий
-            if (!termuxPrefix.exists()) termuxPrefix.mkdirs()
-            if (!homeDir.exists()) homeDir.mkdirs()
-            if (!tmpDir.exists()) tmpDir.mkdirs()
+    // Маленький подтекст снизу
+    val subText = TextView(this).apply {
+        text = "Терминал разрабатывается…"
+        textSize = 24f
+        setTextColor(0xFF39FF14.toInt())          // кислотный зелёный
+        typeface = Typeface.MONOSPACE
+        letterSpacing = 0.08f
+        setShadowLayer(14f, 0f, 0f, 0xFF39FF14.toInt())
+        elevation = 10f
+        setPadding(0, 48, 0, 0)
+    }
 
-            // Переменные окружения для работы нативных бинарников (apt, bash, и т.д.)
-            val env = arrayOf(
-                "PATH=${termuxPrefix.absolutePath}/bin",
-                "LD_LIBRARY_PATH=${termuxPrefix.absolutePath}/lib",
-                "HOME=${homeDir.absolutePath}",
-                "TERM=xterm-256color",
-                "PREFIX=${termuxPrefix.absolutePath}",
-                "TMPDIR=${tmpDir.absolutePath}",
-                "TZ=${java.util.TimeZone.getDefault().id}"
-            )
+    // Пульсирующие точки
+    val pulse = TextView(this).apply {
+        text = "●  ●  ●"
+        textSize = 54f
+        setTextColor(0xFFFF00D4.toInt())          // неоновый розовый/пурпурный
+        typeface = Typeface.MONOSPACE
+        letterSpacing = 0.4f
+        alpha = 0.85f
+        setPadding(0, 72, 0, 0)
+    }
 
-            // Выбор шелла: Bash -> Sh -> System Sh
-            val shellPath = when {
-                File(termuxPrefix, "bin/bash").exists() -> "${termuxPrefix.absolutePath}/bin/bash"
-                File(termuxPrefix, "bin/sh").exists() -> "${termuxPrefix.absolutePath}/bin/sh"
-                else -> "/system/bin/sh"
-            }
+    placeholder.addView(mainText)
+    placeholder.addView(subText)
+    placeholder.addView(pulse)
 
-            val client = object : TerminalSessionClient {
-                override fun onTextChanged(session: TerminalSession) {
-                    mTerminalView.onScreenUpdated()
-                }
+    // Добавляем в корневой контейнер (предполагается, что у activity_termux корень — FrameLayout или DrawerLayout)
+    (findViewById<ViewGroup>(android.R.id.content)).addView(placeholder)
 
-                override fun onTitleChanged(session: TerminalSession) {
-                    title = session.title
-                }
+    // Простая пульсация (fade in/out)
+    val animator = ObjectAnimator.ofFloat(pulse, "alpha", 0.4f, 1f, 0.4f)
+    animator.duration = 2200
+    animator.repeatCount = ObjectAnimator.INFINITE
+    animator.interpolator = AccelerateDecelerateInterpolator()
+    animator.start()
 
-                override fun onSessionFinished(session: TerminalSession) {
-                    if (!isFinishing) finish()
-                }
+    // Сохраняем ссылку, чтобы потом убрать
+    placeholder.tag = "neon_placeholder"
+}
 
-                override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
-                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    val clip = android.content.ClipData.newPlainText("Termux", text)
-                    clipboard.setPrimaryClip(clip)
-                }
+// ---------------------------------------------------------------------------------------------
 
-                override fun onPasteTextFromClipboard(session: TerminalSession?) {
-                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    val clip = clipboard.primaryClip
-                    if (clip != null && clip.itemCount > 0) {
-                        val text = clip.getItemAt(0).coerceToText(this@TerminalActivity).toString()
-                        mTerminalSession?.write(text)
+// Пример использования в onCreate или после неудачной инициализации
+
+override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    setContentView(R.layout.activity_termux)
+
+    // ... ваши findViewById ...
+
+    // Показываем заглушку сразу
+    showNeonPlaceholder()
+
+    TermuxInstaller.setupBootstrapIfNeeded(this) { success ->
+        runOnUiThread {
+            if (success) {
+                // Убираем заглушку
+                findViewById<View?>(android.R.id.content)
+                    ?.findViewWithTag<View>("neon_placeholder")
+                    ?.let { placeholder ->
+                        (placeholder.parent as? ViewGroup)?.removeView(placeholder)
                     }
-                }
 
-                override fun onBell(session: TerminalSession) {}
-                override fun onColorsChanged(session: TerminalSession) {}
-                override fun onTerminalCursorStateChange(state: Boolean) {}
-                override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
-                override fun getTerminalCursorStyle(): Int = 0 
-
-                override fun logError(tag: String?, message: String?) { Log.e(tag, message ?: "") }
-                override fun logWarn(tag: String?, message: String?) { Log.w(tag, message ?: "") }
-                override fun logInfo(tag: String?, message: String?) { Log.i(tag, message ?: "") }
-                override fun logDebug(tag: String?, message: String?) { Log.d(tag, message ?: "") }
-                override fun logVerbose(tag: String?, message: String?) { Log.v(tag, message ?: "") }
-                
-                override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) {
-                    Log.e(tag, "${message ?: ""}: ${Log.getStackTraceString(e)}")
-                }
-
-                override fun logStackTrace(tag: String?, e: Exception?) {
-                    Log.e(tag, Log.getStackTraceString(e))
-                }
+                mTerminalView.visibility = View.VISIBLE
+                setupTerminalSession()
+            } else {
+                // Можно поменять текст на ошибку
+                // но для этого нужно сохранить ссылки на TextView-ы
             }
-
-            // Завершаем предыдущую сессию перед созданием новой
-            mTerminalSession?.finishIfRunning()
-
-            mTerminalSession = TerminalSession(
-                shellPath,
-                homeDir.absolutePath,
-                arrayOf("-l"), // Login shell для загрузки профиля .bashrc
-                env,
-                10000, 
-                client
-            )
-
-            mTerminalView.attachSession(mTerminalSession)
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Terminal setup failed", e)
         }
-    }
-
-    private fun showSoftKeyboard() {
-        mTerminalView.requestFocus()
-        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.showSoftInput(mTerminalView, InputMethodManager.SHOW_IMPLICIT)
-    }
-
-    override fun onResume() {
-        super.onResume()
-        mTerminalView.onScreenUpdated()
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        if (mDrawerLayout.isDrawerOpen(GravityCompat.START)) {
-            mDrawerLayout.closeDrawer(GravityCompat.START)
-        } else {
-            @Suppress("DEPRECATION")
-            super.onBackPressed()
-        }
-    }
-
-    override fun onDestroy() {
-        try {
-            mTerminalSession?.finishIfRunning()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error finishing session", e)
-        }
-        super.onDestroy()
     }
 }
