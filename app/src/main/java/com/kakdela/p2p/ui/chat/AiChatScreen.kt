@@ -55,7 +55,7 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
             CenterAlignedTopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("AI Master", color = NeonGreen, fontWeight = FontWeight.Bold)
+                        Text("Как дела? ИИ", color = NeonGreen, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.width(8.dp))
                         
                         // Иконки статуса
@@ -120,7 +120,7 @@ fun AiChatScreen(vm: AiChatViewModel = viewModel()) {
                         value = input,
                         onValueChange = { input = it },
                         modifier = Modifier.weight(1f),
-                        placeholder = { Text(if(vm.isOnline.value) "Спроси Gemini..." else "Спроси Local AI...") },
+                        placeholder = { Text(if(vm.isOnline.value) "Спроси онлайн..." else "Спроси локальный ИИ...") },
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = SurfaceColor,
                             unfocusedContainerColor = SurfaceColor,
