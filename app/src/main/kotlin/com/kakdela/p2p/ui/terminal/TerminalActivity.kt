@@ -41,7 +41,7 @@ class TerminalActivity : AppCompatActivity() {
 
         // Базовые настройки вида
         mTerminalView.apply {
-            setTextSize(16)           // можно сделать настраиваемым
+            setTextSize(16)
             keepScreenOn = true
             isFocusable = true
             isFocusableInTouchMode = true
@@ -52,7 +52,6 @@ class TerminalActivity : AppCompatActivity() {
             }
         }
 
-        // Кнопки
         settingsButton.setOnClickListener {
             mDrawerLayout.openDrawer(GravityCompat.START)
         }
@@ -66,11 +65,9 @@ class TerminalActivity : AppCompatActivity() {
             showSoftKeyboard()
         }
 
-        // Инициализация Termux bootstrap + запуск первой сессии
         TermuxInstaller.setupBootstrapIfNeeded(this) { success ->
             if (!success) {
                 Log.e(TAG, "Bootstrap setup failed")
-                // Здесь можно показать ошибку пользователю
                 return@setupBootstrapIfNeeded
             }
 
@@ -95,13 +92,12 @@ class TerminalActivity : AppCompatActivity() {
             val homeDir = File(filesDir, "home")
             val tmpDir = File(termuxPrefix, "tmp")
 
-            // Гарантируем наличие директорий
             termuxPrefix.mkdirs()
             homeDir.mkdirs()
             tmpDir.mkdirs()
 
             val env = arrayOf(
-                "PATH=\( {termuxPrefix.absolutePath}/bin: \){termuxPrefix.absolutePath}/local/bin",
+                "PATH=${termuxPrefix.absolutePath}/bin:${termuxPrefix.absolutePath}/local/bin",
                 "LD_LIBRARY_PATH=${termuxPrefix.absolutePath}/lib",
                 "HOME=${homeDir.absolutePath}",
                 "TERM=xterm-256color",
@@ -112,20 +108,26 @@ class TerminalActivity : AppCompatActivity() {
                 "ANDROID_ROOT=${android.os.Environment.getRootDirectory().absolutePath}"
             )
 
-            // Выбор шелла (приоритет bash → sh → системный sh)
             val shellPath = when {
-                File(termuxPrefix, "bin/bash").exists() -> "${termuxPrefix.absolutePath}/bin/bash"
-                File(termuxPrefix, "bin/sh").exists() -> "${termuxPrefix.absolutePath}/bin/sh"
+                File(termuxPrefix, "bin/bash").exists() ->
+                    "${termuxPrefix.absolutePath}/bin/bash"
+
+                File(termuxPrefix, "bin/sh").exists() ->
+                    "${termuxPrefix.absolutePath}/bin/sh"
+
                 else -> "/system/bin/sh"
             }
 
             val client = object : SessionChangedCallback {
+
                 override fun onTextChanged(session: TerminalSession) {
                     mTerminalView.onScreenUpdated()
                 }
 
                 override fun onTitleChanged(session: TerminalSession) {
-                    runOnUiThread { title = session.title ?: "Terminal" }
+                    runOnUiThread {
+                        title = session.title ?: "Terminal"
+                    }
                 }
 
                 override fun onSessionFinished(session: TerminalSession) {
@@ -135,63 +137,86 @@ class TerminalActivity : AppCompatActivity() {
                 }
 
                 override fun onClipboardText(session: TerminalSession, text: String) {
-                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    val clip = android.content.ClipData.newPlainText("Terminal", text)
+                    val clipboard =
+                        getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip =
+                        android.content.ClipData.newPlainText("Terminal", text)
                     clipboard.setPrimaryClip(clip)
                 }
 
                 override fun onPasteFromClipboard(session: TerminalSession?) {
-                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clipboard =
+                        getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+
                     if (!clipboard.hasPrimaryClip()) return
 
                     val clip = clipboard.primaryClip ?: return
                     if (clip.itemCount == 0) return
 
-                    val text = clip.getItemAt(0).coerceToText(this@TerminalActivity)?.toString() ?: return
+                    val text = clip.getItemAt(0)
+                        .coerceToText(this@TerminalActivity)
+                        ?.toString()
+                        ?: return
+
                     mTerminalSession?.write(text)
                 }
 
                 override fun onBell(session: TerminalSession) {
-                    // Можно добавить вибрацию или звук
                 }
 
                 override fun onColorsChanged(session: TerminalSession) {}
                 override fun onTerminalCursorStateChange(state: Boolean) {}
                 override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
 
-                override fun logError(tag: String?, message: String?) { Log.e(tag, message ?: "") }
-                override fun logWarn(tag: String?, message: String?) { Log.w(tag, message ?: "") }
-                override fun logInfo(tag: String?, message: String?) { Log.i(tag, message ?: "") }
-                override fun logDebug(tag: String?, message: String?) { Log.d(tag, message ?: "") }
-                override fun logVerbose(tag: String?, message: String?) { Log.v(tag, message ?: "") }
-                override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) {
-                    Log.e(tag, "${message ?: ""}", e)
+                override fun logError(tag: String?, message: String?) {
+                    Log.e(tag, message ?: "")
                 }
+
+                override fun logWarn(tag: String?, message: String?) {
+                    Log.w(tag, message ?: "")
+                }
+
+                override fun logInfo(tag: String?, message: String?) {
+                    Log.i(tag, message ?: "")
+                }
+
+                override fun logDebug(tag: String?, message: String?) {
+                    Log.d(tag, message ?: "")
+                }
+
+                override fun logVerbose(tag: String?, message: String?) {
+                    Log.v(tag, message ?: "")
+                }
+
+                override fun logStackTraceWithMessage(
+                    tag: String?,
+                    message: String?,
+                    e: Exception?
+                ) {
+                    Log.e(tag, message ?: "", e)
+                }
+
                 override fun logStackTrace(tag: String?, e: Exception?) {
                     Log.e(tag, "Stack trace", e)
                 }
             }
 
-            // Завершаем старую сессию, если была
             mTerminalSession?.finishIfRunning()
 
             mTerminalSession = TerminalSession(
                 shellPath,
                 homeDir.absolutePath,
-                arrayOf("-l"),           // login shell → загружает .profile / .bashrc
+                arrayOf("-l"),
                 env,
-                10000,                   // max lines в scrollback
+                10000,
                 client
             ).also { session ->
                 mTerminalView.attachSession(session)
-
-                // Очень важно: сразу после attachSession обновляем размер
                 updateTerminalSize()
             }
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create terminal session", e)
-            // Можно показать тост / диалог с ошибкой
         }
     }
 
@@ -202,18 +227,18 @@ class TerminalActivity : AppCompatActivity() {
 
             if (cols > 0 && rows > 0) {
                 session.resize(cols, rows)
-                Log.d(TAG, "Terminal resized to \( {cols}x \){rows}")
+                Log.d(TAG, "Terminal resized to ${cols}x${rows}")
             }
         }
     }
 
     private fun showSoftKeyboard() {
         mTerminalView.requestFocus()
-        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        val imm =
+            getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         imm.showSoftInput(mTerminalView, InputMethodManager.SHOW_IMPLICIT)
     }
 
-    // Важно для поворота экрана / изменения конфигурации
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         updateTerminalSize()
@@ -223,7 +248,7 @@ class TerminalActivity : AppCompatActivity() {
         super.onResume()
         mTerminalView.onScreenUpdated()
         updateTerminalSize()
-        showSoftKeyboard()           // удобно — клавиатура появляется автоматически
+        showSoftKeyboard()
     }
 
     override fun onBackPressed() {
