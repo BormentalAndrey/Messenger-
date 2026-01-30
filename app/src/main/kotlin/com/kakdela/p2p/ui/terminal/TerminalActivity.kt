@@ -3,11 +3,11 @@ package com.kakdela.p2p.ui.terminal
 import android.annotation.SuppressLint
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.res.Configuration
 import android.os.Bundle
 import android.util.Log
 import android.view.inputmethod.InputMethodManager
 import android.widget.ImageButton
+import android.widget.ListView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
@@ -15,7 +15,7 @@ import com.google.android.material.button.MaterialButton
 import com.kakdela.p2p.R
 import com.termux.app.TermuxInstaller
 import com.termux.terminal.TerminalSession
-import com.termux.terminal.TerminalSession.SessionChangedCallback
+import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import java.io.File
 
@@ -30,8 +30,11 @@ class TerminalActivity : AppCompatActivity() {
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 1. Установка контента
         setContentView(R.layout.activity_termux)
 
+        // 2. Инициализация View
         mTerminalView = findViewById(R.id.terminal_view)
         mDrawerLayout = findViewById(R.id.drawer_layout)
 
@@ -39,19 +42,20 @@ class TerminalActivity : AppCompatActivity() {
         val newSessionButton: MaterialButton = findViewById(R.id.new_session_button)
         val toggleKeyboardButton: MaterialButton = findViewById(R.id.toggle_keyboard_button)
 
-        // Базовые настройки вида
+        // 3. Настройка TerminalView
         mTerminalView.apply {
             setTextSize(16)
             keepScreenOn = true
-            isFocusable = true
-            isFocusableInTouchMode = true
             requestFocus()
 
             setOnFocusChangeListener { _, hasFocus ->
-                if (hasFocus) showSoftKeyboard()
+                if (hasFocus) {
+                    showSoftKeyboard()
+                }
             }
         }
 
+        // 4. Логика кнопок
         settingsButton.setOnClickListener {
             mDrawerLayout.openDrawer(GravityCompat.START)
         }
@@ -65,24 +69,16 @@ class TerminalActivity : AppCompatActivity() {
             showSoftKeyboard()
         }
 
-        TermuxInstaller.setupBootstrapIfNeeded(this) { success ->
-            if (!success) {
-                Log.e(TAG, "Bootstrap setup failed")
-                return@setupBootstrapIfNeeded
-            }
-
+        // 5. Инициализация окружения и запуск
+        TermuxInstaller.setupBootstrapIfNeeded(this) {
             runOnUiThread {
-                setupStorageSymlinks()
                 setupTerminalSession()
+                try {
+                    TermuxInstaller.setupStorageSymlinks(this)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to setup storage symlinks", e)
+                }
             }
-        }
-    }
-
-    private fun setupStorageSymlinks() {
-        try {
-            TermuxInstaller.setupStorageSymlinks(this)
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to setup storage symlinks", e)
         }
     }
 
@@ -92,20 +88,18 @@ class TerminalActivity : AppCompatActivity() {
             val homeDir = File(filesDir, "home")
             val tmpDir = File(termuxPrefix, "tmp")
 
-            termuxPrefix.mkdirs()
-            homeDir.mkdirs()
-            tmpDir.mkdirs()
+            if (!termuxPrefix.exists()) termuxPrefix.mkdirs()
+            if (!homeDir.exists()) homeDir.mkdirs()
+            if (!tmpDir.exists()) tmpDir.mkdirs()
 
             val env = arrayOf(
-                "PATH=${termuxPrefix.absolutePath}/bin:${termuxPrefix.absolutePath}/local/bin",
+                "PATH=${termuxPrefix.absolutePath}/bin",
                 "LD_LIBRARY_PATH=${termuxPrefix.absolutePath}/lib",
                 "HOME=${homeDir.absolutePath}",
                 "TERM=xterm-256color",
                 "PREFIX=${termuxPrefix.absolutePath}",
                 "TMPDIR=${tmpDir.absolutePath}",
-                "TZ=${java.util.TimeZone.getDefault().id}",
-                "ANDROID_DATA=${android.os.Environment.getDataDirectory().absolutePath}",
-                "ANDROID_ROOT=${android.os.Environment.getRootDirectory().absolutePath}"
+                "TZ=${java.util.TimeZone.getDefault().id}"
             )
 
             val shellPath = when {
@@ -118,55 +112,46 @@ class TerminalActivity : AppCompatActivity() {
                 else -> "/system/bin/sh"
             }
 
-            val client = object : SessionChangedCallback {
+            val client = object : TerminalSessionClient {
 
                 override fun onTextChanged(session: TerminalSession) {
                     mTerminalView.onScreenUpdated()
                 }
 
                 override fun onTitleChanged(session: TerminalSession) {
-                    runOnUiThread {
-                        title = session.title ?: "Terminal"
-                    }
+                    title = session.title
                 }
 
                 override fun onSessionFinished(session: TerminalSession) {
-                    if (!isFinishing && !isChangingConfigurations) {
-                        finish()
-                    }
+                    if (!isFinishing) finish()
                 }
 
-                override fun onClipboardText(session: TerminalSession, text: String) {
+                override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
                     val clipboard =
                         getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     val clip =
-                        android.content.ClipData.newPlainText("Terminal", text)
+                        android.content.ClipData.newPlainText("Termux", text)
                     clipboard.setPrimaryClip(clip)
                 }
 
-                override fun onPasteFromClipboard(session: TerminalSession?) {
+                override fun onPasteTextFromClipboard(session: TerminalSession?) {
                     val clipboard =
                         getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-
-                    if (!clipboard.hasPrimaryClip()) return
-
-                    val clip = clipboard.primaryClip ?: return
-                    if (clip.itemCount == 0) return
-
-                    val text = clip.getItemAt(0)
-                        .coerceToText(this@TerminalActivity)
-                        ?.toString()
-                        ?: return
-
-                    mTerminalSession?.write(text)
+                    val clip = clipboard.primaryClip
+                    if (clip != null && clip.itemCount > 0) {
+                        val text = clip.getItemAt(0)
+                            .coerceToText(this@TerminalActivity)
+                            .toString()
+                        mTerminalSession?.write(text)
+                    }
                 }
 
-                override fun onBell(session: TerminalSession) {
-                }
-
+                override fun onBell(session: TerminalSession) {}
                 override fun onColorsChanged(session: TerminalSession) {}
                 override fun onTerminalCursorStateChange(state: Boolean) {}
                 override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
+
+                override fun getTerminalCursorStyle(): Int = 0
 
                 override fun logError(tag: String?, message: String?) {
                     Log.e(tag, message ?: "")
@@ -203,32 +188,21 @@ class TerminalActivity : AppCompatActivity() {
 
             mTerminalSession?.finishIfRunning()
 
-            mTerminalSession = TerminalSession(
+            val session = TerminalSession(
                 shellPath,
                 homeDir.absolutePath,
                 arrayOf("-l"),
                 env,
                 10000,
                 client
-            ).also { session ->
-                mTerminalView.attachSession(session)
-                updateTerminalSize()
-            }
+            )
+
+            mTerminalSession = session
+
+            mTerminalView.attachSession(session)
 
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to create terminal session", e)
-        }
-    }
-
-    private fun updateTerminalSize() {
-        mTerminalSession?.let { session ->
-            val cols = mTerminalView.getColumns()
-            val rows = mTerminalView.getRows()
-
-            if (cols > 0 && rows > 0) {
-                session.resize(cols, rows)
-                Log.d(TAG, "Terminal resized to ${cols}x${rows}")
-            }
+            Log.e(TAG, "Terminal setup failed", e)
         }
     }
 
@@ -239,28 +213,27 @@ class TerminalActivity : AppCompatActivity() {
         imm.showSoftInput(mTerminalView, InputMethodManager.SHOW_IMPLICIT)
     }
 
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
-        updateTerminalSize()
-    }
-
     override fun onResume() {
         super.onResume()
         mTerminalView.onScreenUpdated()
-        updateTerminalSize()
-        showSoftKeyboard()
     }
 
+    @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (mDrawerLayout.isDrawerOpen(GravityCompat.START)) {
             mDrawerLayout.closeDrawer(GravityCompat.START)
         } else {
+            @Suppress("DEPRECATION")
             super.onBackPressed()
         }
     }
 
     override fun onDestroy() {
-        mTerminalSession?.finishIfRunning()
+        try {
+            mTerminalSession?.finishIfRunning()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error finishing session", e)
+        }
         super.onDestroy()
     }
 }
