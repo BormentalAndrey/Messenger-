@@ -18,31 +18,24 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
 /**
- * SplashScreen — экран приветствия при запуске приложения.
- * Выполняет плавное появление текста и индикатора загрузки.
- * Гарантирует единоразовый вызов onTimeout даже при
- * пересоздании Activity (например, после экрана разрешений).
+ * SplashScreen — экран приветствия.
+ * Исправлено: Добавлен systemBarsPadding для корректного отображения на Edge-to-Edge экранах.
  */
 @Composable
 fun SplashScreen(
     onTimeout: () -> Unit
 ) {
     val alpha = remember { Animatable(0f) }
-
-    // Флаг, чтобы навигация не вызывалась повторно
     var navigated by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-
         if (navigated) return@LaunchedEffect
 
         alpha.snapTo(0f)
-
         alpha.animateTo(
             targetValue = 1f,
             animationSpec = tween(durationMillis = 800)
         )
-
         delay(1200)
 
         if (!navigated) {
@@ -54,14 +47,13 @@ fun SplashScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black),
+            .background(Color.Black)
+            .systemBarsPadding(), // Защита от наложения на системные бары
         contentAlignment = Alignment.Center
     ) {
-
         Column(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-
             Text(
                 text = "Как дела?",
                 color = Color.Cyan,
