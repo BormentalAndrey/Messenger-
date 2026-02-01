@@ -8,6 +8,7 @@ object Routes {
 
     // --- СЛУЖЕБНЫЕ ---
     const val SPLASH = "splash"
+    const val ONBOARDING = "onboarding" // Добавлен маршрут для экрана обучения
 
     // --- АВТОРИЗАЦИЯ ---
     const val CHOICE = "choice"
@@ -48,6 +49,7 @@ object Routes {
 
     /**
      * Вспомогательная функция для генерации пути к конкретному чату.
+     * Использовать так: navController.navigate(Routes.buildChatRoute(userHash))
      */
     fun buildChatRoute(chatId: String): String {
         return "chat/$chatId"
