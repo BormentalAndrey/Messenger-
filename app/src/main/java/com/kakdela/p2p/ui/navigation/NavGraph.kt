@@ -39,12 +39,16 @@ import com.kakdela.p2p.ui.*
 import com.kakdela.p2p.ui.auth.*
 import com.kakdela.p2p.ui.chat.AiChatScreen
 import com.kakdela.p2p.ui.chat.ChatScreen
+import com.kakdela.p2p.ui.onboarding.OnboardingScreen
 import com.kakdela.p2p.ui.player.MusicPlayerScreen
 import com.kakdela.p2p.ui.slots.Slots1Screen
 import com.kakdela.p2p.ui.ChatViewModel
 import com.kakdela.p2p.ui.screens.FileManagerScreen
 import com.kakdela.p2p.ui.terminal.TerminalActivity
 import com.kakdela.p2p.viewmodel.ChatViewModelFactory
+
+// Константа маршрута для онбординга (можно вынести в Routes.kt)
+private const val ROUTE_ONBOARDING = "onboarding"
 
 @Composable
 fun NavGraph(
@@ -84,19 +88,42 @@ fun NavGraph(
                 .background(Color.Black)
         ) {
 
-            // ================= AUTH =================
+            // ================= AUTH & ONBOARDING =================
 
             composable(Routes.SPLASH) {
                 SplashScreen {
-                    val prefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
-                    val isLoggedIn = prefs.getBoolean("is_logged_in", false)
+                    // Проверка авторизации
+                    val authPrefs = context.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
+                    val isLoggedIn = authPrefs.getBoolean("is_logged_in", false)
 
-                    navController.navigate(
-                        if (isLoggedIn) Routes.CHATS else Routes.CHOICE
-                    ) {
+                    // Проверка показа обучения
+                    val appPrefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                    val isOnboardingShown = appPrefs.getBoolean("onboarding_shown", false)
+
+                    val destination = when {
+                        isLoggedIn -> Routes.CHATS
+                        isOnboardingShown -> Routes.CHOICE
+                        else -> ROUTE_ONBOARDING
+                    }
+
+                    navController.navigate(destination) {
                         popUpTo(Routes.SPLASH) { inclusive = true }
                     }
                 }
+            }
+
+            composable(ROUTE_ONBOARDING) {
+                OnboardingScreen(
+                    onFinished = {
+                        // Сохраняем флаг, что обучение пройдено
+                        val appPrefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+                        appPrefs.edit().putBoolean("onboarding_shown", true).apply()
+
+                        navController.navigate(Routes.CHOICE) {
+                            popUpTo(ROUTE_ONBOARDING) { inclusive = true }
+                        }
+                    }
+                )
             }
 
             composable(Routes.CHOICE) {
@@ -175,7 +202,6 @@ fun NavGraph(
                     onSendMessage = vm::sendMessage,
                     onSendFile = vm::sendFile,
                     onSendAudio = { uri, duration ->
-                        // ИСПРАВЛЕНО: корректный синтаксис интерполяции Kotlin
                         vm.sendFile(
                             uri,
                             "audio_msg_${System.currentTimeMillis()}_${duration}s.mp3"
