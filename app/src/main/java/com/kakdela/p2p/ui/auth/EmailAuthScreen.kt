@@ -1,6 +1,8 @@
 package com.kakdela.p2p.ui.auth
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,7 +22,6 @@ fun EmailAuthScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    // FIX: Используем AuthManager
     val authManager = remember { AuthManager(context) }
 
     var email by remember { mutableStateOf("") }
@@ -28,10 +29,18 @@ fun EmailAuthScreen(
     var password by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    
+    // Состояние скролла для небольших экранов
+    val scrollState = rememberScrollState()
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(32.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding() // Отступы от статус-бара
+                .imePadding() // Отступ от клавиатуры
+                .verticalScroll(scrollState) // Скролл, если экран маленький
+                .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -48,7 +57,8 @@ fun EmailAuthScreen(
                     unfocusedTextColor = Color.White,
                     focusedBorderColor = Color.Cyan,
                     unfocusedBorderColor = Color.Gray
-                )
+                ),
+                singleLine = true
             )
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
@@ -61,7 +71,8 @@ fun EmailAuthScreen(
                     unfocusedTextColor = Color.White,
                     focusedBorderColor = Color.Cyan,
                     unfocusedBorderColor = Color.Gray
-                )
+                ),
+                singleLine = true
             )
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(
@@ -75,7 +86,8 @@ fun EmailAuthScreen(
                     unfocusedTextColor = Color.White,
                     focusedBorderColor = Color.Cyan,
                     unfocusedBorderColor = Color.Gray
-                )
+                ),
+                singleLine = true
             )
             Spacer(Modifier.height(24.dp))
 
@@ -83,13 +95,14 @@ fun EmailAuthScreen(
                 onClick = {
                     isLoading = true
                     scope.launch {
-                        // FIX: Используем AuthManager
                         val success = authManager.registerOrLogin(email, password, phone)
                         if (success) onAuthSuccess() else error = "Ошибка входа"
                         isLoading = false
                     }
                 },
-                modifier = Modifier.fillMaxWidth().height(50.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 50.dp), // Гибкая высота
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan),
                 enabled = !isLoading
             ) {
