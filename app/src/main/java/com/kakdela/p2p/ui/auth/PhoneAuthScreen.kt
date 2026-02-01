@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,8 +33,9 @@ fun PhoneAuthScreen(onSuccess: () -> Unit) {
     var inputCode by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    
+    val scrollState = rememberScrollState()
 
-    // Внутренняя функция для отправки
     fun handleSendSms() {
         val code = SmsCodeManager.generateCode()
         val success = SmsCodeManager.sendCode(context, phone, code)
@@ -54,7 +57,6 @@ fun PhoneAuthScreen(onSuccess: () -> Unit) {
         }
     }
 
-    // Автозаполнение
     LaunchedEffect(sentCode) {
         if (sentCode != null) {
             while (isActive) {
@@ -71,7 +73,12 @@ fun PhoneAuthScreen(onSuccess: () -> Unit) {
 
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Black) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(32.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding()
+                .imePadding()
+                .verticalScroll(scrollState)
+                .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
@@ -84,7 +91,8 @@ fun PhoneAuthScreen(onSuccess: () -> Unit) {
                     onValueChange = { phone = it },
                     label = { Text("Номер телефона (+7...)") },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White),
+                    singleLine = true
                 )
                 Spacer(Modifier.height(24.dp))
                 Button(
@@ -102,7 +110,7 @@ fun PhoneAuthScreen(onSuccess: () -> Unit) {
                             error = "Введите корректный номер"
                         }
                     },
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan)
                 ) {
                     Text("Получить код", color = Color.Black)
@@ -113,7 +121,8 @@ fun PhoneAuthScreen(onSuccess: () -> Unit) {
                     onValueChange = { inputCode = it },
                     label = { Text("Код подтверждения") },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+                    colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White),
+                    singleLine = true
                 )
                 Spacer(Modifier.height(24.dp))
                 Button(
@@ -129,7 +138,7 @@ fun PhoneAuthScreen(onSuccess: () -> Unit) {
                             error = "Неверный код"
                         }
                     },
-                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan),
                     enabled = !isLoading
                 ) {
