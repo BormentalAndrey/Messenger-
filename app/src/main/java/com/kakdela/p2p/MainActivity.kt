@@ -46,7 +46,7 @@ class MainActivity : ComponentActivity() {
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
+        enableEdgeToEdge() // Включаем Edge-to-Edge для Android 15+
         super.onCreate(savedInstanceState)
 
         // 1. Cookie store
@@ -68,6 +68,8 @@ class MainActivity : ComponentActivity() {
             KakdelaTheme {
                 val navController = rememberNavController()
                 val repo = remember { identityRepository }
+                
+                // Если уже авторизован, идем сразу в чаты, минуя Splash и Onboarding
                 val startRoute = if (isLoggedIn) Routes.CHATS else Routes.SPLASH
 
                 NavGraph(
