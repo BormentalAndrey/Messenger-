@@ -34,12 +34,11 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Предотвращаем отключение экрана пока терминал активен
+        // Предотвращаем отключение экрана, пока терминал активен
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         setContentView(R.layout.activity_termux)
 
-        // Инициализация UI
         mTerminalView = findViewById(R.id.terminal_view)
         mDrawerLayout = findViewById(R.id.drawer_layout)
         
@@ -55,7 +54,6 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
             setOnClickListener { showSoftKeyboard() }
         }
 
-        // Обработчики кнопок
         settingsButton.setOnClickListener {
             if (!mDrawerLayout.isDrawerOpen(GravityCompat.START)) {
                 mDrawerLayout.openDrawer(GravityCompat.START)
@@ -73,63 +71,55 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
             toggleSoftKeyboard()
         }
 
-        // ЗАПУСК: Проверка установки и старт
+        // --- ГЛАВНОЕ ИСПРАВЛЕНИЕ ---
+        // Запускаем проверку/установку Bootstrap.
+        // Сессия создается только ПОСЛЕ успешной инициализации файлов.
         TermuxInstaller.setupBootstrapIfNeeded(this) {
-            // Этот код выполнится только после успешной загрузки и распаковки
-            
-            // Настройка симлинков (storage) в фоне
-            TermuxInstaller.setupStorageSymlinks(this)
-            
-            // Запуск сессии в UI потоке
-            runOnUiThread {
-                setupTerminalSession()
-            }
+            // Выполняется в UI потоке после установки
+            TermuxInstaller.setupStorageSymlinks(this) // Создаем симлинки на память
+            setupTerminalSession() // Запускаем терминал
         }
     }
 
     private fun setupTerminalSession() {
-        // Очищаем старую сессию
+        // Если сессия была, завершаем её корректно
         mTerminalSession?.finishIfRunning()
 
         try {
-            // 1. Определение путей (соответствует путям установщика)
             val filesDir = this.filesDir.absolutePath
             val termuxPrefix = "$filesDir/usr"
             val homeDir = "$filesDir/home"
             val tmpDir = "$termuxPrefix/tmp"
-            val appletsDir = "$termuxPrefix/bin/applets"
             
-            // Гарантируем существование папок
+            // Гарантируем существование базовых папок
             File(homeDir).mkdirs()
             File(tmpDir).mkdirs()
 
-            // 2. Переменные окружения (Linux Environment)
+            // Переменные окружения (критично для работы Linux-утилит)
             val env = arrayOf(
                 "TERM=xterm-256color",
                 "HOME=$homeDir",
                 "PREFIX=$termuxPrefix",
                 "TMPDIR=$tmpDir",
-                "PATH=$termuxPrefix/bin:$appletsDir", 
+                "PATH=$termuxPrefix/bin:$termuxPrefix/bin/applets", 
                 "LD_LIBRARY_PATH=$termuxPrefix/lib",
                 "LANG=en_US.UTF-8",
                 "ANDROID_ROOT=${System.getenv("ANDROID_ROOT") ?: "/system"}",
                 "ANDROID_DATA=${System.getenv("ANDROID_DATA") ?: "/data"}"
             )
 
-            // 3. Выбор оболочки (Shell). Проверяем, есть ли bash после установки.
+            // Пытаемся найти shell (bash или sh)
             val shellPath = when {
                 File("$termuxPrefix/bin/bash").canExecute() -> "$termuxPrefix/bin/bash"
                 File("$termuxPrefix/bin/sh").canExecute() -> "$termuxPrefix/bin/sh"
-                else -> "/system/bin/sh" // Fallback если установка не удалась
+                else -> "/system/bin/sh" // Fallback на системный sh, если установка сломалась
             }
 
-            Log.i(TAG, "Starting session with shell: $shellPath")
-
-            // 4. Создание сессии
+            // Создаем сессию
             val session = TerminalSession(
                 shellPath,
                 homeDir,
-                arrayOf("-l"), // login shell (читает .bashrc)
+                arrayOf("-l"), // login shell
                 env,
                 2000, 
                 this 
@@ -139,7 +129,7 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
             mTerminalView.attachSession(session)
             mTerminalView.onScreenUpdated()
             
-            // Фокус и клавиатура с небольшой задержкой
+            // Показываем клавиатуру с задержкой
             mTerminalView.postDelayed({
                 showSoftKeyboard()
             }, 500)
@@ -169,9 +159,7 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
     override fun onTitleChanged(session: TerminalSession) {}
 
     override fun onSessionFinished(session: TerminalSession) {
-        if (session == mTerminalSession && !isFinishing) {
-           // Можно закрыть активити: finish()
-        }
+        // Можно закрыть активити или показать сообщение "Session Ended"
     }
 
     override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
@@ -214,8 +202,8 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
         if (mDrawerLayout.isDrawerOpen(GravityCompat.START)) {
             mDrawerLayout.closeDrawer(GravityCompat.START)
         } else {
-            @Suppress("DEPRECATION")
-            super.onBackPressed()
+            // Оставляем стандартное поведение или сворачиваем в фон
+             super.onBackPressed()
         }
     }
 
