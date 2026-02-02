@@ -40,15 +40,8 @@ public final class TermuxInstaller {
 
     private static final String LOG_TAG = "TermuxInstaller";
 
-    /*
-     * Bootstrap archives:
-     *  bootstrap-aarch64.zip
-     *  bootstrap-arm.zip
-     *  bootstrap-i686.zip
-     *  bootstrap-x86_64.zip
-     */
     private static final String BOOTSTRAP_BASE_URL =
-        "https://github.com/termux/termux-packages/releases/latest/download";
+        "https://github.com/termux/termux-packages/releases/download/bootstrap-2024.12.18-r1%2Bapt-android-7";
 
     public static void setupBootstrapIfNeeded(final Activity activity, final Runnable whenDone) {
 
@@ -221,8 +214,9 @@ public final class TermuxInstaller {
 
     private static void prepareDirectories() throws Exception {
 
-        FileUtils.deleteFile("staging", TERMUX_STAGING_PREFIX_DIR_PATH, true);
-        FileUtils.deleteFile("prefix", TERMUX_PREFIX_DIR_PATH, true);
+        // FIX: не используем FileUtils.deleteFile(), т.к. он тянет Guava
+        deleteRecursively(new File(TERMUX_STAGING_PREFIX_DIR_PATH));
+        deleteRecursively(new File(TERMUX_PREFIX_DIR_PATH));
 
         Error error = TermuxFileUtils.isTermuxPrefixStagingDirectoryAccessible(true, true);
         if (error != null)
@@ -364,11 +358,7 @@ public final class TermuxInstaller {
                 .setPositiveButton("Retry",
                     (d, w) -> {
 
-                        FileUtils.deleteFile(
-                            "prefix",
-                            TERMUX_PREFIX_DIR_PATH,
-                            true
-                        );
+                        deleteRecursively(new File(TERMUX_PREFIX_DIR_PATH));
 
                         setupBootstrapIfNeeded(activity, whenDone);
                     })
@@ -435,4 +425,26 @@ public final class TermuxInstaller {
 
         }).start();
     }
+
+    // -------------------------------------------------------------------------
+    // FIX: собственное рекурсивное удаление без Guava
+    // -------------------------------------------------------------------------
+    private static void deleteRecursively(File file) {
+
+        if (file == null || !file.exists()) return;
+
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File c : children) {
+                    deleteRecursively(c);
+                }
             }
+        }
+
+        try {
+            file.delete();
+        } catch (Throwable ignored) {
+        }
+    }
+    }
