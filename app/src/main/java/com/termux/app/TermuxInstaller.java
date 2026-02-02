@@ -41,14 +41,11 @@ public final class TermuxInstaller {
     private static final String LOG_TAG = "TermuxInstaller";
 
     /*
-     * ВАЖНО:
-     * Используем %2B вместо '+' в имени тега.
-     *
-     * Assets (как на скрине GitHub):
-     *  - bootstrap-aarch64.zip
-     *  - bootstrap-arm.zip
-     *  - bootstrap-i686.zip
-     *  - bootstrap-x86_64.zip
+     * Bootstrap archives:
+     *  bootstrap-aarch64.zip
+     *  bootstrap-arm.zip
+     *  bootstrap-i686.zip
+     *  bootstrap-x86_64.zip
      */
     private static final String BOOTSTRAP_BASE_URL =
         "https://github.com/termux/termux-packages/releases/download/bootstrap-2024.12.18-r1%2Bapt-android-7";
@@ -75,6 +72,7 @@ public final class TermuxInstaller {
             File tempZip = new File(activity.getCacheDir(), "bootstrap_download.zip");
 
             try {
+
                 String downloadUrl = getDownloadUrl();
                 Logger.logInfo(LOG_TAG, "Starting download: " + downloadUrl);
 
@@ -93,24 +91,33 @@ public final class TermuxInstaller {
 
                 TermuxShellEnvironment.writeEnvironmentToFile(activity);
 
-                Logger.logInfo(LOG_TAG, "Bootstrap installed successfully.");
+                Logger.logInfo(LOG_TAG, "Bootstrap installed successfully");
 
                 activity.runOnUiThread(whenDone);
 
             } catch (Exception e) {
-                Logger.logError(LOG_TAG, "Installation failed", e);
-                showBootstrapErrorDialog(activity, whenDone,
-                    e.getClass().getSimpleName() + ": " + e.getMessage());
+
+                Logger.logError(LOG_TAG,
+                    "Installation failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+
+                showBootstrapErrorDialog(
+                    activity,
+                    whenDone,
+                    e.getClass().getSimpleName() + ": " + e.getMessage()
+                );
+
                 sendBootstrapCrashReportNotification(activity, e.getMessage());
+
             } finally {
+
                 try {
                     if (tempZip.exists()) tempZip.delete();
-                } catch (Throwable ignored) {}
+                } catch (Throwable ignored) { }
 
                 activity.runOnUiThread(() -> {
                     try {
                         progress.dismiss();
-                    } catch (Throwable ignored) {}
+                    } catch (Throwable ignored) { }
                 });
             }
 
@@ -272,7 +279,6 @@ public final class TermuxInstaller {
 
                 File target = new File(stagingRoot, name);
 
-                // zip-slip защита
                 String canonical = target.getCanonicalPath();
                 if (!canonical.startsWith(stagingCanonical + File.separator)) {
                     throw new SecurityException("Zip path traversal: " + name);
@@ -299,7 +305,6 @@ public final class TermuxInstaller {
                         }
                     }
 
-                    // Исполняемые файлы
                     if (name.startsWith("bin/")
                         || name.startsWith("libexec/")
                         || name.startsWith("libexec/apt/")
@@ -308,7 +313,7 @@ public final class TermuxInstaller {
                         try {
                             Os.chmod(target.getAbsolutePath(), 0700);
                         } catch (Throwable t) {
-                            Logger.logWarn(LOG_TAG,
+                            Logger.logError(LOG_TAG,
                                 "chmod failed: " + target.getAbsolutePath());
                         }
                     }
@@ -330,8 +335,8 @@ public final class TermuxInstaller {
             try {
                 Os.symlink(symlink.first, symlink.second);
             } catch (Exception e) {
-                Logger.logWarn(LOG_TAG,
-                    "Symlink failed: " + symlink.second);
+                Logger.logError(LOG_TAG,
+                    "Symlink failed: " + symlink.second + " -> " + e.getMessage());
             }
         }
     }
@@ -352,11 +357,13 @@ public final class TermuxInstaller {
                     (d, w) -> activity.finish())
                 .setPositiveButton("Retry",
                     (d, w) -> {
+
                         FileUtils.deleteFile(
                             "prefix",
                             TERMUX_PREFIX_DIR_PATH,
                             true
                         );
+
                         setupBootstrapIfNeeded(activity, whenDone);
                     })
                 .show()
@@ -367,7 +374,6 @@ public final class TermuxInstaller {
         Activity activity,
         String message
     ) {
-        // Без крашей на Android 12+, но с реальным логированием
         Logger.logError(LOG_TAG,
             "Bootstrap installation error: " + message);
     }
@@ -377,6 +383,7 @@ public final class TermuxInstaller {
         new Thread(() -> {
 
             try {
+
                 File storageDir = TermuxConstants.TERMUX_STORAGE_HOME_DIR;
 
                 FileUtils.clearDirectory(
@@ -390,27 +397,32 @@ public final class TermuxInstaller {
                     new File(storageDir, "shared").getAbsolutePath()
                 );
 
-                File dcimDir = Environment.getExternalStoragePublicDirectory(
-                    Environment.DIRECTORY_DCIM);
+                File dcimDir =
+                    Environment.getExternalStoragePublicDirectory(
+                        Environment.DIRECTORY_DCIM);
+
                 Os.symlink(
                     dcimDir.getAbsolutePath(),
                     new File(storageDir, "dcim").getAbsolutePath()
                 );
 
-                File downloadsDir = Environment.getExternalStoragePublicDirectory(
-                    Environment.DIRECTORY_DOWNLOADS);
+                File downloadsDir =
+                    Environment.getExternalStoragePublicDirectory(
+                        Environment.DIRECTORY_DOWNLOADS);
+
                 Os.symlink(
                     downloadsDir.getAbsolutePath(),
                     new File(storageDir, "downloads").getAbsolutePath()
                 );
 
-                Logger.logInfo(LOG_TAG, "Storage symlinks created.");
+                Logger.logInfo(LOG_TAG, "Storage symlinks created");
 
             } catch (Exception e) {
+
                 Logger.logError(LOG_TAG,
                     "Storage setup error: " + e.getMessage());
             }
 
         }).start();
     }
-                             }
+                }
