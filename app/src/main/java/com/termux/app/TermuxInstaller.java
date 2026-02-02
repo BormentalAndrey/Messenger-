@@ -39,17 +39,21 @@ import static com.termux.shared.termux.TermuxConstants.TERMUX_STAGING_PREFIX_DIR
 
 /**
  * Класс для установки базовой системы (Bootstrap) Termux.
+ * Исправлена работа с URL и удалены вызовы CrashUtils, вызывающие сбои на Android 12+.
  */
 public final class TermuxInstaller {
 
     private static final String LOG_TAG = "TermuxInstaller";
 
-    // Прямая ссылка. Символ '+' в теге релиза GitHub не требует кодирования в %2B 
-    // при использовании стандартного HttpURLConnection, если он уже является частью строки.
-    private static final String BOOTSTRAP_BASE_URL =
-        "https://github.com/termux/termux-packages/releases/download/bootstrap-2024.12.18-r1+apt-android-7";
+    // Базовый тег релиза. Должен точно совпадать с тегом на GitHub.
+    private static final String BOOTSTRAP_TAG = "bootstrap-2024.12.18-r1+apt-android-7";
+    
+    // Базовый URL для скачивания. Формат: https://github.com/.../download/{TAG}
+    private static final String BOOTSTRAP_BASE_URL = 
+        "https://github.com/termux/termux-packages/releases/download/" + BOOTSTRAP_TAG;
 
     public static void setupBootstrapIfNeeded(final Activity activity, final Runnable whenDone) {
+        // Проверяем, существует ли уже установленная система
         if (FileUtils.directoryFileExists(TERMUX_PREFIX_DIR_PATH, true)
             && !TermuxFileUtils.isTermuxPrefixDirectoryEmpty()) {
             whenDone.run();
@@ -86,6 +90,7 @@ public final class TermuxInstaller {
 
             } catch (Exception e) {
                 Logger.logError(LOG_TAG, "Bootstrap installation failed: " + e.getMessage());
+                // Показываем диалог ошибки вместо вызова падающего уведомления
                 showBootstrapErrorDialog(activity, whenDone, e.getMessage());
             } finally {
                 if (tempZip.exists()) tempZip.delete();
@@ -96,9 +101,27 @@ public final class TermuxInstaller {
         }).start();
     }
 
+    /**
+     * Формирует корректную ссылку на файл на основе архитектуры процессора.
+     * Соответствует названиям файлов в релизе GitHub.
+     */
     private static String getDownloadUrl() {
         String abi = Build.SUPPORTED_ABIS[0];
-        String arch = abi.contains("arm64") ? "aarch64" : (abi.contains("armeabi") ? "arm" : (abi.contains("x86_64") ? "x86_64" : "i686"));
+        String arch;
+        
+        // Маппинг ABI Android в названия файлов Termux
+        if (abi.startsWith("arm64")) {
+            arch = "aarch64";
+        } else if (abi.startsWith("armeabi")) {
+            arch = "arm";
+        } else if (abi.equals("x86_64")) {
+            arch = "x86_64";
+        } else if (abi.equals("x86")) {
+            arch = "i686";
+        } else {
+            arch = "aarch64"; // Fallback, скорее всего современные устройства это arm64
+        }
+        
         return BOOTSTRAP_BASE_URL + "/bootstrap-" + arch + ".zip";
     }
 
@@ -111,6 +134,20 @@ public final class TermuxInstaller {
         conn.setRequestProperty("User-Agent", "Termux-App-Installer");
 
         int responseCode = conn.getResponseCode();
+        
+        // Обработка редиректов (GitHub Releases часто редиректят на S3)
+        if (responseCode == HttpURLConnection.HTTP_MOVED_TEMP || 
+            responseCode == HttpURLConnection.HTTP_MOVED_PERM || 
+            responseCode == 307) {
+            String newUrl = conn.getHeaderField("Location");
+            Logger.logInfo(LOG_TAG, "Redirected to: " + newUrl);
+            url = new URL(newUrl);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(30000);
+            responseCode = conn.getResponseCode();
+        }
+
         if (responseCode != HttpURLConnection.HTTP_OK) {
             throw new Exception("Server returned HTTP " + responseCode + " for URL: " + urlStr);
         }
@@ -175,7 +212,8 @@ public final class TermuxInstaller {
                             while ((read = zipInput.read(buffer)) != -1) out.write(buffer, 0, read);
                         }
                         
-                        // Устанавливаем права на выполнение для бинарников
+                        // Устанавливаем права на выполнение для бинарников (Critical fix)
+                        // Без этого bash не запустится
                         if (name.startsWith("bin/") || name.startsWith("libexec/") || name.contains("/bin/")) {
                             Os.chmod(target.getAbsolutePath(), 0700);
                         }
@@ -191,7 +229,7 @@ public final class TermuxInstaller {
                 if (!linkFile.getParentFile().exists()) linkFile.getParentFile().mkdirs();
                 Os.symlink(symlink.first, symlink.second);
             } catch (Exception e) {
-                Log.e(LOG_TAG, "Failed to create symlink: " + symlink.second + " -> " + symlink.first);
+                Log.w(LOG_TAG, "Failed to create symlink: " + symlink.second + " -> " + symlink.first);
             }
         }
     }
@@ -200,7 +238,7 @@ public final class TermuxInstaller {
         activity.runOnUiThread(() ->
             new AlertDialog.Builder(activity)
                 .setTitle("Installation Failure")
-                .setMessage("Error detail:\n" + message)
+                .setMessage("Error detail:\n" + message + "\n\nPlease check your internet connection.")
                 .setCancelable(false)
                 .setNegativeButton("Exit", (d, w) -> activity.finish())
                 .setPositiveButton("Retry", (d, w) -> {
@@ -213,17 +251,30 @@ public final class TermuxInstaller {
 
     /**
      * Публичный метод для создания системных симлинков на хранилище Android.
+     * Запускается в фоновом потоке.
      */
     public static void setupStorageSymlinks(Context context) {
         new Thread(() -> {
             try {
                 File storageDir = TermuxConstants.TERMUX_STORAGE_HOME_DIR;
-                deleteRecursively(storageDir);
-                if (!storageDir.mkdirs()) return;
+                
+                // Удаляем старые, если были
+                if (storageDir.exists()) {
+                    deleteRecursively(storageDir);
+                }
+                
+                if (!storageDir.mkdirs()) {
+                    Log.w(LOG_TAG, "Could not create storage directory");
+                    return;
+                }
 
-                // Ссылка на корень SDCARD
+                // Ссылка на корень SDCARD (требует прав WRITE_EXTERNAL_STORAGE или MANAGE_EXTERNAL_STORAGE)
                 File sharedDir = Environment.getExternalStorageDirectory();
-                Os.symlink(sharedDir.getAbsolutePath(), new File(storageDir, "shared").getAbsolutePath());
+                try {
+                    Os.symlink(sharedDir.getAbsolutePath(), new File(storageDir, "shared").getAbsolutePath());
+                } catch (Exception e) {
+                    Log.w(LOG_TAG, "Failed to symlink shared storage: " + e.getMessage());
+                }
 
                 // Стандартные медиа-папки
                 String[] dirs = {
@@ -237,7 +288,9 @@ public final class TermuxInstaller {
                 for (String dirType : dirs) {
                     File path = Environment.getExternalStoragePublicDirectory(dirType);
                     if (path != null && path.exists()) {
-                        Os.symlink(path.getAbsolutePath(), new File(storageDir, dirType.toLowerCase()).getAbsolutePath());
+                        try {
+                            Os.symlink(path.getAbsolutePath(), new File(storageDir, dirType.toLowerCase()).getAbsolutePath());
+                        } catch (Exception ignored) {}
                     }
                 }
                 Logger.logInfo(LOG_TAG, "Storage symlinks initialized.");
@@ -256,4 +309,4 @@ public final class TermuxInstaller {
         }
         file.delete();
     }
-                            }
+}
