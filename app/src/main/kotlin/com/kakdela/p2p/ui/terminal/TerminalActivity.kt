@@ -79,15 +79,13 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
         TermuxInstaller.setupBootstrapIfNeeded(this) {
             // Этот код выполнится только после успешной загрузки и распаковки ZIP
             
-            // Настройка симлинков на storage (вызываем статически)
-            try {
-                TermuxInstaller.setupStorageSymlinks(this)
-            } catch (e: Exception) {
-                Log.w(TAG, "Storage symlinks setup failed (non-fatal): ${e.message}")
-            }
+            // Настройка симлинков на storage (запускаем в отдельном потоке внутри метода)
+            TermuxInstaller.setupStorageSymlinks(this)
             
             // Запуск терминала
-            setupTerminalSession()
+            runOnUiThread {
+                setupTerminalSession()
+            }
         }
     }
 
@@ -97,6 +95,7 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
 
         try {
             // 1. Определение путей (соответствует распаковке Installer'а)
+            // Важно: TermuxInstaller устанавливает файлы в filesDir/usr
             val filesDir = this.filesDir.absolutePath
             val termuxPrefix = "$filesDir/usr"
             val homeDir = "$filesDir/home"
@@ -121,10 +120,11 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
             )
 
             // 3. Выбор оболочки (Shell)
+            // Сначала ищем bash, установленный бутстрапом
             val shellPath = when {
-                File("$termuxPrefix/bin/bash").exists() -> "$termuxPrefix/bin/bash"
-                File("$termuxPrefix/bin/sh").exists() -> "$termuxPrefix/bin/sh"
-                else -> "/system/bin/sh" // Fallback
+                File("$termuxPrefix/bin/bash").canExecute() -> "$termuxPrefix/bin/bash"
+                File("$termuxPrefix/bin/sh").canExecute() -> "$termuxPrefix/bin/sh"
+                else -> "/system/bin/sh" // Fallback на системный shell Android
             }
 
             Log.i(TAG, "Starting session with shell: $shellPath")
@@ -133,7 +133,7 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
             val session = TerminalSession(
                 shellPath,
                 homeDir,
-                arrayOf("-l"), // login shell
+                arrayOf("-l"), // login shell (загружает .bashrc)
                 env,
                 2000, // lines of history
                 this // TerminalSessionClient
@@ -146,7 +146,7 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
             // Автоматический фокус и клавиатура
             mTerminalView.postDelayed({
                 showSoftKeyboard()
-            }, 300)
+            }, 500)
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to setup terminal session", e)
@@ -173,12 +173,13 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
     }
 
     override fun onTitleChanged(session: TerminalSession) {
-        // Логика изменения заголовка (по желанию)
+        // Можно обновить UI заголовок здесь
     }
 
     override fun onSessionFinished(session: TerminalSession) {
         if (session == mTerminalSession && !isFinishing) {
-            finish()
+            // Если сессия завершилась (exit), можно закрыть активити или перезапустить
+            // finish() 
         }
     }
 
@@ -213,7 +214,7 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
     }
 
     // =========================================================================
-    // Logging (Required by Interface)
+    // Logging
     // =========================================================================
 
     override fun logError(tag: String?, message: String?) {
