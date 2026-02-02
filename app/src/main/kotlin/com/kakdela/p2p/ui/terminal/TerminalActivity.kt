@@ -15,6 +15,7 @@ import androidx.drawerlayout.widget.DrawerLayout
 import com.google.android.material.button.MaterialButton
 import com.kakdela.p2p.R
 import com.termux.app.TermuxInstaller
+import com.termux.shared.termux.TermuxConstants
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
@@ -34,21 +35,19 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Предотвращаем отключение экрана, пока терминал активен
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         setContentView(R.layout.activity_termux)
 
         mTerminalView = findViewById(R.id.terminal_view)
         mDrawerLayout = findViewById(R.id.drawer_layout)
-        
+
         val settingsButton: ImageButton = findViewById(R.id.settings_button)
         val newSessionButton: MaterialButton = findViewById(R.id.new_session_button)
         val toggleKeyboardButton: MaterialButton = findViewById(R.id.toggle_keyboard_button)
 
-        // Настройка TerminalView
         mTerminalView.apply {
-            setTextSize(35) // Размер шрифта
+            setTextSize(35)
             keepScreenOn = true
             requestFocus()
             setOnClickListener { showSoftKeyboard() }
@@ -71,70 +70,63 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
             toggleSoftKeyboard()
         }
 
-        // --- ГЛАВНОЕ ИСПРАВЛЕНИЕ ---
-        // Запускаем проверку/установку Bootstrap.
-        // Сессия создается только ПОСЛЕ успешной инициализации файлов.
-        TermuxInstaller.setupBootstrapIfNeeded(this) {
-            // Выполняется в UI потоке после установки
-            TermuxInstaller.setupStorageSymlinks(this) // Создаем симлинки на память
-            setupTerminalSession() // Запускаем терминал
-        }
+        TermuxInstaller.setupBootstrapIfNeeded(this, Runnable {
+            TermuxInstaller.setupStorageSymlinks(this)
+            setupTerminalSession()
+        })
     }
 
     private fun setupTerminalSession() {
-        // Если сессия была, завершаем её корректно
+
         mTerminalSession?.finishIfRunning()
+        mTerminalSession = null
 
         try {
-            val filesDir = this.filesDir.absolutePath
-            val termuxPrefix = "$filesDir/usr"
-            val homeDir = "$filesDir/home"
-            val tmpDir = "$termuxPrefix/tmp"
-            
-            // Гарантируем существование базовых папок
+
+            val prefixDir = TermuxConstants.TERMUX_PREFIX_DIR.absolutePath
+            val homeDir = TermuxConstants.TERMUX_HOME_DIR.absolutePath
+
+            val tmpDir = File(prefixDir, "tmp").absolutePath
+
             File(homeDir).mkdirs()
             File(tmpDir).mkdirs()
 
-            // Переменные окружения (критично для работы Linux-утилит)
             val env = arrayOf(
                 "TERM=xterm-256color",
                 "HOME=$homeDir",
-                "PREFIX=$termuxPrefix",
+                "PREFIX=$prefixDir",
                 "TMPDIR=$tmpDir",
-                "PATH=$termuxPrefix/bin:$termuxPrefix/bin/applets", 
-                "LD_LIBRARY_PATH=$termuxPrefix/lib",
+                "PATH=$prefixDir/bin:$prefixDir/bin/applets",
+                "LD_LIBRARY_PATH=$prefixDir/lib",
                 "LANG=en_US.UTF-8",
                 "ANDROID_ROOT=${System.getenv("ANDROID_ROOT") ?: "/system"}",
                 "ANDROID_DATA=${System.getenv("ANDROID_DATA") ?: "/data"}"
             )
 
-            // Пытаемся найти shell (bash или sh)
             val shellPath = when {
-                File("$termuxPrefix/bin/bash").canExecute() -> "$termuxPrefix/bin/bash"
-                File("$termuxPrefix/bin/sh").canExecute() -> "$termuxPrefix/bin/sh"
-                else -> "/system/bin/sh" // Fallback на системный sh, если установка сломалась
+                File("$prefixDir/bin/bash").canExecute() -> "$prefixDir/bin/bash"
+                File("$prefixDir/bin/sh").canExecute() -> "$prefixDir/bin/sh"
+                else -> "/system/bin/sh"
             }
 
-            // Создаем сессию
             val session = TerminalSession(
                 shellPath,
                 homeDir,
-                arrayOf("-l"), // login shell
+                arrayOf("-l"),
                 env,
-                2000, 
-                this 
+                2000,
+                this
             )
 
             mTerminalSession = session
             mTerminalView.attachSession(session)
             mTerminalView.onScreenUpdated()
-            
-            // Показываем клавиатуру с задержкой
+
             mTerminalView.postDelayed({
                 showSoftKeyboard()
-            }, 500)
+            }, 400)
 
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Failed to setup terminal session", e)
         }
     }
@@ -150,7 +142,7 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
         imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
     }
 
-    // --- TerminalSessionClient Implementation ---
+    // ---------------- TerminalSessionClient ----------------
 
     override fun onTextChanged(session: TerminalSession) {
         mTerminalView.onScreenUpdated()
@@ -158,9 +150,7 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
 
     override fun onTitleChanged(session: TerminalSession) {}
 
-    override fun onSessionFinished(session: TerminalSession) {
-        // Можно закрыть активити или показать сообщение "Session Ended"
-    }
+    override fun onSessionFinished(session: TerminalSession) {}
 
     override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -180,17 +170,38 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
     override fun onBell(session: TerminalSession) {}
     override fun onColorsChanged(session: TerminalSession) {}
     override fun onTerminalCursorStateChange(state: Boolean) {}
-    override fun getTerminalCursorStyle(): Int = 0 
+    override fun getTerminalCursorStyle(): Int = 0
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
 
-    // --- Logging ---
-    override fun logError(tag: String?, message: String?) { Log.e(tag ?: TAG, message ?: "") }
-    override fun logWarn(tag: String?, message: String?) { Log.w(tag ?: TAG, message ?: "") }
-    override fun logInfo(tag: String?, message: String?) { Log.i(tag ?: TAG, message ?: "") }
-    override fun logDebug(tag: String?, message: String?) { Log.d(tag ?: TAG, message ?: "") }
-    override fun logVerbose(tag: String?, message: String?) { Log.v(tag ?: TAG, message ?: "") }
-    override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) { Log.e(tag ?: TAG, message ?: "", e) }
-    override fun logStackTrace(tag: String?, e: Exception?) { Log.e(tag ?: TAG, "Stack trace", e) }
+    // ---------------- Logging ----------------
+
+    override fun logError(tag: String?, message: String?) {
+        Log.e(tag ?: TAG, message ?: "")
+    }
+
+    override fun logWarn(tag: String?, message: String?) {
+        Log.w(tag ?: TAG, message ?: "")
+    }
+
+    override fun logInfo(tag: String?, message: String?) {
+        Log.i(tag ?: TAG, message ?: "")
+    }
+
+    override fun logDebug(tag: String?, message: String?) {
+        Log.d(tag ?: TAG, message ?: "")
+    }
+
+    override fun logVerbose(tag: String?, message: String?) {
+        Log.v(tag ?: TAG, message ?: "")
+    }
+
+    override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) {
+        Log.e(tag ?: TAG, message ?: "", e)
+    }
+
+    override fun logStackTrace(tag: String?, e: Exception?) {
+        Log.e(tag ?: TAG, "Stack trace", e)
+    }
 
     override fun onResume() {
         super.onResume()
@@ -202,8 +213,7 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
         if (mDrawerLayout.isDrawerOpen(GravityCompat.START)) {
             mDrawerLayout.closeDrawer(GravityCompat.START)
         } else {
-            // Оставляем стандартное поведение или сворачиваем в фон
-             super.onBackPressed()
+            super.onBackPressed()
         }
     }
 
