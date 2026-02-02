@@ -39,13 +39,13 @@ import static com.termux.shared.termux.TermuxConstants.TERMUX_STAGING_PREFIX_DIR
 
 /**
  * Класс для установки базовой системы (Bootstrap) Termux.
- * Исправлена работа с URL и удалены вызовы CrashUtils, вызывающие сбои на Android 12+.
+ * Исправлена работа с URL и удалены вызовы CrashUtils для совместимости с Android 12+.
  */
 public final class TermuxInstaller {
 
     private static final String LOG_TAG = "TermuxInstaller";
 
-    // Базовый тег релиза. Должен точно совпадать с тегом на GitHub.
+    // Строгая константа тега релиза (как на скриншоте GitHub)
     private static final String BOOTSTRAP_TAG = "bootstrap-2024.12.18-r1+apt-android-7";
     
     // Базовый URL для скачивания. Формат: https://github.com/.../download/{TAG}
@@ -74,23 +74,28 @@ public final class TermuxInstaller {
                 String downloadUrl = getDownloadUrl();
                 Logger.logInfo(LOG_TAG, "Downloading bootstrap from: " + downloadUrl);
 
+                // 1. Загрузка (с поддержкой редиректов)
                 downloadFile(downloadUrl, tempZip, progress, activity);
+                
+                // 2. Подготовка папок
                 prepareDirectories();
+                
+                // 3. Распаковка (с установкой chmod)
                 extractZip(tempZip);
 
-                // Переименовываем staging в рабочий prefix
+                // 4. Переименовываем staging в рабочий prefix
                 if (!TERMUX_STAGING_PREFIX_DIR.renameTo(TERMUX_PREFIX_DIR)) {
                     throw new RuntimeException("Failed to rename staging directory to prefix");
                 }
 
-                // Генерируем файлы окружения
+                // 5. Генерируем файлы окружения
                 TermuxShellEnvironment.writeEnvironmentToFile(activity);
                 
                 activity.runOnUiThread(whenDone);
 
             } catch (Exception e) {
                 Logger.logError(LOG_TAG, "Bootstrap installation failed: " + e.getMessage());
-                // Показываем диалог ошибки вместо вызова падающего уведомления
+                // Показываем безопасный диалог ошибки
                 showBootstrapErrorDialog(activity, whenDone, e.getMessage());
             } finally {
                 if (tempZip.exists()) tempZip.delete();
@@ -135,10 +140,12 @@ public final class TermuxInstaller {
 
         int responseCode = conn.getResponseCode();
         
-        // Обработка редиректов (GitHub Releases часто редиректят на S3)
+        // Ручная обработка редиректов (GitHub Releases часто редиректят на Amazon S3)
+        // Коды 301, 302, 307
         if (responseCode == HttpURLConnection.HTTP_MOVED_TEMP || 
             responseCode == HttpURLConnection.HTTP_MOVED_PERM || 
-            responseCode == 307) {
+            responseCode == 307 ||
+            responseCode == 302) {
             String newUrl = conn.getHeaderField("Location");
             Logger.logInfo(LOG_TAG, "Redirected to: " + newUrl);
             url = new URL(newUrl);
@@ -212,8 +219,8 @@ public final class TermuxInstaller {
                             while ((read = zipInput.read(buffer)) != -1) out.write(buffer, 0, read);
                         }
                         
-                        // Устанавливаем права на выполнение для бинарников (Critical fix)
-                        // Без этого bash не запустится
+                        // Устанавливаем права на выполнение для бинарников (Critical Fix!)
+                        // Без этого shell не запустится
                         if (name.startsWith("bin/") || name.startsWith("libexec/") || name.contains("/bin/")) {
                             Os.chmod(target.getAbsolutePath(), 0700);
                         }
@@ -258,7 +265,6 @@ public final class TermuxInstaller {
             try {
                 File storageDir = TermuxConstants.TERMUX_STORAGE_HOME_DIR;
                 
-                // Удаляем старые, если были
                 if (storageDir.exists()) {
                     deleteRecursively(storageDir);
                 }
@@ -268,7 +274,7 @@ public final class TermuxInstaller {
                     return;
                 }
 
-                // Ссылка на корень SDCARD (требует прав WRITE_EXTERNAL_STORAGE или MANAGE_EXTERNAL_STORAGE)
+                // Ссылка на корень SDCARD (требует прав WRITE_EXTERNAL_STORAGE)
                 File sharedDir = Environment.getExternalStorageDirectory();
                 try {
                     Os.symlink(sharedDir.getAbsolutePath(), new File(storageDir, "shared").getAbsolutePath());
