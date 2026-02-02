@@ -48,7 +48,7 @@ public final class TermuxInstaller {
      *  bootstrap-x86_64.zip
      */
     private static final String BOOTSTRAP_BASE_URL =
-        "https://github.com/termux/termux-packages/releases/download/bootstrap-2024.12.18-r1%2Bapt-android-7";
+        "https://github.com/termux/termux-packages/releases/latest/download";
 
     public static void setupBootstrapIfNeeded(final Activity activity, final Runnable whenDone) {
 
@@ -97,8 +97,10 @@ public final class TermuxInstaller {
 
             } catch (Exception e) {
 
-                Logger.logError(LOG_TAG,
-                    "Installation failed: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+                Logger.logError(
+                    LOG_TAG,
+                    "Installation failed: " + e.getClass().getSimpleName() + ": " + e.getMessage()
+                );
 
                 showBootstrapErrorDialog(
                     activity,
@@ -313,8 +315,10 @@ public final class TermuxInstaller {
                         try {
                             Os.chmod(target.getAbsolutePath(), 0700);
                         } catch (Throwable t) {
-                            Logger.logError(LOG_TAG,
-                                "chmod failed: " + target.getAbsolutePath());
+                            Logger.logError(
+                                LOG_TAG,
+                                "chmod failed: " + target.getAbsolutePath()
+                            );
                         }
                     }
                 }
@@ -335,8 +339,10 @@ public final class TermuxInstaller {
             try {
                 Os.symlink(symlink.first, symlink.second);
             } catch (Exception e) {
-                Logger.logError(LOG_TAG,
-                    "Symlink failed: " + symlink.second + " -> " + e.getMessage());
+                Logger.logError(
+                    LOG_TAG,
+                    "Symlink failed: " + symlink.second + " -> " + e.getMessage()
+                );
             }
         }
     }
@@ -374,8 +380,10 @@ public final class TermuxInstaller {
         Activity activity,
         String message
     ) {
-        Logger.logError(LOG_TAG,
-            "Bootstrap installation error: " + message);
+        Logger.logError(
+            LOG_TAG,
+            "Bootstrap installation error: " + message
+        );
     }
 
     public static void setupStorageSymlinks(final Context context) {
@@ -419,10 +427,12 @@ public final class TermuxInstaller {
 
             } catch (Exception e) {
 
-                Logger.logError(LOG_TAG,
-                    "Storage setup error: " + e.getMessage());
+                Logger.logError(
+                    LOG_TAG,
+                    "Storage setup error: " + e.getMessage()
+                );
             }
 
         }).start();
     }
-                }
+            }
