@@ -40,15 +40,11 @@ public final class TermuxInstaller {
 
     private static final String LOG_TAG = "TermuxInstaller";
 
-    /**
-     * Исправлено: Использование прямого символа '+' вместо кодированного '%2B'.
-     * Это предотвращает ошибку 404 при загрузке с GitHub.
-     */
+    // Прямая ссылка с символом '+'. GitHub корректно обрабатывает его в таком виде.
     private static final String BOOTSTRAP_BASE_URL =
         "https://github.com/termux/termux-packages/releases/download/bootstrap-2024.12.18-r1+apt-android-7";
 
     public static void setupBootstrapIfNeeded(final Activity activity, final Runnable whenDone) {
-
         if (FileUtils.directoryFileExists(TERMUX_PREFIX_DIR_PATH, true)
             && !TermuxFileUtils.isTermuxPrefixDirectoryEmpty()) {
             whenDone.run();
@@ -59,7 +55,6 @@ public final class TermuxInstaller {
         progress.setTitle("System Setup");
         progress.setMessage(activity.getString(R.string.bootstrap_installer_body));
         progress.setCancelable(false);
-        progress.setIndeterminate(false);
         progress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
         progress.setMax(100);
         progress.show();
@@ -68,25 +63,23 @@ public final class TermuxInstaller {
             File tempZip = new File(activity.getCacheDir(), "bootstrap_download.zip");
             try {
                 String downloadUrl = getDownloadUrl();
-                Logger.logInfo(LOG_TAG, "Starting download: " + downloadUrl);
+                Logger.logInfo(LOG_TAG, "Downloading: " + downloadUrl);
 
-                downloadFileWithRedirects(downloadUrl, tempZip, progress, activity);
+                downloadFile(downloadUrl, tempZip, progress, activity);
                 prepareDirectories();
-
-                Logger.logInfo(LOG_TAG, "Extracting bootstrap...");
                 extractZip(tempZip);
 
                 if (!TERMUX_STAGING_PREFIX_DIR.renameTo(TERMUX_PREFIX_DIR)) {
-                    throw new RuntimeException("Failed to move staging directory to prefix");
+                    throw new RuntimeException("Failed to finalize: rename failed");
                 }
 
                 TermuxShellEnvironment.writeEnvironmentToFile(activity);
                 activity.runOnUiThread(whenDone);
 
             } catch (Exception e) {
-                Logger.logError(LOG_TAG, "Installation failed: " + e.getMessage());
+                Logger.logError(LOG_TAG, "Bootstrap error: " + e.getMessage());
                 showBootstrapErrorDialog(activity, whenDone, e.getMessage());
-                // Метод уведомления исправлен, чтобы не вызывать краш
+                // ВАЖНО: sendBootstrapCrashReportNotification заменен логом, чтобы избежать краша
                 sendBootstrapCrashReportNotification(activity, e.getMessage());
             } finally {
                 if (tempZip.exists()) tempZip.delete();
@@ -103,25 +96,15 @@ public final class TermuxInstaller {
         return BOOTSTRAP_BASE_URL + "/bootstrap-" + arch + ".zip";
     }
 
-    private static void downloadFileWithRedirects(String urlStr, File dest, ProgressDialog progress, Activity activity) throws Exception {
+    private static void downloadFile(String urlStr, File dest, ProgressDialog progress, Activity activity) throws Exception {
         URL url = new URL(urlStr);
-        HttpURLConnection conn;
-        int redirects = 0;
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setInstanceFollowRedirects(true);
+        conn.setConnectTimeout(30000);
+        conn.setRequestProperty("User-Agent", "Termux-App-Installer");
 
-        while (true) {
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setInstanceFollowRedirects(true);
-            conn.setRequestProperty("User-Agent", "Termux-P2P-Installer");
-            conn.setConnectTimeout(30000);
-            
-            int status = conn.getResponseCode();
-            if (status == HttpURLConnection.HTTP_MOVED_TEMP || status == HttpURLConnection.HTTP_MOVED_PERM) {
-                url = new URL(conn.getHeaderField("Location"));
-                if (redirects++ > 5) throw new RuntimeException("Too many redirects");
-                continue;
-            }
-            if (status != HttpURLConnection.HTTP_OK) throw new RuntimeException("HTTP " + status);
-            break;
+        if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
+            throw new Exception("Server returned HTTP " + conn.getResponseCode());
         }
 
         int fileLength = conn.getContentLength();
@@ -131,12 +114,12 @@ public final class TermuxInstaller {
             long total = 0;
             int count;
             while ((count = input.read(data)) != -1) {
-                output.write(data, 0, count);
+                total += count;
                 if (fileLength > 0) {
-                    total += count;
-                    final int percent = (int) (total * 100 / fileLength);
+                    int percent = (int) (total * 100 / fileLength);
                     activity.runOnUiThread(() -> progress.setProgress(percent));
                 }
+                output.write(data, 0, count);
             }
         }
     }
@@ -155,8 +138,6 @@ public final class TermuxInstaller {
     private static void extractZip(File zipFile) throws Exception {
         final byte[] buffer = new byte[8192];
         final List<Pair<String, String>> symlinks = new ArrayList<>();
-        File stagingRoot = new File(TERMUX_STAGING_PREFIX_DIR_PATH);
-
         try (ZipInputStream zipInput = new ZipInputStream(new FileInputStream(zipFile))) {
             ZipEntry entry;
             while ((entry = zipInput.getNextEntry()) != null) {
@@ -168,21 +149,16 @@ public final class TermuxInstaller {
                         String[] parts = line.split("←");
                         if (parts.length == 2) symlinks.add(Pair.create(parts[0], TERMUX_STAGING_PREFIX_DIR_PATH + "/" + parts[1]));
                     }
-                    continue;
-                }
-
-                File target = new File(stagingRoot, name);
-                if (entry.isDirectory()) {
-                    target.mkdirs();
                 } else {
-                    target.getParentFile().mkdirs();
-                    try (FileOutputStream out = new FileOutputStream(target)) {
-                        int read;
-                        while ((read = zipInput.read(buffer)) != -1) out.write(buffer, 0, read);
-                    }
-                    // Установка прав на исполнение
-                    if (name.startsWith("bin/") || name.startsWith("libexec/")) {
-                        Os.chmod(target.getAbsolutePath(), 0700);
+                    File target = new File(TERMUX_STAGING_PREFIX_DIR_PATH, name);
+                    if (entry.isDirectory()) target.mkdirs();
+                    else {
+                        target.getParentFile().mkdirs();
+                        try (FileOutputStream out = new FileOutputStream(target)) {
+                            int read;
+                            while ((read = zipInput.read(buffer)) != -1) out.write(buffer, 0, read);
+                        }
+                        if (name.startsWith("bin/") || name.startsWith("libexec/")) Os.chmod(target.getAbsolutePath(), 0700);
                     }
                 }
             }
@@ -207,25 +183,9 @@ public final class TermuxInstaller {
         );
     }
 
-    /**
-     * Исправлено: Метод теперь только логирует ошибку. 
-     * Удален вызов TermuxCrashUtils, вызывающий краш на Android 12+.
-     */
     private static void sendBootstrapCrashReportNotification(Activity activity, String message) {
-        Logger.logError(LOG_TAG, "Bootstrap Error (Notification suppressed for API 31+): " + message);
-    }
-
-    public static void setupStorageSymlinks(final Context context) {
-        new Thread(() -> {
-            try {
-                File storageDir = TermuxConstants.TERMUX_STORAGE_HOME_DIR;
-                FileUtils.clearDirectory("~/storage", storageDir.getAbsolutePath());
-                Os.symlink(Environment.getExternalStorageDirectory().getAbsolutePath(), new File(storageDir, "shared").getAbsolutePath());
-                Logger.logInfo(LOG_TAG, "Storage symlinks created");
-            } catch (Exception e) {
-                Logger.logError(LOG_TAG, "Storage setup error: " + e.getMessage());
-            }
-        }).start();
+        // Метод исправлен: Уведомление отключено для предотвращения краша на Android 12+ (API 31)
+        Logger.logError(LOG_TAG, "Bootstrap notification suppressed. Error: " + message);
     }
 
     private static void deleteRecursively(File file) {
@@ -237,4 +197,4 @@ public final class TermuxInstaller {
         }
         file.delete();
     }
-                               }
+}
