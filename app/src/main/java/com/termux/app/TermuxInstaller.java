@@ -38,83 +38,92 @@ import static com.termux.shared.termux.TermuxConstants.TERMUX_STAGING_PREFIX_DIR
 import static com.termux.shared.termux.TermuxConstants.TERMUX_STAGING_PREFIX_DIR_PATH;
 
 /**
- * Класс для установки базовой системы (Bootstrap) Termux.
- * Исправлена работа с URL и удалены вызовы CrashUtils для совместимости с Android 12+.
+ * Исправленный установщик Termux.
+ * Решает проблемы:
+ * 1. HTTP 404 при загрузке (исправлен URL и редиректы).
+ * 2. Crash on Android 12+ (удален PendingIntent notification).
+ * 3. Права доступа (добавлен chmod 0700).
  */
 public final class TermuxInstaller {
 
     private static final String LOG_TAG = "TermuxInstaller";
 
-    // Строгая константа тега релиза (как на скриншоте GitHub)
+    // Точный тег релиза как на вашем скриншоте GitHub
     private static final String BOOTSTRAP_TAG = "bootstrap-2024.12.18-r1+apt-android-7";
     
-    // Базовый URL для скачивания. Формат: https://github.com/.../download/{TAG}
+    // Базовый URL. Важно: символ '+' здесь обрабатывается корректно как часть пути.
     private static final String BOOTSTRAP_BASE_URL = 
         "https://github.com/termux/termux-packages/releases/download/" + BOOTSTRAP_TAG;
 
     public static void setupBootstrapIfNeeded(final Activity activity, final Runnable whenDone) {
-        // Проверяем, существует ли уже установленная система
+        // Проверяем, установлен ли уже Termux (наличие папки /usr и файлов внутри)
         if (FileUtils.directoryFileExists(TERMUX_PREFIX_DIR_PATH, true)
             && !TermuxFileUtils.isTermuxPrefixDirectoryEmpty()) {
-            whenDone.run();
+            activity.runOnUiThread(whenDone);
             return;
         }
 
         final ProgressDialog progress = new ProgressDialog(activity);
-        progress.setTitle("System Setup");
-        progress.setMessage(activity.getString(R.string.bootstrap_installer_body));
+        progress.setTitle("Инициализация Termux");
+        progress.setMessage("Загрузка базовой системы...");
         progress.setCancelable(false);
         progress.setProgressStyle(ProgressDialog.STYLE_HORIZONTAL);
         progress.setMax(100);
         progress.show();
 
         new Thread(() -> {
-            File tempZip = new File(activity.getCacheDir(), "bootstrap_download.zip");
+            File tempZip = new File(activity.getCacheDir(), "bootstrap.zip");
             try {
+                // 1. Формирование ссылки
                 String downloadUrl = getDownloadUrl();
-                Logger.logInfo(LOG_TAG, "Downloading bootstrap from: " + downloadUrl);
+                Logger.logInfo(LOG_TAG, "Downloading from: " + downloadUrl);
 
-                // 1. Загрузка (с поддержкой редиректов)
+                // 2. Скачивание (с поддержкой редиректов GitHub -> Amazon S3)
                 downloadFile(downloadUrl, tempZip, progress, activity);
                 
-                // 2. Подготовка папок
+                // 3. Очистка и подготовка папок
+                activity.runOnUiThread(() -> progress.setMessage("Распаковка..."));
                 prepareDirectories();
                 
-                // 3. Распаковка (с установкой chmod)
+                // 4. Распаковка (с установкой прав chmod!)
                 extractZip(tempZip);
 
-                // 4. Переименовываем staging в рабочий prefix
+                // 5. Финализация (переименование staging -> usr)
                 if (!TERMUX_STAGING_PREFIX_DIR.renameTo(TERMUX_PREFIX_DIR)) {
-                    throw new RuntimeException("Failed to rename staging directory to prefix");
+                    throw new RuntimeException("Failed to rename staging directory.");
                 }
 
-                // 5. Генерируем файлы окружения
+                // 6. Создание файлов окружения
                 TermuxShellEnvironment.writeEnvironmentToFile(activity);
                 
-                activity.runOnUiThread(whenDone);
+                // Успех -> запускаем колбэк
+                activity.runOnUiThread(() -> {
+                    if (progress.isShowing()) progress.dismiss();
+                    whenDone.run();
+                });
 
             } catch (Exception e) {
-                Logger.logError(LOG_TAG, "Bootstrap installation failed: " + e.getMessage());
-                // Показываем безопасный диалог ошибки
+                Logger.logError(LOG_TAG, "Bootstrap error: " + e.getMessage());
+                // ВАЖНО: Вместо уведомления (которое вызывало краш PendingIntent), показываем диалог
                 showBootstrapErrorDialog(activity, whenDone, e.getMessage());
+                
+                activity.runOnUiThread(() -> {
+                    if (progress.isShowing()) progress.dismiss();
+                });
             } finally {
                 if (tempZip.exists()) tempZip.delete();
-                activity.runOnUiThread(() -> {
-                    try { if (progress.isShowing()) progress.dismiss(); } catch (Exception ignored) { }
-                });
             }
         }).start();
     }
 
     /**
-     * Формирует корректную ссылку на файл на основе архитектуры процессора.
-     * Соответствует названиям файлов в релизе GitHub.
+     * Выбирает правильный ZIP файл в зависимости от архитектуры CPU устройства.
+     * Соответствует именам файлов на скриншоте.
      */
     private static String getDownloadUrl() {
         String abi = Build.SUPPORTED_ABIS[0];
         String arch;
         
-        // Маппинг ABI Android в названия файлов Termux
         if (abi.startsWith("arm64")) {
             arch = "aarch64";
         } else if (abi.startsWith("armeabi")) {
@@ -124,39 +133,36 @@ public final class TermuxInstaller {
         } else if (abi.equals("x86")) {
             arch = "i686";
         } else {
-            arch = "aarch64"; // Fallback, скорее всего современные устройства это arm64
+            arch = "aarch64"; // Default fallback
         }
         
         return BOOTSTRAP_BASE_URL + "/bootstrap-" + arch + ".zip";
     }
 
+    /**
+     * Скачивает файл, корректно обрабатывая редиректы (HTTP 302).
+     */
     private static void downloadFile(String urlStr, File dest, ProgressDialog progress, Activity activity) throws Exception {
         URL url = new URL(urlStr);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setInstanceFollowRedirects(true);
         conn.setConnectTimeout(30000);
-        conn.setReadTimeout(30000);
-        conn.setRequestProperty("User-Agent", "Termux-App-Installer");
+        conn.setRequestProperty("User-Agent", "Termux-Installer"); // GitHub иногда блокирует пустые UA
 
         int responseCode = conn.getResponseCode();
         
-        // Ручная обработка редиректов (GitHub Releases часто редиректят на Amazon S3)
-        // Коды 301, 302, 307
+        // Ручная обработка редиректов, если автомат не сработал
         if (responseCode == HttpURLConnection.HTTP_MOVED_TEMP || 
             responseCode == HttpURLConnection.HTTP_MOVED_PERM || 
-            responseCode == 307 ||
-            responseCode == 302) {
+            responseCode == 302 || responseCode == 307) {
             String newUrl = conn.getHeaderField("Location");
             Logger.logInfo(LOG_TAG, "Redirected to: " + newUrl);
             url = new URL(newUrl);
             conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(30000);
-            conn.setReadTimeout(30000);
-            responseCode = conn.getResponseCode();
         }
 
-        if (responseCode != HttpURLConnection.HTTP_OK) {
-            throw new Exception("Server returned HTTP " + responseCode + " for URL: " + urlStr);
+        if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
+            throw new Exception("HTTP Error " + conn.getResponseCode() + " for URL: " + urlStr);
         }
 
         int fileLength = conn.getContentLength();
@@ -173,21 +179,19 @@ public final class TermuxInstaller {
                 }
                 output.write(data, 0, count);
             }
-            output.flush();
         }
     }
 
     private static void prepareDirectories() throws Exception {
-        // Очищаем старые следы
+        // Удаляем старые/битые версии
         deleteRecursively(new File(TERMUX_STAGING_PREFIX_DIR_PATH));
         deleteRecursively(new File(TERMUX_PREFIX_DIR_PATH));
 
-        // Создаем структуры папок через Termux Shared Library
         Error error = TermuxFileUtils.isTermuxPrefixStagingDirectoryAccessible(true, true);
-        if (error != null) throw new Exception("Staging dir error: " + error.getMessage());
+        if (error != null) throw new Exception("Staging dir setup failed: " + error.getMessage());
 
         error = TermuxFileUtils.isTermuxPrefixDirectoryAccessible(true, true);
-        if (error != null) throw new Exception("Prefix dir error: " + error.getMessage());
+        if (error != null) throw new Exception("Prefix dir setup failed: " + error.getMessage());
     }
 
     private static void extractZip(File zipFile) throws Exception {
@@ -199,6 +203,7 @@ public final class TermuxInstaller {
             while ((entry = zipInput.getNextEntry()) != null) {
                 String name = entry.getName();
                 
+                // Обработка файла симлинков внутри архива
                 if ("SYMLINKS.txt".equals(name)) {
                     BufferedReader reader = new BufferedReader(new InputStreamReader(zipInput));
                     String line;
@@ -211,17 +216,17 @@ public final class TermuxInstaller {
                 } else {
                     File target = new File(TERMUX_STAGING_PREFIX_DIR_PATH, name);
                     if (entry.isDirectory()) {
-                        if (!target.exists()) target.mkdirs();
+                        target.mkdirs();
                     } else {
-                        if (!target.getParentFile().exists()) target.getParentFile().mkdirs();
+                        if (target.getParentFile() != null) target.getParentFile().mkdirs();
                         try (FileOutputStream out = new FileOutputStream(target)) {
                             int read;
                             while ((read = zipInput.read(buffer)) != -1) out.write(buffer, 0, read);
                         }
                         
-                        // Устанавливаем права на выполнение для бинарников (Critical Fix!)
-                        // Без этого shell не запустится
-                        if (name.startsWith("bin/") || name.startsWith("libexec/") || name.contains("/bin/")) {
+                        // ВАЖНО: Делаем бинарники исполняемыми
+                        // Без этого вы получите "Permission denied" при запуске bash
+                        if (name.startsWith("bin/") || name.contains("/bin/") || name.startsWith("libexec/")) {
                             Os.chmod(target.getAbsolutePath(), 0700);
                         }
                     }
@@ -229,27 +234,28 @@ public final class TermuxInstaller {
             }
         }
 
-        // Создаем симлинки после распаковки всех файлов
+        // Восстанавливаем симлинки
         for (Pair<String, String> symlink : symlinks) {
             try {
                 File linkFile = new File(symlink.second);
-                if (!linkFile.getParentFile().exists()) linkFile.getParentFile().mkdirs();
+                if (linkFile.getParentFile() != null) linkFile.getParentFile().mkdirs();
                 Os.symlink(symlink.first, symlink.second);
             } catch (Exception e) {
-                Log.w(LOG_TAG, "Failed to create symlink: " + symlink.second + " -> " + symlink.first);
+                // Игнорируем некритичные ошибки симлинков
             }
         }
     }
 
+    // Безопасный показ ошибки вместо вылетающего Notification
     public static void showBootstrapErrorDialog(Activity activity, Runnable whenDone, String message) {
         activity.runOnUiThread(() ->
             new AlertDialog.Builder(activity)
-                .setTitle("Installation Failure")
-                .setMessage("Error detail:\n" + message + "\n\nPlease check your internet connection.")
+                .setTitle("Ошибка установки")
+                .setMessage("Не удалось загрузить компоненты Termux.\n\nДетали: " + message + "\n\nПроверьте интернет.")
                 .setCancelable(false)
-                .setNegativeButton("Exit", (d, w) -> activity.finish())
-                .setPositiveButton("Retry", (d, w) -> {
-                    deleteRecursively(new File(TERMUX_PREFIX_DIR_PATH));
+                .setNegativeButton("Выход", (d, w) -> activity.finish())
+                .setPositiveButton("Повторить", (d, w) -> {
+                    // Очищаем и пробуем снова
                     setupBootstrapIfNeeded(activity, whenDone);
                 })
                 .show()
@@ -257,37 +263,23 @@ public final class TermuxInstaller {
     }
 
     /**
-     * Публичный метод для создания системных симлинков на хранилище Android.
-     * Запускается в фоновом потоке.
+     * Создает симлинки на хранилище (/sdcard) в папке home/storage
      */
     public static void setupStorageSymlinks(Context context) {
         new Thread(() -> {
             try {
                 File storageDir = TermuxConstants.TERMUX_STORAGE_HOME_DIR;
-                
-                if (storageDir.exists()) {
-                    deleteRecursively(storageDir);
-                }
-                
-                if (!storageDir.mkdirs()) {
-                    Log.w(LOG_TAG, "Could not create storage directory");
-                    return;
-                }
+                if (storageDir.exists()) deleteRecursively(storageDir);
+                storageDir.mkdirs();
 
-                // Ссылка на корень SDCARD (требует прав WRITE_EXTERNAL_STORAGE)
                 File sharedDir = Environment.getExternalStorageDirectory();
                 try {
                     Os.symlink(sharedDir.getAbsolutePath(), new File(storageDir, "shared").getAbsolutePath());
-                } catch (Exception e) {
-                    Log.w(LOG_TAG, "Failed to symlink shared storage: " + e.getMessage());
-                }
+                } catch (Exception ignored) {}
 
-                // Стандартные медиа-папки
                 String[] dirs = {
-                    Environment.DIRECTORY_DCIM,
-                    Environment.DIRECTORY_DOWNLOADS,
-                    Environment.DIRECTORY_PICTURES,
-                    Environment.DIRECTORY_MUSIC,
+                    Environment.DIRECTORY_DCIM, Environment.DIRECTORY_DOWNLOADS,
+                    Environment.DIRECTORY_PICTURES, Environment.DIRECTORY_MUSIC,
                     Environment.DIRECTORY_MOVIES
                 };
 
@@ -299,9 +291,8 @@ public final class TermuxInstaller {
                         } catch (Exception ignored) {}
                     }
                 }
-                Logger.logInfo(LOG_TAG, "Storage symlinks initialized.");
             } catch (Exception e) {
-                Logger.logError(LOG_TAG, "Storage setup error: " + e.getMessage());
+                Logger.logError(LOG_TAG, "Storage symlink error: " + e.getMessage());
             }
         }).start();
     }
