@@ -28,7 +28,6 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
 
     companion object {
         private const val TAG = "TerminalActivity"
-        private const val MAX_LOG_SIZE = 10000
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -50,7 +49,7 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
 
         // Настройка TerminalView
         mTerminalView.apply {
-            setTextSize(35) // Размер шрифта (в пикселях, не sp)
+            setTextSize(35) // Размер шрифта (в пикселях)
             keepScreenOn = true
             requestFocus()
             // При клике на терминал поднимаем клавиатуру
@@ -81,7 +80,7 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
         TermuxInstaller.setupBootstrapIfNeeded(this) {
             // Этот код выполнится только после успешной загрузки и распаковки ZIP
             try {
-                // Настройка симлинков на storage (необязательно, но полезно)
+                // Настройка симлинков на storage
                 TermuxInstaller.setupStorageSymlinks(this)
             } catch (e: Exception) {
                 Log.w(TAG, "Storage symlinks setup failed (non-fatal)", e)
@@ -109,7 +108,6 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
             File(tmpDir).mkdirs()
 
             // 2. Настройка переменных окружения (Linux Environment)
-            // Это критически важно для работы busybox, apt, sh
             val env = arrayOf(
                 "TERM=xterm-256color",
                 "HOME=$homeDir",
@@ -123,11 +121,10 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
             )
 
             // 3. Выбор оболочки (Shell)
-            // Сначала ищем bash, потом sh в нашей папке, потом системный sh
             val shellPath = when {
                 File("$termuxPrefix/bin/bash").exists() -> "$termuxPrefix/bin/bash"
                 File("$termuxPrefix/bin/sh").exists() -> "$termuxPrefix/bin/sh"
-                else -> "/system/bin/sh" // Fallback (функционал будет урезан)
+                else -> "/system/bin/sh" // Fallback
             }
 
             Log.i(TAG, "Starting session with shell: $shellPath")
@@ -152,7 +149,6 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to setup terminal session", e)
-            // Можно показать Toast пользователю
         }
     }
 
@@ -171,12 +167,10 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
     }
 
     override fun onTitleChanged(session: TerminalSession) {
-        // Можно обновить заголовок Activity или Toolbar
-        // title = session.title
+        // Можно обновить заголовок Activity
     }
 
     override fun onSessionFinished(session: TerminalSession) {
-        // Когда пользователь пишет 'exit', закрываем активити
         if (session == mTerminalSession && !isFinishing) {
             finish()
         }
@@ -198,19 +192,17 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
     }
 
     override fun onBell(session: TerminalSession) {
-        // Можно воспроизвести звук или вибрацию
     }
 
     override fun onColorsChanged(session: TerminalSession) {
-        // Обработка смены цветовой схемы (если нужно)
     }
 
     override fun onTerminalCursorStateChange(state: Boolean) {
-        // Курсор включен/выключен
     }
 
     override fun getTerminalCursorStyle(): Int {
-        return TerminalSession.CURSOR_STYLE_BLOCK // Или UNDERLINE, BAR
+        // 0 = BLOCK (█), 1 = UNDERLINE (_), 2 = BAR (|)
+        return 0 
     }
 
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {
@@ -255,7 +247,6 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
 
     override fun onResume() {
         super.onResume()
-        // При возврате обновляем экран, вдруг что-то изменилось
         mTerminalView.onScreenUpdated()
     }
 
@@ -264,15 +255,12 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
         if (mDrawerLayout.isDrawerOpen(GravityCompat.START)) {
             mDrawerLayout.closeDrawer(GravityCompat.START)
         } else {
-            // Если сессия активна, можно спросить подтверждение, 
-            // но пока просто выходим, сессия закроется в onDestroy
             super.onBackPressed()
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        // Завершаем сессию корректно, посылая SIGHUP
         mTerminalSession?.finishIfRunning()
     }
 }
