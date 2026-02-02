@@ -49,10 +49,9 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
 
         // Настройка TerminalView
         mTerminalView.apply {
-            setTextSize(35) // Размер шрифта (в пикселях)
+            setTextSize(35) // Размер шрифта
             keepScreenOn = true
             requestFocus()
-            // При клике на терминал поднимаем клавиатуру
             setOnClickListener { showSoftKeyboard() }
         }
 
@@ -66,7 +65,6 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
         }
 
         newSessionButton.setOnClickListener {
-            // Перезапуск сессии
             setupTerminalSession()
             mDrawerLayout.closeDrawer(GravityCompat.START)
         }
@@ -75,14 +73,14 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
             toggleSoftKeyboard()
         }
 
-        // ЗАПУСК: Проверка установки и старт сессии
+        // ЗАПУСК: Проверка установки и старт
         TermuxInstaller.setupBootstrapIfNeeded(this) {
-            // Этот код выполнится только после успешной загрузки и распаковки ZIP
+            // Этот код выполнится только после успешной загрузки и распаковки
             
-            // Настройка симлинков на storage (запускаем в отдельном потоке внутри метода)
+            // Настройка симлинков (storage) в фоне
             TermuxInstaller.setupStorageSymlinks(this)
             
-            // Запуск терминала
+            // Запуск сессии в UI потоке
             runOnUiThread {
                 setupTerminalSession()
             }
@@ -90,41 +88,39 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
     }
 
     private fun setupTerminalSession() {
-        // Очищаем старую сессию, если была
+        // Очищаем старую сессию
         mTerminalSession?.finishIfRunning()
 
         try {
-            // 1. Определение путей (соответствует распаковке Installer'а)
-            // Важно: TermuxInstaller устанавливает файлы в filesDir/usr
+            // 1. Определение путей (соответствует путям установщика)
             val filesDir = this.filesDir.absolutePath
             val termuxPrefix = "$filesDir/usr"
             val homeDir = "$filesDir/home"
             val tmpDir = "$termuxPrefix/tmp"
             val appletsDir = "$termuxPrefix/bin/applets"
             
-            // Создаем папки на случай, если их нет
+            // Гарантируем существование папок
             File(homeDir).mkdirs()
             File(tmpDir).mkdirs()
 
-            // 2. Настройка переменных окружения (Linux Environment)
+            // 2. Переменные окружения (Linux Environment)
             val env = arrayOf(
                 "TERM=xterm-256color",
                 "HOME=$homeDir",
                 "PREFIX=$termuxPrefix",
                 "TMPDIR=$tmpDir",
-                "PATH=$termuxPrefix/bin:$appletsDir", // Порядок важен
+                "PATH=$termuxPrefix/bin:$appletsDir", 
                 "LD_LIBRARY_PATH=$termuxPrefix/lib",
                 "LANG=en_US.UTF-8",
                 "ANDROID_ROOT=${System.getenv("ANDROID_ROOT") ?: "/system"}",
                 "ANDROID_DATA=${System.getenv("ANDROID_DATA") ?: "/data"}"
             )
 
-            // 3. Выбор оболочки (Shell)
-            // Сначала ищем bash, установленный бутстрапом
+            // 3. Выбор оболочки (Shell). Проверяем, есть ли bash после установки.
             val shellPath = when {
                 File("$termuxPrefix/bin/bash").canExecute() -> "$termuxPrefix/bin/bash"
                 File("$termuxPrefix/bin/sh").canExecute() -> "$termuxPrefix/bin/sh"
-                else -> "/system/bin/sh" // Fallback на системный shell Android
+                else -> "/system/bin/sh" // Fallback если установка не удалась
             }
 
             Log.i(TAG, "Starting session with shell: $shellPath")
@@ -133,17 +129,17 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
             val session = TerminalSession(
                 shellPath,
                 homeDir,
-                arrayOf("-l"), // login shell (загружает .bashrc)
+                arrayOf("-l"), // login shell (читает .bashrc)
                 env,
-                2000, // lines of history
-                this // TerminalSessionClient
+                2000, 
+                this 
             )
 
             mTerminalSession = session
             mTerminalView.attachSession(session)
             mTerminalView.onScreenUpdated()
             
-            // Автоматический фокус и клавиатура
+            // Фокус и клавиатура с небольшой задержкой
             mTerminalView.postDelayed({
                 showSoftKeyboard()
             }, 500)
@@ -164,22 +160,17 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
         imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
     }
 
-    // =========================================================================
-    // TerminalSessionClient Implementation
-    // =========================================================================
+    // --- TerminalSessionClient Implementation ---
 
     override fun onTextChanged(session: TerminalSession) {
         mTerminalView.onScreenUpdated()
     }
 
-    override fun onTitleChanged(session: TerminalSession) {
-        // Можно обновить UI заголовок здесь
-    }
+    override fun onTitleChanged(session: TerminalSession) {}
 
     override fun onSessionFinished(session: TerminalSession) {
         if (session == mTerminalSession && !isFinishing) {
-            // Если сессия завершилась (exit), можно закрыть активити или перезапустить
-            // finish() 
+           // Можно закрыть активити: finish()
         }
     }
 
@@ -199,55 +190,19 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
     }
 
     override fun onBell(session: TerminalSession) {}
-
     override fun onColorsChanged(session: TerminalSession) {}
-
     override fun onTerminalCursorStateChange(state: Boolean) {}
+    override fun getTerminalCursorStyle(): Int = 0 
+    override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
 
-    override fun getTerminalCursorStyle(): Int {
-        // 0 = BLOCK (█), 1 = UNDERLINE (_), 2 = BAR (|)
-        return 0 
-    }
-
-    override fun setTerminalShellPid(session: TerminalSession, pid: Int) {
-        Log.d(TAG, "Shell PID: $pid")
-    }
-
-    // =========================================================================
-    // Logging
-    // =========================================================================
-
-    override fun logError(tag: String?, message: String?) {
-        Log.e(tag ?: TAG, message ?: "")
-    }
-
-    override fun logWarn(tag: String?, message: String?) {
-        Log.w(tag ?: TAG, message ?: "")
-    }
-
-    override fun logInfo(tag: String?, message: String?) {
-        Log.i(tag ?: TAG, message ?: "")
-    }
-
-    override fun logDebug(tag: String?, message: String?) {
-        Log.d(tag ?: TAG, message ?: "")
-    }
-
-    override fun logVerbose(tag: String?, message: String?) {
-        Log.v(tag ?: TAG, message ?: "")
-    }
-
-    override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) {
-        Log.e(tag ?: TAG, message ?: "", e)
-    }
-
-    override fun logStackTrace(tag: String?, e: Exception?) {
-        Log.e(tag ?: TAG, "Stack trace", e)
-    }
-
-    // =========================================================================
-    // Lifecycle
-    // =========================================================================
+    // --- Logging ---
+    override fun logError(tag: String?, message: String?) { Log.e(tag ?: TAG, message ?: "") }
+    override fun logWarn(tag: String?, message: String?) { Log.w(tag ?: TAG, message ?: "") }
+    override fun logInfo(tag: String?, message: String?) { Log.i(tag ?: TAG, message ?: "") }
+    override fun logDebug(tag: String?, message: String?) { Log.d(tag ?: TAG, message ?: "") }
+    override fun logVerbose(tag: String?, message: String?) { Log.v(tag ?: TAG, message ?: "") }
+    override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) { Log.e(tag ?: TAG, message ?: "", e) }
+    override fun logStackTrace(tag: String?, e: Exception?) { Log.e(tag ?: TAG, "Stack trace", e) }
 
     override fun onResume() {
         super.onResume()
