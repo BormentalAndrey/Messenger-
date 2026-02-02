@@ -72,18 +72,18 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
         }
 
         toggleKeyboardButton.setOnClickListener {
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
+            toggleSoftKeyboard()
         }
 
         // ЗАПУСК: Проверка установки и старт сессии
         TermuxInstaller.setupBootstrapIfNeeded(this) {
             // Этот код выполнится только после успешной загрузки и распаковки ZIP
+            
+            // Настройка симлинков на storage (вызываем статически)
             try {
-                // Настройка симлинков на storage
                 TermuxInstaller.setupStorageSymlinks(this)
             } catch (e: Exception) {
-                Log.w(TAG, "Storage symlinks setup failed (non-fatal)", e)
+                Log.w(TAG, "Storage symlinks setup failed (non-fatal): ${e.message}")
             }
             
             // Запуск терминала
@@ -113,10 +113,10 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
                 "HOME=$homeDir",
                 "PREFIX=$termuxPrefix",
                 "TMPDIR=$tmpDir",
-                "PATH=$termuxPrefix/bin:$appletsDir", // Порядок важен!
+                "PATH=$termuxPrefix/bin:$appletsDir", // Порядок важен
                 "LD_LIBRARY_PATH=$termuxPrefix/lib",
                 "LANG=en_US.UTF-8",
-                "Android_ROOT=${System.getenv("ANDROID_ROOT") ?: "/system"}",
+                "ANDROID_ROOT=${System.getenv("ANDROID_ROOT") ?: "/system"}",
                 "ANDROID_DATA=${System.getenv("ANDROID_DATA") ?: "/data"}"
             )
 
@@ -130,7 +130,6 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
             Log.i(TAG, "Starting session with shell: $shellPath")
 
             // 4. Создание сессии
-            // Аргументы: executable, cwd, args, env, historySize, client
             val session = TerminalSession(
                 shellPath,
                 homeDir,
@@ -144,8 +143,10 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
             mTerminalView.attachSession(session)
             mTerminalView.onScreenUpdated()
             
-            // Фокус на ввод
-            showSoftKeyboard()
+            // Автоматический фокус и клавиатура
+            mTerminalView.postDelayed({
+                showSoftKeyboard()
+            }, 300)
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to setup terminal session", e)
@@ -158,6 +159,11 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
         imm.showSoftInput(mTerminalView, InputMethodManager.SHOW_IMPLICIT)
     }
 
+    private fun toggleSoftKeyboard() {
+        val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
+    }
+
     // =========================================================================
     // TerminalSessionClient Implementation
     // =========================================================================
@@ -167,7 +173,7 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
     }
 
     override fun onTitleChanged(session: TerminalSession) {
-        // Можно обновить заголовок Activity
+        // Логика изменения заголовка (по желанию)
     }
 
     override fun onSessionFinished(session: TerminalSession) {
@@ -191,14 +197,11 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
         }
     }
 
-    override fun onBell(session: TerminalSession) {
-    }
+    override fun onBell(session: TerminalSession) {}
 
-    override fun onColorsChanged(session: TerminalSession) {
-    }
+    override fun onColorsChanged(session: TerminalSession) {}
 
-    override fun onTerminalCursorStateChange(state: Boolean) {
-    }
+    override fun onTerminalCursorStateChange(state: Boolean) {}
 
     override fun getTerminalCursorStyle(): Int {
         // 0 = BLOCK (█), 1 = UNDERLINE (_), 2 = BAR (|)
@@ -255,6 +258,7 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
         if (mDrawerLayout.isDrawerOpen(GravityCompat.START)) {
             mDrawerLayout.closeDrawer(GravityCompat.START)
         } else {
+            @Suppress("DEPRECATION")
             super.onBackPressed()
         }
     }
