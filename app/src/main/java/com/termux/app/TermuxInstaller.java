@@ -40,7 +40,7 @@ public final class TermuxInstaller {
 
     private static final String LOG_TAG = "TermuxInstaller";
 
-    // Прямая ссылка с символом '+'. GitHub корректно обрабатывает его в таком виде.
+    // Ссылка на Bootstrap с поддержкой '+' (актуально для GitHub релизов)
     private static final String BOOTSTRAP_BASE_URL =
         "https://github.com/termux/termux-packages/releases/download/bootstrap-2024.12.18-r1+apt-android-7";
 
@@ -63,14 +63,14 @@ public final class TermuxInstaller {
             File tempZip = new File(activity.getCacheDir(), "bootstrap_download.zip");
             try {
                 String downloadUrl = getDownloadUrl();
-                Logger.logInfo(LOG_TAG, "Downloading: " + downloadUrl);
+                Logger.logInfo(LOG_TAG, "Starting download: " + downloadUrl);
 
                 downloadFile(downloadUrl, tempZip, progress, activity);
                 prepareDirectories();
                 extractZip(tempZip);
 
                 if (!TERMUX_STAGING_PREFIX_DIR.renameTo(TERMUX_PREFIX_DIR)) {
-                    throw new RuntimeException("Failed to finalize: rename failed");
+                    throw new RuntimeException("Failed to finalize installation: rename failed");
                 }
 
                 TermuxShellEnvironment.writeEnvironmentToFile(activity);
@@ -79,8 +79,6 @@ public final class TermuxInstaller {
             } catch (Exception e) {
                 Logger.logError(LOG_TAG, "Bootstrap error: " + e.getMessage());
                 showBootstrapErrorDialog(activity, whenDone, e.getMessage());
-                // ВАЖНО: sendBootstrapCrashReportNotification заменен логом, чтобы избежать краша
-                sendBootstrapCrashReportNotification(activity, e.getMessage());
             } finally {
                 if (tempZip.exists()) tempZip.delete();
                 activity.runOnUiThread(() -> {
@@ -101,6 +99,7 @@ public final class TermuxInstaller {
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setInstanceFollowRedirects(true);
         conn.setConnectTimeout(30000);
+        conn.setReadTimeout(30000);
         conn.setRequestProperty("User-Agent", "Termux-App-Installer");
 
         if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
@@ -147,24 +146,34 @@ public final class TermuxInstaller {
                     String line;
                     while ((line = reader.readLine()) != null) {
                         String[] parts = line.split("←");
-                        if (parts.length == 2) symlinks.add(Pair.create(parts[0], TERMUX_STAGING_PREFIX_DIR_PATH + "/" + parts[1]));
+                        if (parts.length == 2) {
+                            symlinks.add(Pair.create(parts[0], TERMUX_STAGING_PREFIX_DIR_PATH + "/" + parts[1]));
+                        }
                     }
                 } else {
                     File target = new File(TERMUX_STAGING_PREFIX_DIR_PATH, name);
-                    if (entry.isDirectory()) target.mkdirs();
-                    else {
-                        target.getParentFile().mkdirs();
+                    if (entry.isDirectory()) {
+                        target.mkdirs();
+                    } else {
+                        if (!target.getParentFile().exists()) target.getParentFile().mkdirs();
                         try (FileOutputStream out = new FileOutputStream(target)) {
                             int read;
                             while ((read = zipInput.read(buffer)) != -1) out.write(buffer, 0, read);
                         }
-                        if (name.startsWith("bin/") || name.startsWith("libexec/")) Os.chmod(target.getAbsolutePath(), 0700);
+                        // Установка Unix-прав на исполнение
+                        if (name.startsWith("bin/") || name.startsWith("libexec/")) {
+                            Os.chmod(target.getAbsolutePath(), 0700);
+                        }
                     }
                 }
             }
         }
         for (Pair<String, String> symlink : symlinks) {
-            try { Os.symlink(symlink.first, symlink.second); } catch (Exception ignored) {}
+            try {
+                File linkFile = new File(symlink.second);
+                if (!linkFile.getParentFile().exists()) linkFile.getParentFile().mkdirs();
+                Os.symlink(symlink.first, symlink.second);
+            } catch (Exception ignored) {}
         }
     }
 
@@ -183,9 +192,48 @@ public final class TermuxInstaller {
         );
     }
 
+    /**
+     * Создание симлинков для доступа к хранилищу Android.
+     * Необходим для вызова из TerminalActivity.kt.
+     */
+    public static void setupStorageSymlinks(Context context) {
+        new Thread(() -> {
+            try {
+                File storageDir = TermuxConstants.TERMUX_STORAGE_HOME_DIR;
+                // Очистка старых ссылок
+                deleteRecursively(storageDir);
+                if (!storageDir.mkdirs()) return;
+
+                // Основная память
+                File sharedDir = Environment.getExternalStorageDirectory();
+                Os.symlink(sharedDir.getAbsolutePath(), new File(storageDir, "shared").getAbsolutePath());
+
+                // Стандартные папки
+                String[] dirs = {
+                    Environment.DIRECTORY_DCIM,
+                    Environment.DIRECTORY_DOWNLOADS,
+                    Environment.DIRECTORY_PICTURES,
+                    Environment.DIRECTORY_MUSIC,
+                    Environment.DIRECTORY_MOVIES
+                };
+
+                for (String dirType : dirs) {
+                    File path = Environment.getExternalStoragePublicDirectory(dirType);
+                    if (path.exists()) {
+                        Os.symlink(path.getAbsolutePath(), new File(storageDir, dirType.toLowerCase()).getAbsolutePath());
+                    }
+                }
+
+                Logger.logInfo(LOG_TAG, "Storage symlinks created successfully.");
+            } catch (Exception e) {
+                Logger.logError(LOG_TAG, "Storage setup error: " + e.getMessage());
+            }
+        }).start();
+    }
+
     private static void sendBootstrapCrashReportNotification(Activity activity, String message) {
-        // Метод исправлен: Уведомление отключено для предотвращения краша на Android 12+ (API 31)
-        Logger.logError(LOG_TAG, "Bootstrap notification suppressed. Error: " + message);
+        // Уведомление подавлено для стабильности на API 31+
+        Logger.logError(LOG_TAG, "Bootstrap Notification suppressed. Error: " + message);
     }
 
     private static void deleteRecursively(File file) {
@@ -197,4 +245,4 @@ public final class TermuxInstaller {
         }
         file.delete();
     }
-}
+                            }
