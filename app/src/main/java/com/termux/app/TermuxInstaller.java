@@ -11,9 +11,9 @@ import android.util.Log;
 import android.util.Pair;
 
 import com.kakdela.p2p.R;
+import com.termux.shared.errors.Error;
 import com.termux.shared.file.FileUtils;
 import com.termux.shared.logger.Logger;
-import com.termux.shared.errors.Error;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.termux.file.TermuxFileUtils;
 import com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment;
@@ -44,8 +44,6 @@ public final class TermuxInstaller {
             "https://github.com/termux/termux-packages/releases/download/" + BOOTSTRAP_TAG;
 
     public static void setupBootstrapIfNeeded(final Activity activity, final Runnable whenDone) {
-
-        // ⚠ overridePrefixDir больше не существует в актуальном termux-shared
 
         if (FileUtils.directoryFileExists(TermuxConstants.TERMUX_PREFIX_DIR_PATH, true)
                 && !TermuxFileUtils.isTermuxPrefixDirectoryEmpty()) {
@@ -78,8 +76,8 @@ public final class TermuxInstaller {
                     throw new RuntimeException("Failed to rename staging directory.");
                 }
 
-                // chmod +x для всех бинарников
-                fixBinaryPermissions(TermuxConstants.TERMUX_PREFIX_DIR);
+                // КРИТИЧНО: права для каталогов и бинарников
+                fixPermissionsRecursive(TermuxConstants.TERMUX_PREFIX_DIR);
 
                 TermuxShellEnvironment.writeEnvironmentToFile(activity);
 
@@ -125,7 +123,7 @@ public final class TermuxInstaller {
 
         int code = conn.getResponseCode();
         if (code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_MOVED_TEMP ||
-            code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+                code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
             String newUrl = conn.getHeaderField("Location");
             conn.disconnect();
             url = new URL(newUrl);
@@ -176,27 +174,38 @@ public final class TermuxInstaller {
             ZipEntry entry;
             while ((entry = zipInput.getNextEntry()) != null) {
                 String name = entry.getName();
+
                 if ("SYMLINKS.txt".equals(name)) {
                     BufferedReader reader = new BufferedReader(new InputStreamReader(zipInput));
                     String line;
                     while ((line = reader.readLine()) != null) {
                         String[] parts = line.split("←");
                         if (parts.length == 2) {
-                            symlinks.add(Pair.create(parts[0], TermuxConstants.TERMUX_STAGING_PREFIX_DIR_PATH + "/" + parts[1]));
+                            symlinks.add(Pair.create(
+                                    parts[0],
+                                    TermuxConstants.TERMUX_STAGING_PREFIX_DIR_PATH + "/" + parts[1]
+                            ));
                         }
                     }
                 } else {
                     File target = new File(TermuxConstants.TERMUX_STAGING_PREFIX_DIR_PATH, name);
+
                     if (entry.isDirectory()) {
                         target.mkdirs();
                         try { Os.chmod(target.getAbsolutePath(), 0700); } catch (Throwable ignored) {}
                     } else {
                         if (target.getParentFile() != null) target.getParentFile().mkdirs();
+
                         try (FileOutputStream out = new FileOutputStream(target)) {
                             int read;
-                            while ((read = zipInput.read(buffer)) != -1) out.write(buffer, 0, read);
+                            while ((read = zipInput.read(buffer)) != -1) {
+                                out.write(buffer, 0, read);
+                            }
                         }
-                        if (name.startsWith("bin/") || name.contains("/bin/") || name.startsWith("libexec/")) {
+
+                        if (name.startsWith("bin/")
+                                || name.contains("/bin/")
+                                || name.startsWith("libexec/")) {
                             try { Os.chmod(target.getAbsolutePath(), 0700); } catch (Throwable ignored) {}
                         }
                     }
@@ -213,18 +222,41 @@ public final class TermuxInstaller {
         }
     }
 
-    private static void fixBinaryPermissions(File dir) {
-        if (dir.isDirectory()) {
-            File[] files = dir.listFiles();
-            if (files != null) {
-                for (File f : files) {
-                    fixBinaryPermissions(f);
-                    if (f.isFile() && (f.getName().equals("bash") || f.getName().endsWith(".so") || f.canExecute())) {
-                        try { Os.chmod(f.getAbsolutePath(), 0700); } catch (Throwable ignored) {}
+    /*
+     * КРИТИЧЕСКИ ВАЖНО:
+     * +x должен быть у ВСЕХ каталогов.
+     * Без этого bash будет давать Permission denied.
+     */
+    private static void fixPermissionsRecursive(File file) {
+        try {
+            if (file.isDirectory()) {
+
+                try {
+                    Os.chmod(file.getAbsolutePath(), 0700);
+                } catch (Throwable ignored) {}
+
+                File[] list = file.listFiles();
+                if (list != null) {
+                    for (File f : list) {
+                        fixPermissionsRecursive(f);
                     }
                 }
+
+            } else if (file.isFile()) {
+
+                File parent = file.getParentFile();
+                String parentName = parent != null ? parent.getName() : "";
+
+                if ("bin".equals(parentName)
+                        || "libexec".equals(parentName)
+                        || file.getName().endsWith(".so")) {
+
+                    try {
+                        Os.chmod(file.getAbsolutePath(), 0700);
+                    } catch (Throwable ignored) {}
+                }
             }
-        }
+        } catch (Throwable ignored) {}
     }
 
     public static void showBootstrapErrorDialog(Activity activity, Runnable whenDone, String message) {
@@ -241,11 +273,15 @@ public final class TermuxInstaller {
         new Thread(() -> {
             try {
                 File storageDir = TermuxConstants.TERMUX_STORAGE_HOME_DIR;
+
                 if (storageDir.exists()) deleteRecursively(storageDir);
                 storageDir.mkdirs();
 
                 File sharedDir = Environment.getExternalStorageDirectory();
-                try { Os.symlink(sharedDir.getAbsolutePath(), new File(storageDir, "shared").getAbsolutePath()); } catch (Throwable ignored) {}
+                try {
+                    Os.symlink(sharedDir.getAbsolutePath(),
+                            new File(storageDir, "shared").getAbsolutePath());
+                } catch (Throwable ignored) {}
 
                 String[] dirs = {
                         Environment.DIRECTORY_DCIM,
@@ -254,12 +290,17 @@ public final class TermuxInstaller {
                         Environment.DIRECTORY_MUSIC,
                         Environment.DIRECTORY_MOVIES
                 };
+
                 for (String dirType : dirs) {
                     File path = Environment.getExternalStoragePublicDirectory(dirType);
                     if (path != null && path.exists()) {
-                        try { Os.symlink(path.getAbsolutePath(), new File(storageDir, dirType.toLowerCase()).getAbsolutePath()); } catch (Throwable ignored) {}
+                        try {
+                            Os.symlink(path.getAbsolutePath(),
+                                    new File(storageDir, dirType.toLowerCase()).getAbsolutePath());
+                        } catch (Throwable ignored) {}
                     }
                 }
+
             } catch (Throwable e) {
                 Logger.logError(LOG_TAG, "Storage symlink error:\n" + Log.getStackTraceString(e));
             }
@@ -268,10 +309,18 @@ public final class TermuxInstaller {
 
     private static void deleteRecursively(File file) {
         if (file == null || !file.exists()) return;
+
         if (file.isDirectory()) {
             File[] children = file.listFiles();
-            if (children != null) for (File c : children) deleteRecursively(c);
+            if (children != null) {
+                for (File c : children) {
+                    deleteRecursively(c);
+                }
+            }
         }
-        file.delete();
+
+        try {
+            file.delete();
+        } catch (Throwable ignored) {}
     }
-        }
+}
