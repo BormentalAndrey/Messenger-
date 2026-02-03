@@ -26,7 +26,9 @@ import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 import java.io.File
 
-class TerminalActivity : AppCompatActivity(), TerminalSessionClient, TerminalViewClient {
+class TerminalActivity : AppCompatActivity(),
+    TerminalSessionClient,
+    TerminalViewClient {
 
     private lateinit var mTerminalView: TerminalView
     private lateinit var mDrawerLayout: DrawerLayout
@@ -51,13 +53,11 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient, TerminalVie
         val newSessionButton: MaterialButton = findViewById(R.id.new_session_button)
         val toggleKeyboardButton: MaterialButton = findViewById(R.id.toggle_keyboard_button)
 
-        // Критично: привязываем клиент до любого фокуса/ввода
         mTerminalView.setTerminalViewClient(this)
 
         mTerminalView.apply {
             setTextSize(35)
             keepScreenOn = true
-            // requestFocus() убираем отсюда — перенесём после bootstrap
             setOnClickListener { showSoftKeyboard() }
         }
 
@@ -78,11 +78,10 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient, TerminalVie
             toggleSoftKeyboard()
         }
 
-        // Запускаем bootstrap и только после него — сессию + фокус
         TermuxInstaller.setupBootstrapIfNeeded(this, Runnable {
             TermuxInstaller.setupStorageSymlinks(this)
             setupTerminalSession()
-            // Только после успешной инициализации
+
             mTerminalView.requestFocus()
             mTerminalView.postDelayed({
                 showSoftKeyboard()
@@ -127,14 +126,12 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient, TerminalVie
                 arrayOf("-l"),
                 env,
                 2000,
-                this  // TerminalSessionClient
+                this
             )
 
             mTerminalSession = session
             mTerminalView.attachSession(session)
             mTerminalView.onScreenUpdated()
-
-            // showSoftKeyboard перенесён в колбэк после bootstrap
 
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to setup terminal session", e)
@@ -154,13 +151,14 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient, TerminalVie
         if (imm.isAcceptingText) {
             imm.hideSoftInputFromWindow(mTerminalView.windowToken, 0)
         } else {
+            @Suppress("DEPRECATION")
             imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
         }
     }
 
-    // ───────────────────────────────────────────────
-    // TerminalSessionClient методы (без изменений)
-    // ───────────────────────────────────────────────
+    // --------------------------------------------------------------------
+    // TerminalSessionClient
+    // --------------------------------------------------------------------
 
     override fun onTextChanged(session: TerminalSession) {
         mTerminalView.onScreenUpdated()
@@ -191,7 +189,6 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient, TerminalVie
     override fun getTerminalCursorStyle(): Int = 0
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
 
-    // Логирование
     override fun logError(tag: String?, message: String?) {
         Log.e(tag ?: TAG, message ?: "")
     }
@@ -220,53 +217,48 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient, TerminalVie
         Log.e(tag ?: TAG, "Stack trace", e)
     }
 
-    // ───────────────────────────────────────────────
-    // TerminalViewClient методы — полная реализация
-    // ───────────────────────────────────────────────
+    // --------------------------------------------------------------------
+    // TerminalViewClient (АКТУАЛЬНЫЙ API)
+    // --------------------------------------------------------------------
 
-    override fun onCreateInputConnection(outAttrs: EditorInfo?): InputConnection? {
-        // Если сессия ещё не готова — не даём клавиатуре появиться слишком рано
-        if (mTerminalSession == null) {
-            return null
-        }
-        // Делегируем стандартной реализации TerminalView
-        return mTerminalView.onCreateInputConnection(outAttrs)
-    }
-
-    override fun onKeyDown(keyCode: Int, e: KeyEvent?): Boolean {
-        // Здесь можно добавить обработку специальных клавиш, если нужно
-        return false // по умолчанию не обрабатываем — пусть TerminalView сам
-    }
-
-    override fun onKeyUp(keyCode: Int, e: KeyEvent?): Boolean {
+    override fun onKeyDown(
+        keyCode: Int,
+        event: KeyEvent,
+        session: TerminalSession
+    ): Boolean {
         return false
     }
 
-    override fun onLongPress(event: MotionEvent?): Boolean {
-        // Стандартное поведение Termux — копирование/вставка по long press
-        return false // false = позволить Termux обработать
-    }
-
-    override fun onScale(scale: Float, focusX: Float, focusY: Float): Boolean {
-        // Масштабирование (pinch-to-zoom)
-        return false // позволить Termux
-    }
-
-    override fun onSingleTapUp(event: MotionEvent?): Boolean {
-        // Тап по экрану — можно показать клавиатуру
+    override fun onSingleTapUp(event: MotionEvent) {
         showSoftKeyboard()
-        return true
     }
 
-    override fun shouldCopyOnLongPress(): Boolean = true
+    // --------------------------------------------------------------------
+    // Остальные методы сохранены, но больше не override,
+    // т.к. их убрали из TerminalViewClient
+    // --------------------------------------------------------------------
 
-    override fun shouldPasteOnLongPress(): Boolean = true
+    fun onCreateInputConnection(outAttrs: EditorInfo?): InputConnection? {
+        if (mTerminalSession == null) return null
+        return mTerminalView.onCreateInputConnection(outAttrs)
+    }
 
-    override fun shouldEnqueueInputOnSoftwareKeyboard(): Boolean = true
+    fun onKeyUp(keyCode: Int, e: KeyEvent?): Boolean = false
 
-    override fun isTerminalViewScalingDisabled(): Boolean = false  // разрешить pinch-zoom
+    fun onLongPress(event: MotionEvent?): Boolean = false
 
-    // Жизненный цикл
+    fun onScale(scale: Float, focusX: Float, focusY: Float): Boolean = false
+
+    fun shouldCopyOnLongPress(): Boolean = true
+
+    fun shouldPasteOnLongPress(): Boolean = true
+
+    fun shouldEnqueueInputOnSoftwareKeyboard(): Boolean = true
+
+    fun isTerminalViewScalingDisabled(): Boolean = false
+
+    // --------------------------------------------------------------------
+
     override fun onResume() {
         super.onResume()
         mTerminalView.onScreenUpdated()
@@ -285,4 +277,4 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient, TerminalVie
         super.onDestroy()
         mTerminalSession?.finishIfRunning()
     }
-}
+    }
