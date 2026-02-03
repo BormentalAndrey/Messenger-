@@ -41,8 +41,9 @@ public final class TermuxInstaller {
 
     private static final String LOG_TAG = "TermuxInstaller";
 
+    // Актуальный релиз bootstrap
     private static final String BOOTSTRAP_TAG =
-            "bootstrap-2024.12.18-r1+apt-android-7";
+            "bootstrap-2025.11.30-r1+apt.android-7";
 
     private static final String BOOTSTRAP_BASE_URL =
             "https://github.com/termux/termux-packages/releases/download/" + BOOTSTRAP_TAG;
@@ -51,7 +52,6 @@ public final class TermuxInstaller {
 
         if (FileUtils.directoryFileExists(TERMUX_PREFIX_DIR_PATH, true)
                 && !TermuxFileUtils.isTermuxPrefixDirectoryEmpty()) {
-
             activity.runOnUiThread(whenDone);
             return;
         }
@@ -65,22 +65,16 @@ public final class TermuxInstaller {
         progress.show();
 
         new Thread(() -> {
-
             File tempZip = new File(activity.getCacheDir(), "bootstrap.zip");
-
             try {
-
                 String downloadUrl = getDownloadUrl();
                 Logger.logInfo(LOG_TAG, "Downloading from: " + downloadUrl);
 
                 downloadFile(downloadUrl, tempZip, progress, activity);
 
-                activity.runOnUiThread(() ->
-                        progress.setMessage("Распаковка...")
-                );
+                activity.runOnUiThread(() -> progress.setMessage("Распаковка..."));
 
                 prepareDirectories();
-
                 extractZip(tempZip);
 
                 if (!TERMUX_STAGING_PREFIX_DIR.renameTo(TERMUX_PREFIX_DIR)) {
@@ -96,11 +90,8 @@ public final class TermuxInstaller {
 
             } catch (Exception e) {
 
-                // ВАЖНО: в Logger нет overload с Throwable
-                Logger.logError(
-                        LOG_TAG,
-                        "Bootstrap error:\n" + Log.getStackTraceString(e)
-                );
+                Logger.logError(LOG_TAG,
+                        "Bootstrap error:\n" + Log.getStackTraceString(e));
 
                 activity.runOnUiThread(() -> {
                     if (progress.isShowing()) progress.dismiss();
@@ -110,7 +101,6 @@ public final class TermuxInstaller {
             } finally {
                 if (tempZip.exists()) tempZip.delete();
             }
-
         }).start();
     }
 
@@ -147,8 +137,9 @@ public final class TermuxInstaller {
         conn.setRequestProperty("User-Agent", "Termux-Installer");
 
         int code = conn.getResponseCode();
-
-        if (code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
+        if (code == HttpURLConnection.HTTP_MOVED_PERM ||
+            code == HttpURLConnection.HTTP_MOVED_TEMP ||
+            code == 301 || code == 302 || code == 303 || code == 307 || code == 308) {
             String newUrl = conn.getHeaderField("Location");
             conn.disconnect();
             url = new URL(newUrl);
@@ -170,16 +161,11 @@ public final class TermuxInstaller {
             int count;
 
             while ((count = input.read(buffer)) != -1) {
-
                 total += count;
-
                 if (fileLength > 0) {
                     int percent = (int) (total * 100 / fileLength);
-                    activity.runOnUiThread(() ->
-                            progress.setProgress(percent)
-                    );
+                    activity.runOnUiThread(() -> progress.setProgress(percent));
                 }
-
                 output.write(buffer, 0, count);
             }
         }
@@ -206,8 +192,7 @@ public final class TermuxInstaller {
         final byte[] buffer = new byte[8192];
         final List<Pair<String, String>> symlinks = new ArrayList<>();
 
-        try (ZipInputStream zipInput =
-                     new ZipInputStream(new FileInputStream(zipFile))) {
+        try (ZipInputStream zipInput = new ZipInputStream(new FileInputStream(zipFile))) {
 
             ZipEntry entry;
 
@@ -217,12 +202,10 @@ public final class TermuxInstaller {
 
                 if ("SYMLINKS.txt".equals(name)) {
 
-                    BufferedReader reader =
-                            new BufferedReader(new InputStreamReader(zipInput));
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(zipInput));
 
                     String line;
                     while ((line = reader.readLine()) != null) {
-
                         String[] parts = line.split("←");
 
                         if (parts.length == 2) {
@@ -249,19 +232,14 @@ public final class TermuxInstaller {
                         if (target.getParentFile() != null)
                             target.getParentFile().mkdirs();
 
-                        try (FileOutputStream out =
-                                     new FileOutputStream(target)) {
-
+                        try (FileOutputStream out = new FileOutputStream(target)) {
                             int read;
                             while ((read = zipInput.read(buffer)) != -1) {
                                 out.write(buffer, 0, read);
                             }
                         }
 
-                        if (name.startsWith("bin/")
-                                || name.contains("/bin/")
-                                || name.startsWith("libexec/")) {
-
+                        if (name.startsWith("bin/") || name.contains("/bin/") || name.startsWith("libexec/")) {
                             try {
                                 Os.chmod(target.getAbsolutePath(), 0700);
                             } catch (Throwable ignored) {}
@@ -272,16 +250,11 @@ public final class TermuxInstaller {
         }
 
         for (Pair<String, String> symlink : symlinks) {
-
             try {
-
                 File linkFile = new File(symlink.second);
-
                 if (linkFile.getParentFile() != null)
                     linkFile.getParentFile().mkdirs();
-
                 Os.symlink(symlink.first, symlink.second);
-
             } catch (Throwable ignored) {}
         }
     }
@@ -299,11 +272,8 @@ public final class TermuxInstaller {
                                         "Проверьте интернет."
                         )
                         .setCancelable(false)
-                        .setNegativeButton("Выход",
-                                (d, w) -> activity.finish())
-                        .setPositiveButton("Повторить",
-                                (d, w) ->
-                                        setupBootstrapIfNeeded(activity, whenDone))
+                        .setNegativeButton("Выход", (d, w) -> activity.finish())
+                        .setPositiveButton("Повторить", (d, w) -> setupBootstrapIfNeeded(activity, whenDone))
                         .show()
         );
     }
@@ -340,30 +310,20 @@ public final class TermuxInstaller {
 
                 for (String dirType : dirs) {
 
-                    File path =
-                            Environment.getExternalStoragePublicDirectory(dirType);
+                    File path = Environment.getExternalStoragePublicDirectory(dirType);
 
                     if (path != null && path.exists()) {
-
                         try {
                             Os.symlink(
                                     path.getAbsolutePath(),
-                                    new File(
-                                            storageDir,
-                                            dirType.toLowerCase()
-                                    ).getAbsolutePath()
+                                    new File(storageDir, dirType.toLowerCase()).getAbsolutePath()
                             );
                         } catch (Throwable ignored) {}
                     }
                 }
 
             } catch (Throwable e) {
-
-                // ВАЖНО: снова без overload с Throwable
-                Logger.logError(
-                        LOG_TAG,
-                        "Storage symlink error:\n" + Log.getStackTraceString(e)
-                );
+                Logger.logError(LOG_TAG, "Storage symlink error:\n" + Log.getStackTraceString(e));
             }
 
         }).start();
@@ -371,19 +331,15 @@ public final class TermuxInstaller {
 
     private static void deleteRecursively(File file) {
 
-        if (file == null || !file.exists())
-            return;
+        if (file == null || !file.exists()) return;
 
         if (file.isDirectory()) {
-
             File[] children = file.listFiles();
-
             if (children != null) {
-                for (File c : children)
-                    deleteRecursively(c);
+                for (File c : children) deleteRecursively(c);
             }
         }
 
         file.delete();
     }
-                    }
+                            }
