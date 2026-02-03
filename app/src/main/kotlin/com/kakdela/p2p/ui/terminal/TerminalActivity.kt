@@ -43,7 +43,6 @@ class TerminalActivity :
     companion object {
         private const val TAG = "TerminalActivity"
 
-        // GitHub Termux bootstrap release
         private const val GITHUB_BASE_URL =
             "https://github.com/termux/termux-packages/releases/download/bootstrap"
 
@@ -98,7 +97,6 @@ class TerminalActivity :
             }
         })
 
-        // Выбор: скачивать bootstrap или нет
         AlertDialog.Builder(this)
             .setTitle("Установка Termux")
             .setMessage("Скачать системные компоненты Termux (bootstrap)?")
@@ -106,13 +104,16 @@ class TerminalActivity :
                 val arch = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
                 val archiveName = ARCH_BOOTSTRAPS[arch] ?: ARCH_BOOTSTRAPS["arm64-v8a"]!!
                 val url = "$GITHUB_BASE_URL/$archiveName"
+
                 Log.i(TAG, "Selected architecture: $arch, bootstrap URL: $url")
 
                 downloadAndSetupBootstrap(url) {
-                    setupStorageSymlinks()
-                    setupSession()
-                    terminalView.requestFocus()
-                    terminalView.postDelayed({ showKeyboard() }, 300)
+                    runOnUiThread {
+                        setupStorageSymlinks()
+                        setupSession()
+                        terminalView.requestFocus()
+                        terminalView.postDelayed({ showKeyboard() }, 300)
+                    }
                 }
             }
             .setNegativeButton("Нет") { _, _ ->
@@ -126,7 +127,7 @@ class TerminalActivity :
     }
 
     // ---------------------------------------------------------
-    // Скачивание и установка bootstrap
+    // Bootstrap
     // ---------------------------------------------------------
     private fun downloadAndSetupBootstrap(url: String, onFinished: () -> Unit) {
         Thread {
@@ -137,6 +138,7 @@ class TerminalActivity :
                 val archiveFile = File(tmpDir, "bootstrap.tar.gz")
                 downloadBootstrapArchive(url, archiveFile)
                 extractBootstrapArchive(archiveFile)
+
                 onFinished()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to download/setup bootstrap", e)
@@ -145,52 +147,47 @@ class TerminalActivity :
     }
 
     private fun downloadBootstrapArchive(url: String, destFile: File) {
-        try {
-            if (destFile.exists()) destFile.delete()
+        if (destFile.exists()) destFile.delete()
 
-            val connection = URL(url).openConnection() as HttpURLConnection
-            connection.connectTimeout = 15000
-            connection.readTimeout = 15000
+        val connection = URL(url).openConnection() as HttpURLConnection
+        connection.connectTimeout = 15000
+        connection.readTimeout = 15000
 
-            connection.inputStream.use { input ->
-                FileOutputStream(destFile).use { output ->
-                    input.copyTo(output)
-                }
+        connection.inputStream.use { input ->
+            FileOutputStream(destFile).use { output ->
+                input.copyTo(output)
             }
-            Log.i(TAG, "Bootstrap archive downloaded to ${destFile.absolutePath}")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to download bootstrap archive", e)
         }
+
+        Log.i(TAG, "Bootstrap archive downloaded to ${destFile.absolutePath}")
     }
 
     private fun extractBootstrapArchive(archiveFile: File) {
-        try {
-            val prefix = TermuxConstants.TERMUX_PREFIX_DIR
-            GZIPInputStream(archiveFile.inputStream()).use { gis ->
-                TarArchiveInputStream(gis).use { tar ->
-                    var entry = tar.nextTarEntry
-                    while (entry != null) {
-                        val outFile = File(prefix, entry.name)
-                        if (entry.isDirectory) {
-                            outFile.mkdirs()
-                        } else {
-                            outFile.parentFile?.mkdirs()
-                            outFile.outputStream().use { out ->
-                                tar.copyTo(out)
-                            }
+        val prefix = TermuxConstants.TERMUX_PREFIX_DIR
+
+        GZIPInputStream(archiveFile.inputStream()).use { gis ->
+            TarArchiveInputStream(gis).use { tar ->
+                var entry = tar.nextTarEntry
+                while (entry != null) {
+                    val outFile = File(prefix, entry.name)
+                    if (entry.isDirectory) {
+                        outFile.mkdirs()
+                    } else {
+                        outFile.parentFile?.mkdirs()
+                        outFile.outputStream().use { out ->
+                            tar.copyTo(out)
                         }
-                        entry = tar.nextTarEntry
                     }
+                    entry = tar.nextTarEntry
                 }
             }
-            Log.i(TAG, "Bootstrap archive extracted successfully")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to extract bootstrap archive", e)
         }
+
+        Log.i(TAG, "Bootstrap archive extracted successfully")
     }
 
     // ---------------------------------------------------------
-    // Storage symlinks
+    // Storage
     // ---------------------------------------------------------
     private fun setupStorageSymlinks() {
         try {
@@ -202,7 +199,7 @@ class TerminalActivity :
     }
 
     // ---------------------------------------------------------
-    // Настройка сессии терминала
+    // Session
     // ---------------------------------------------------------
     private fun setupSession() {
         terminalSession?.finishIfRunning()
@@ -233,8 +230,6 @@ class TerminalActivity :
             }
 
             Log.i(TAG, "Starting shell: $shell")
-            Log.i(TAG, "PREFIX=$prefix")
-            Log.i(TAG, "HOME=$home")
 
             terminalSession = TerminalSession(
                 shell,
@@ -254,7 +249,7 @@ class TerminalActivity :
     }
 
     // ---------------------------------------------------------
-    // Клавиатура
+    // Keyboard
     // ---------------------------------------------------------
     private fun showKeyboard() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
@@ -271,7 +266,11 @@ class TerminalActivity :
     }
 
     // ───────── TerminalSessionClient ─────────
-    override fun onTextChanged(session: TerminalSession) { terminalView.onScreenUpdated() }
+
+    override fun onTextChanged(session: TerminalSession) {
+        terminalView.onScreenUpdated()
+    }
+
     override fun onTitleChanged(session: TerminalSession) {}
     override fun onSessionFinished(session: TerminalSession) {}
     override fun onBell(session: TerminalSession) {}
@@ -279,43 +278,97 @@ class TerminalActivity :
     override fun onTerminalCursorStateChange(state: Boolean) {}
     override fun getTerminalCursorStyle(): Int = 0
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
+
     override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
         val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cb.setPrimaryClip(ClipData.newPlainText("termux", text))
     }
+
     override fun onPasteTextFromClipboard(session: TerminalSession?) {
         val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cb.primaryClip?.getItemAt(0)?.text?.let { terminalSession?.write(it.toString()) }
+        cb.primaryClip?.getItemAt(0)?.text?.let {
+            terminalSession?.write(it.toString())
+        }
     }
 
-    override fun logError(tag: String?, message: String?) { Log.e(tag ?: TAG, message ?: "") }
-    override fun logWarn(tag: String?, message: String?) { Log.w(tag ?: TAG, message ?: "") }
-    override fun logInfo(tag: String?, message: String?) { Log.i(tag ?: TAG, message ?: "") }
-    override fun logDebug(tag: String?, message: String?) { Log.d(tag ?: TAG, message ?: "") }
-    override fun logVerbose(tag: String?, message: String?) { Log.v(tag ?: TAG, message ?: "") }
-    override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) {
-        Log.e(tag ?: TAG, message ?: "", e)
+    override fun logError(tag: String, message: String) {
+        Log.e(tag, message)
     }
-    override fun logStackTrace(tag: String?, e: Exception?) { Log.e(tag ?: TAG, "stacktrace", e) }
+
+    override fun logWarn(tag: String, message: String) {
+        Log.w(tag, message)
+    }
+
+    override fun logInfo(tag: String, message: String) {
+        Log.i(tag, message)
+    }
+
+    override fun logDebug(tag: String, message: String) {
+        Log.d(tag, message)
+    }
+
+    override fun logVerbose(tag: String, message: String) {
+        Log.v(tag, message)
+    }
+
+    override fun logStackTraceWithMessage(tag: String, message: String, e: Exception) {
+        Log.e(tag, message, e)
+    }
+
+    override fun logStackTrace(tag: String, e: Exception) {
+        Log.e(tag, "stacktrace", e)
+    }
 
     // ───────── TerminalViewClient ─────────
-    override fun onKeyDown(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
-    override fun onKeyUp(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
-    override fun onSingleTapUp(event: MotionEvent) { showKeyboard() }
+
+    override fun onKeyDown(
+        keyCode: Int,
+        event: KeyEvent,
+        session: TerminalSession
+    ): Boolean = false
+
+    override fun onKeyUp(
+        keyCode: Int,
+        event: KeyEvent
+    ): Boolean = false
+
+    override fun onSingleTapUp(event: MotionEvent) {
+        showKeyboard()
+    }
+
     override fun onLongPress(event: MotionEvent): Boolean = false
+
     override fun onScale(scale: Float): Float = scale
+
     override fun shouldBackButtonBeMappedToEscape(): Boolean = true
+
     override fun shouldEnforceCharBasedInput(): Boolean = false
+
     override fun shouldUseCtrlSpaceWorkaround(): Boolean = true
+
     override fun isTerminalViewSelected(): Boolean =
-        ::terminalView.isInitialized && terminalView.hasWindowFocus() && terminalView.isFocused
-    override fun copyModeChanged(enabled: Boolean) { Log.d(TAG, "copyModeChanged: $enabled") }
+        ::terminalView.isInitialized &&
+                terminalView.hasWindowFocus() &&
+                terminalView.isFocused
+
+    override fun copyModeChanged(copyMode: Boolean) {
+        Log.d(TAG, "copyModeChanged: $copyMode")
+    }
+
     override fun readControlKey(): Boolean = false
     override fun readAltKey(): Boolean = false
     override fun readShiftKey(): Boolean = false
     override fun readFnKey(): Boolean = false
-    override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
-    override fun onEmulatorSet() { Log.d(TAG, "Terminal emulator set") }
+
+    override fun onCodePoint(
+        codePoint: Int,
+        ctrlDown: Boolean,
+        session: TerminalSession
+    ): Boolean = false
+
+    override fun onEmulatorSet() {
+        Log.d(TAG, "Terminal emulator set")
+    }
 
     override fun onDestroy() {
         terminalSession?.finishIfRunning()
