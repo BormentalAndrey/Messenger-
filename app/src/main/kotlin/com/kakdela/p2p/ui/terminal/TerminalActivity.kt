@@ -18,6 +18,7 @@ import androidx.drawerlayout.widget.DrawerLayout
 import com.google.android.material.button.MaterialButton
 import com.kakdela.p2p.R
 import com.termux.app.TermuxInstaller
+import com.termux.shared.termux.TermuxConstants
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
@@ -52,7 +53,7 @@ class TerminalActivity :
         val toggleKeyboardButton: MaterialButton = findViewById(R.id.toggle_keyboard_button)
 
         terminalView.setTerminalViewClient(this)
-        terminalView.setTextSize(35)
+        terminalView.setTextSize(35f)
         terminalView.keepScreenOn = true
         terminalView.setOnClickListener { showKeyboard() }
 
@@ -81,10 +82,8 @@ class TerminalActivity :
             }
         })
 
-        // ⚠️ ВАЖНО:
-        // setupStorageSymlinks() вызывать нельзя – именно он у тебя удалял данные
-
         TermuxInstaller.setupBootstrapIfNeeded(this) {
+            TermuxInstaller.setupStorageSymlinks(this)
             setupSession()
             terminalView.requestFocus()
             terminalView.postDelayed({ showKeyboard() }, 300)
@@ -92,27 +91,18 @@ class TerminalActivity :
     }
 
     private fun setupSession() {
+
         terminalSession?.finishIfRunning()
         terminalSession = null
 
         try {
-            /*
-             * В Termux prefix всегда:
-             *   /data/data/<pkg>/files/usr
-             *
-             * А home:
-             *   /data/data/<pkg>/files/home
-             */
 
-            val filesDir = applicationContext.filesDir
+            val prefix: File = TermuxConstants.TERMUX_PREFIX_DIR
+            val home: File = TermuxConstants.TERMUX_HOME_DIR
 
-            val prefix = File(filesDir, "usr")
-            val home = File(filesDir, "home")
-
-            home.mkdirs()
-
-            val tmp = File(prefix, "tmp")
-            tmp.mkdirs()
+            if (!home.exists()) {
+                home.mkdirs()
+            }
 
             val env = arrayOf(
                 "TERM=xterm-256color",
@@ -131,6 +121,10 @@ class TerminalActivity :
                 sh.exists() && sh.canExecute() -> sh.absolutePath
                 else -> "/system/bin/sh"
             }
+
+            Log.i(TAG, "Starting shell: $shell")
+            Log.i(TAG, "PREFIX=$prefix")
+            Log.i(TAG, "HOME=$home")
 
             terminalSession = TerminalSession(
                 shell,
@@ -163,9 +157,7 @@ class TerminalActivity :
             imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
     }
 
-    // ────────────────────────────────
-    // TerminalSessionClient
-    // ────────────────────────────────
+    // ───────── TerminalSessionClient ─────────
 
     override fun onTextChanged(session: TerminalSession) {
         terminalView.onScreenUpdated()
@@ -219,9 +211,7 @@ class TerminalActivity :
         Log.e(tag ?: TAG, "stacktrace", e)
     }
 
-    // ────────────────────────────────
-    // TerminalViewClient
-    // ────────────────────────────────
+    // ───────── TerminalViewClient ─────────
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = false
@@ -238,8 +228,8 @@ class TerminalActivity :
 
     override fun isTerminalViewSelected(): Boolean =
         ::terminalView.isInitialized &&
-                terminalView.hasWindowFocus() &&
-                terminalView.isFocused
+            terminalView.hasWindowFocus() &&
+            terminalView.isFocused
 
     override fun copyModeChanged(enabled: Boolean) {
         Log.d(TAG, "copyModeChanged: $enabled")
