@@ -35,7 +35,9 @@ class TerminalActivity :
 
     companion object {
         private const val TAG = "TerminalActivity"
-        private const val INSTALLER_CLASS = "com.kakdela.p2p.termux.TermuxInstaller"
+
+        // ✅ правильный пакет
+        private const val INSTALLER_CLASS = "com.termux.app.TermuxInstaller"
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -54,7 +56,7 @@ class TerminalActivity :
 
         terminalView.setTerminalViewClient(this)
 
-        // В твоей версии TermuxView принимает Int
+        // В твоей версии TerminalView принимает Int
         terminalView.setTextSize(35)
 
         terminalView.keepScreenOn = true
@@ -94,16 +96,17 @@ class TerminalActivity :
     }
 
     // ---------------------------------------------------------
-    // TermuxInstaller is package-private → reflection
+    // TermuxInstaller (через reflection)
     // ---------------------------------------------------------
 
     private fun setupBootstrapViaReflection(onFinished: () -> Unit) {
         try {
             val clazz = Class.forName(INSTALLER_CLASS)
 
+            // ✅ ВАЖНО: Activity, а не Context
             val method = clazz.getDeclaredMethod(
                 "setupBootstrapIfNeeded",
-                Context::class.java,
+                AppCompatActivity::class.java,
                 Runnable::class.java
             )
 
