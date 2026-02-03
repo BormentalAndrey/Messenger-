@@ -72,7 +72,6 @@ class TerminalActivity :
             toggleKeyboard()
         }
 
-        // Используем OnBackPressedDispatcher вместо устаревшего onBackPressed
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (drawerLayout.isDrawerOpen(GravityCompat.START))
@@ -82,9 +81,10 @@ class TerminalActivity :
             }
         })
 
-        // Запуск Termux bootstrap
+        // ⚠️ ВАЖНО:
+        // setupStorageSymlinks() вызывать нельзя – именно он у тебя удалял данные
+
         TermuxInstaller.setupBootstrapIfNeeded(this) {
-            TermuxInstaller.setupStorageSymlinks(this)
             setupSession()
             terminalView.requestFocus()
             terminalView.postDelayed({ showKeyboard() }, 300)
@@ -96,14 +96,23 @@ class TerminalActivity :
         terminalSession = null
 
         try {
-            // Создаем свои директории Termux в dataDir
-            val prefix = File(applicationContext.dataDir, "usr")
-            val home = File(applicationContext.dataDir, "home")
+            /*
+             * В Termux prefix всегда:
+             *   /data/data/<pkg>/files/usr
+             *
+             * А home:
+             *   /data/data/<pkg>/files/home
+             */
+
+            val filesDir = applicationContext.filesDir
+
+            val prefix = File(filesDir, "usr")
+            val home = File(filesDir, "home")
 
             home.mkdirs()
-            File(prefix, "tmp").mkdirs()
-            File(prefix, "bin/applets").mkdirs()
-            File(prefix, "lib").mkdirs()
+
+            val tmp = File(prefix, "tmp")
+            tmp.mkdirs()
 
             val env = arrayOf(
                 "TERM=xterm-256color",
@@ -114,9 +123,12 @@ class TerminalActivity :
                 "LANG=en_US.UTF-8"
             )
 
+            val bash = File(prefix, "bin/bash")
+            val sh = File(prefix, "bin/sh")
+
             val shell = when {
-                File(prefix, "bin/bash").canExecute() -> File(prefix, "bin/bash").absolutePath
-                File(prefix, "bin/sh").canExecute() -> File(prefix, "bin/sh").absolutePath
+                bash.exists() && bash.canExecute() -> bash.absolutePath
+                sh.exists() && sh.canExecute() -> sh.absolutePath
                 else -> "/system/bin/sh"
             }
 
@@ -155,7 +167,10 @@ class TerminalActivity :
     // TerminalSessionClient
     // ────────────────────────────────
 
-    override fun onTextChanged(session: TerminalSession) { terminalView.onScreenUpdated() }
+    override fun onTextChanged(session: TerminalSession) {
+        terminalView.onScreenUpdated()
+    }
+
     override fun onTitleChanged(session: TerminalSession) {}
     override fun onSessionFinished(session: TerminalSession) {}
     override fun onBell(session: TerminalSession) {}
@@ -176,15 +191,33 @@ class TerminalActivity :
         }
     }
 
-    override fun logError(tag: String?, message: String?) { Log.e(tag ?: TAG, message ?: "") }
-    override fun logWarn(tag: String?, message: String?) { Log.w(tag ?: TAG, message ?: "") }
-    override fun logInfo(tag: String?, message: String?) { Log.i(tag ?: TAG, message ?: "") }
-    override fun logDebug(tag: String?, message: String?) { Log.d(tag ?: TAG, message ?: "") }
-    override fun logVerbose(tag: String?, message: String?) { Log.v(tag ?: TAG, message ?: "") }
+    override fun logError(tag: String?, message: String?) {
+        Log.e(tag ?: TAG, message ?: "")
+    }
+
+    override fun logWarn(tag: String?, message: String?) {
+        Log.w(tag ?: TAG, message ?: "")
+    }
+
+    override fun logInfo(tag: String?, message: String?) {
+        Log.i(tag ?: TAG, message ?: "")
+    }
+
+    override fun logDebug(tag: String?, message: String?) {
+        Log.d(tag ?: TAG, message ?: "")
+    }
+
+    override fun logVerbose(tag: String?, message: String?) {
+        Log.v(tag ?: TAG, message ?: "")
+    }
+
     override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) {
         Log.e(tag ?: TAG, message ?: "", e)
     }
-    override fun logStackTrace(tag: String?, e: Exception?) { Log.e(tag ?: TAG, "stacktrace", e) }
+
+    override fun logStackTrace(tag: String?, e: Exception?) {
+        Log.e(tag ?: TAG, "stacktrace", e)
+    }
 
     // ────────────────────────────────
     // TerminalViewClient
@@ -193,22 +226,39 @@ class TerminalActivity :
     override fun onKeyDown(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = false
 
-    override fun onSingleTapUp(event: MotionEvent) { showKeyboard() }
+    override fun onSingleTapUp(event: MotionEvent) {
+        showKeyboard()
+    }
+
     override fun onLongPress(event: MotionEvent): Boolean = false
     override fun onScale(scale: Float): Float = scale
     override fun shouldBackButtonBeMappedToEscape(): Boolean = true
     override fun shouldEnforceCharBasedInput(): Boolean = false
     override fun shouldUseCtrlSpaceWorkaround(): Boolean = true
-    override fun isTerminalViewSelected(): Boolean =
-        ::terminalView.isInitialized && terminalView.hasWindowFocus() && terminalView.isFocused
 
-    override fun copyModeChanged(enabled: Boolean) { Log.d(TAG, "copyModeChanged: $enabled") }
+    override fun isTerminalViewSelected(): Boolean =
+        ::terminalView.isInitialized &&
+                terminalView.hasWindowFocus() &&
+                terminalView.isFocused
+
+    override fun copyModeChanged(enabled: Boolean) {
+        Log.d(TAG, "copyModeChanged: $enabled")
+    }
+
     override fun readControlKey(): Boolean = false
     override fun readAltKey(): Boolean = false
     override fun readShiftKey(): Boolean = false
     override fun readFnKey(): Boolean = false
-    override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
-    override fun onEmulatorSet() { Log.d(TAG, "Terminal emulator set") }
+
+    override fun onCodePoint(
+        codePoint: Int,
+        ctrlDown: Boolean,
+        session: TerminalSession
+    ): Boolean = false
+
+    override fun onEmulatorSet() {
+        Log.d(TAG, "Terminal emulator set")
+    }
 
     override fun onDestroy() {
         terminalSession?.finishIfRunning()
