@@ -204,47 +204,31 @@ class TerminalActivity :
     }
 
     // ─────────────────────────────────────────────
-    // TerminalViewClient — актуальный API
+    // TerminalViewClient — полный API
     // ─────────────────────────────────────────────
 
-    override fun onKeyDown(
-        keyCode: Int,
-        event: KeyEvent,
-        session: TerminalSession
-    ): Boolean {
-        return false
-    }
-
-    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
-        return false
-    }
-
-    override fun onSingleTapUp(event: MotionEvent) {
-        showKeyboard()
-    }
-
-    override fun onLongPress(event: MotionEvent): Boolean {
-        return false
-    }
-
+    override fun onKeyDown(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = false
+    override fun onSingleTapUp(event: MotionEvent) { showKeyboard() }
+    override fun onLongPress(event: MotionEvent): Boolean = false
     override fun onScale(scale: Float): Float = scale
+    override fun shouldBackButtonBeMappedToEscape(): Boolean = true
+    override fun shouldEnforceCharBasedInput(): Boolean = false
+    override fun shouldUseCtrlSpaceWorkaround(): Boolean = true
+    override fun isTerminalViewSelected(): Boolean =
+        ::terminalView.isInitialized && terminalView.hasWindowFocus() && terminalView.isFocused
 
-    override fun shouldBackButtonBeMappedToEscape(): Boolean {
-        return true
+    override fun copyModeChanged(enabled: Boolean) {
+        Log.d(TAG, "copyModeChanged: $enabled")
     }
 
-    override fun shouldEnforceCharBasedInput(): Boolean {
-        return false
-    }
-
-    override fun shouldUseCtrlSpaceWorkaround(): Boolean {
-        return true
-    }
-
-    override fun isTerminalViewSelected(): Boolean {
-        return ::terminalView.isInitialized &&
-                terminalView.hasWindowFocus() &&
-                terminalView.isFocused
+    override fun readControlKey(): Boolean = false
+    override fun readAltKey(): Boolean = false
+    override fun readShiftKey(): Boolean = false
+    override fun readFnKey(): Boolean = false
+    override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
+    override fun onEmulatorSet() {
+        Log.d(TAG, "Terminal emulator set")
     }
 
     // ─────────────────────────────────────────────
