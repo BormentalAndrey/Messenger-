@@ -37,7 +37,7 @@ class TerminalActivity :
         private const val TAG = "TerminalActivity"
 
         // ✅ правильный пакет
-        private const val INSTALLER_CLASS = "com.termux.app.TermuxInstaller"
+        private const val INSTALLER_CLASS = "com.kakdela.p2p.termux.TermuxInstaller"
     }
 
     @SuppressLint("ClickableViewAccessibility")
