@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
@@ -44,6 +45,9 @@ class TerminalActivity :
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_termux)
+
+        // Перенос Termux PREFIX в getDataDir для возможности exec
+        TermuxConstants.overridePrefixDir(File(applicationContext.dataDir, "usr"))
 
         terminalView = findViewById(R.id.terminal_view)
         drawerLayout = findViewById(R.id.drawer_layout)
@@ -151,10 +155,7 @@ class TerminalActivity :
     // TerminalSessionClient
     // ─────────────────────────────────────────────
 
-    override fun onTextChanged(session: TerminalSession) {
-        terminalView.onScreenUpdated()
-    }
-
+    override fun onTextChanged(session: TerminalSession) { terminalView.onScreenUpdated() }
     override fun onTitleChanged(session: TerminalSession) {}
     override fun onSessionFinished(session: TerminalSession) {}
     override fun onBell(session: TerminalSession) {}
@@ -175,33 +176,15 @@ class TerminalActivity :
         }
     }
 
-    override fun logError(tag: String?, message: String?) {
-        Log.e(tag ?: TAG, message ?: "")
-    }
-
-    override fun logWarn(tag: String?, message: String?) {
-        Log.w(tag ?: TAG, message ?: "")
-    }
-
-    override fun logInfo(tag: String?, message: String?) {
-        Log.i(tag ?: TAG, message ?: "")
-    }
-
-    override fun logDebug(tag: String?, message: String?) {
-        Log.d(tag ?: TAG, message ?: "")
-    }
-
-    override fun logVerbose(tag: String?, message: String?) {
-        Log.v(tag ?: TAG, message ?: "")
-    }
-
+    override fun logError(tag: String?, message: String?) { Log.e(tag ?: TAG, message ?: "") }
+    override fun logWarn(tag: String?, message: String?) { Log.w(tag ?: TAG, message ?: "") }
+    override fun logInfo(tag: String?, message: String?) { Log.i(tag ?: TAG, message ?: "") }
+    override fun logDebug(tag: String?, message: String?) { Log.d(tag ?: TAG, message ?: "") }
+    override fun logVerbose(tag: String?, message: String?) { Log.v(tag ?: TAG, message ?: "") }
     override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) {
         Log.e(tag ?: TAG, message ?: "", e)
     }
-
-    override fun logStackTrace(tag: String?, e: Exception?) {
-        Log.e(tag ?: TAG, "stacktrace", e)
-    }
+    override fun logStackTrace(tag: String?, e: Exception?) { Log.e(tag ?: TAG, "stacktrace", e) }
 
     // ─────────────────────────────────────────────
     // TerminalViewClient — полный API
@@ -218,25 +201,18 @@ class TerminalActivity :
     override fun isTerminalViewSelected(): Boolean =
         ::terminalView.isInitialized && terminalView.hasWindowFocus() && terminalView.isFocused
 
-    override fun copyModeChanged(enabled: Boolean) {
-        Log.d(TAG, "copyModeChanged: $enabled")
-    }
-
+    override fun copyModeChanged(enabled: Boolean) { Log.d(TAG, "copyModeChanged: $enabled") }
     override fun readControlKey(): Boolean = false
     override fun readAltKey(): Boolean = false
     override fun readShiftKey(): Boolean = false
     override fun readFnKey(): Boolean = false
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
-    override fun onEmulatorSet() {
-        Log.d(TAG, "Terminal emulator set")
-    }
+    override fun onEmulatorSet() { Log.d(TAG, "Terminal emulator set") }
 
     // ─────────────────────────────────────────────
 
     @Deprecated("Handled via OnBackPressedDispatcher")
-    override fun onBackPressed() {
-        super.onBackPressed()
-    }
+    override fun onBackPressed() { super.onBackPressed() }
 
     override fun onDestroy() {
         terminalSession?.finishIfRunning()
