@@ -41,8 +41,6 @@ class TerminalActivity :
 
     companion object {
         private const val TAG = "TerminalActivity"
-
-        // URL bootstrap архива
         private const val BOOTSTRAP_URL = "https://example.com/bootstrap.tar.gz"
     }
 
@@ -89,7 +87,7 @@ class TerminalActivity :
             }
         })
 
-        // ✅ Добавляем выбор: скачивать bootstrap или нет
+        // Выбор: скачивать bootstrap или нет
         AlertDialog.Builder(this)
             .setTitle("Установка Termux")
             .setMessage("Скачать системные компоненты Termux (bootstrap)?")
@@ -176,11 +174,10 @@ class TerminalActivity :
     }
 
     // ---------------------------------------------------------
-    // Storage symlinks (как раньше)
+    // Storage symlinks
     // ---------------------------------------------------------
     private fun setupStorageSymlinks() {
         try {
-            // Пример: создаем папку storage если нет
             val storageDir = File(TermuxConstants.TERMUX_HOME_DIR, "storage")
             if (!storageDir.exists()) storageDir.mkdirs()
         } catch (e: Exception) {
@@ -286,8 +283,8 @@ class TerminalActivity :
     override fun logStackTrace(tag: String?, e: Exception?) { Log.e(tag ?: TAG, "stacktrace", e) }
 
     // ───────── TerminalViewClient ─────────
-    override fun onKeyDown(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
-    override fun onKeyUp(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean = false
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = false
     override fun onSingleTapUp(event: MotionEvent) { showKeyboard() }
     override fun onLongPress(event: MotionEvent): Boolean = false
     override fun onScale(scale: Float): Float = scale
