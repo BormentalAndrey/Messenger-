@@ -18,7 +18,6 @@ import androidx.drawerlayout.widget.DrawerLayout
 import com.google.android.material.button.MaterialButton
 import com.kakdela.p2p.R
 import com.termux.app.TermuxInstaller
-import com.termux.shared.termux.TermuxConstants
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
@@ -73,6 +72,7 @@ class TerminalActivity :
             toggleKeyboard()
         }
 
+        // OnBackPressedDispatcher вместо устаревшего onBackPressed
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (drawerLayout.isDrawerOpen(GravityCompat.START))
@@ -96,30 +96,31 @@ class TerminalActivity :
         terminalSession = null
 
         try {
-            val prefix = TermuxConstants.TERMUX_PREFIX_DIR.absolutePath
-            val home = TermuxConstants.TERMUX_HOME_DIR.absolutePath
+            // Используем свои директории, overridePrefixDir больше не существует
+            val prefix = File(applicationContext.dataDir, "usr")
+            val home = File(applicationContext.dataDir, "home")
 
-            File(home).mkdirs()
-            File("$prefix/tmp").mkdirs()
+            home.mkdirs()
+            File(prefix, "tmp").mkdirs()
 
             val env = arrayOf(
                 "TERM=xterm-256color",
-                "HOME=$home",
-                "PREFIX=$prefix",
-                "PATH=$prefix/bin:$prefix/bin/applets",
-                "LD_LIBRARY_PATH=$prefix/lib",
+                "HOME=${home.absolutePath}",
+                "PREFIX=${prefix.absolutePath}",
+                "PATH=${prefix.absolutePath}/bin:${prefix.absolutePath}/bin/applets",
+                "LD_LIBRARY_PATH=${prefix.absolutePath}/lib",
                 "LANG=en_US.UTF-8"
             )
 
             val shell = when {
-                File("$prefix/bin/bash").canExecute() -> "$prefix/bin/bash"
-                File("$prefix/bin/sh").canExecute() -> "$prefix/bin/sh"
+                File(prefix, "bin/bash").canExecute() -> File(prefix, "bin/bash").absolutePath
+                File(prefix, "bin/sh").canExecute() -> File(prefix, "bin/sh").absolutePath
                 else -> "/system/bin/sh"
             }
 
             terminalSession = TerminalSession(
                 shell,
-                home,
+                home.absolutePath,
                 arrayOf("-l"),
                 env,
                 2000,
@@ -188,8 +189,6 @@ class TerminalActivity :
     // ────────────────────────────────
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
-
-    // ✅ Обязательный override для onKeyUp (теперь без session)
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = false
 
     override fun onSingleTapUp(event: MotionEvent) { showKeyboard() }
@@ -208,9 +207,6 @@ class TerminalActivity :
     override fun readFnKey(): Boolean = false
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
     override fun onEmulatorSet() { Log.d(TAG, "Terminal emulator set") }
-
-    @Deprecated("Handled via OnBackPressedDispatcher")
-    override fun onBackPressed() { super.onBackPressed() }
 
     override fun onDestroy() {
         terminalSession?.finishIfRunning()
