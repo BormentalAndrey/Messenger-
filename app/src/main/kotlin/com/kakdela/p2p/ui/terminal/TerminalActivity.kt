@@ -6,7 +6,11 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Bundle
 import android.util.Log
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import android.widget.ImageButton
 import androidx.appcompat.app.AppCompatActivity
@@ -19,9 +23,10 @@ import com.termux.shared.termux.TermuxConstants
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
+import com.termux.view.TerminalViewClient
 import java.io.File
 
-class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
+class TerminalActivity : AppCompatActivity(), TerminalSessionClient, TerminalViewClient {
 
     private lateinit var mTerminalView: TerminalView
     private lateinit var mDrawerLayout: DrawerLayout
@@ -46,10 +51,13 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
         val newSessionButton: MaterialButton = findViewById(R.id.new_session_button)
         val toggleKeyboardButton: MaterialButton = findViewById(R.id.toggle_keyboard_button)
 
+        // Критично: привязываем клиент до любого фокуса/ввода
+        mTerminalView.setTerminalViewClient(this)
+
         mTerminalView.apply {
             setTextSize(35)
             keepScreenOn = true
-            requestFocus()
+            // requestFocus() убираем отсюда — перенесём после bootstrap
             setOnClickListener { showSoftKeyboard() }
         }
 
@@ -70,19 +78,23 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
             toggleSoftKeyboard()
         }
 
+        // Запускаем bootstrap и только после него — сессию + фокус
         TermuxInstaller.setupBootstrapIfNeeded(this, Runnable {
             TermuxInstaller.setupStorageSymlinks(this)
             setupTerminalSession()
+            // Только после успешной инициализации
+            mTerminalView.requestFocus()
+            mTerminalView.postDelayed({
+                showSoftKeyboard()
+            }, 400)
         })
     }
 
     private fun setupTerminalSession() {
-
         mTerminalSession?.finishIfRunning()
         mTerminalSession = null
 
         try {
-
             val prefixDir = TermuxConstants.TERMUX_PREFIX_DIR.absolutePath
             val homeDir = TermuxConstants.TERMUX_HOME_DIR.absolutePath
 
@@ -115,16 +127,14 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
                 arrayOf("-l"),
                 env,
                 2000,
-                this
+                this  // TerminalSessionClient
             )
 
             mTerminalSession = session
             mTerminalView.attachSession(session)
             mTerminalView.onScreenUpdated()
 
-            mTerminalView.postDelayed({
-                showSoftKeyboard()
-            }, 400)
+            // showSoftKeyboard перенесён в колбэк после bootstrap
 
         } catch (e: Throwable) {
             Log.e(TAG, "Failed to setup terminal session", e)
@@ -132,17 +142,25 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
     }
 
     private fun showSoftKeyboard() {
-        mTerminalView.requestFocus()
+        if (!mTerminalView.hasFocus()) {
+            mTerminalView.requestFocus()
+        }
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         imm.showSoftInput(mTerminalView, InputMethodManager.SHOW_IMPLICIT)
     }
 
     private fun toggleSoftKeyboard() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
+        if (imm.isAcceptingText) {
+            imm.hideSoftInputFromWindow(mTerminalView.windowToken, 0)
+        } else {
+            imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
+        }
     }
 
-    // ---------------- TerminalSessionClient ----------------
+    // ───────────────────────────────────────────────
+    // TerminalSessionClient методы (без изменений)
+    // ───────────────────────────────────────────────
 
     override fun onTextChanged(session: TerminalSession) {
         mTerminalView.onScreenUpdated()
@@ -173,8 +191,7 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
     override fun getTerminalCursorStyle(): Int = 0
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
 
-    // ---------------- Logging ----------------
-
+    // Логирование
     override fun logError(tag: String?, message: String?) {
         Log.e(tag ?: TAG, message ?: "")
     }
@@ -203,6 +220,53 @@ class TerminalActivity : AppCompatActivity(), TerminalSessionClient {
         Log.e(tag ?: TAG, "Stack trace", e)
     }
 
+    // ───────────────────────────────────────────────
+    // TerminalViewClient методы — полная реализация
+    // ───────────────────────────────────────────────
+
+    override fun onCreateInputConnection(outAttrs: EditorInfo?): InputConnection? {
+        // Если сессия ещё не готова — не даём клавиатуре появиться слишком рано
+        if (mTerminalSession == null) {
+            return null
+        }
+        // Делегируем стандартной реализации TerminalView
+        return mTerminalView.onCreateInputConnection(outAttrs)
+    }
+
+    override fun onKeyDown(keyCode: Int, e: KeyEvent?): Boolean {
+        // Здесь можно добавить обработку специальных клавиш, если нужно
+        return false // по умолчанию не обрабатываем — пусть TerminalView сам
+    }
+
+    override fun onKeyUp(keyCode: Int, e: KeyEvent?): Boolean {
+        return false
+    }
+
+    override fun onLongPress(event: MotionEvent?): Boolean {
+        // Стандартное поведение Termux — копирование/вставка по long press
+        return false // false = позволить Termux обработать
+    }
+
+    override fun onScale(scale: Float, focusX: Float, focusY: Float): Boolean {
+        // Масштабирование (pinch-to-zoom)
+        return false // позволить Termux
+    }
+
+    override fun onSingleTapUp(event: MotionEvent?): Boolean {
+        // Тап по экрану — можно показать клавиатуру
+        showSoftKeyboard()
+        return true
+    }
+
+    override fun shouldCopyOnLongPress(): Boolean = true
+
+    override fun shouldPasteOnLongPress(): Boolean = true
+
+    override fun shouldEnqueueInputOnSoftwareKeyboard(): Boolean = true
+
+    override fun isTerminalViewScalingDisabled(): Boolean = false  // разрешить pinch-zoom
+
+    // Жизненный цикл
     override fun onResume() {
         super.onResume()
         mTerminalView.onScreenUpdated()
