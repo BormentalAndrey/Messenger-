@@ -45,8 +45,7 @@ public final class TermuxInstaller {
 
     public static void setupBootstrapIfNeeded(final Activity activity, final Runnable whenDone) {
 
-        // Переопределяем prefix в безопасное место
-        TermuxConstants.overridePrefixDir(new File(activity.getDataDir(), "usr"));
+        // ⚠ overridePrefixDir больше не существует в актуальном termux-shared
 
         if (FileUtils.directoryFileExists(TermuxConstants.TERMUX_PREFIX_DIR_PATH, true)
                 && !TermuxFileUtils.isTermuxPrefixDirectoryEmpty()) {
@@ -275,4 +274,4 @@ public final class TermuxInstaller {
         }
         file.delete();
     }
-}
+        }
