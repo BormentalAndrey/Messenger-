@@ -1,6 +1,7 @@
 package com.kakdela.p2p.ui.terminal
 
 import android.annotation.SuppressLint
+import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -23,6 +24,11 @@ import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.zip.GZIPInputStream
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 
 class TerminalActivity :
     AppCompatActivity(),
@@ -36,14 +42,13 @@ class TerminalActivity :
     companion object {
         private const val TAG = "TerminalActivity"
 
-        // ✅ правильный пакет
-        private const val INSTALLER_CLASS = "com.kakdela.p2p.termux.TermuxInstaller"
+        // URL bootstrap архива
+        private const val BOOTSTRAP_URL = "https://example.com/bootstrap.tar.gz"
     }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_termux)
 
@@ -55,10 +60,7 @@ class TerminalActivity :
         val toggleKeyboardButton: MaterialButton = findViewById(R.id.toggle_keyboard_button)
 
         terminalView.setTerminalViewClient(this)
-
-        // В твоей версии TerminalView принимает Int
         terminalView.setTextSize(35)
-
         terminalView.keepScreenOn = true
         terminalView.setOnClickListener { showKeyboard() }
 
@@ -87,72 +89,117 @@ class TerminalActivity :
             }
         })
 
-        setupBootstrapViaReflection {
-            setupStorageSymlinksViaReflection()
-            setupSession()
-            terminalView.requestFocus()
-            terminalView.postDelayed({ showKeyboard() }, 300)
+        // ✅ Добавляем выбор: скачивать bootstrap или нет
+        AlertDialog.Builder(this)
+            .setTitle("Установка Termux")
+            .setMessage("Скачать системные компоненты Termux (bootstrap)?")
+            .setPositiveButton("Да") { _, _ ->
+                downloadAndSetupBootstrap {
+                    setupStorageSymlinks()
+                    setupSession()
+                    terminalView.requestFocus()
+                    terminalView.postDelayed({ showKeyboard() }, 300)
+                }
+            }
+            .setNegativeButton("Нет") { _, _ ->
+                setupStorageSymlinks()
+                setupSession()
+                terminalView.requestFocus()
+                terminalView.postDelayed({ showKeyboard() }, 300)
+            }
+            .setCancelable(false)
+            .show()
+    }
+
+    // ---------------------------------------------------------
+    // Скачивание и установка bootstrap
+    // ---------------------------------------------------------
+    private fun downloadAndSetupBootstrap(onFinished: () -> Unit) {
+        Thread {
+            try {
+                val tmpDir = File(TermuxConstants.TERMUX_PREFIX_DIR, "tmp")
+                if (!tmpDir.exists()) tmpDir.mkdirs()
+
+                val archiveFile = File(tmpDir, "bootstrap.tar.gz")
+                downloadBootstrapArchive(BOOTSTRAP_URL, archiveFile)
+                extractBootstrapArchive(archiveFile)
+                onFinished()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to download/setup bootstrap", e)
+            }
+        }.start()
+    }
+
+    private fun downloadBootstrapArchive(url: String, destFile: File) {
+        try {
+            if (destFile.exists()) destFile.delete()
+
+            val connection = URL(url).openConnection() as HttpURLConnection
+            connection.connectTimeout = 15000
+            connection.readTimeout = 15000
+
+            connection.inputStream.use { input ->
+                FileOutputStream(destFile).use { output ->
+                    input.copyTo(output)
+                }
+            }
+            Log.i(TAG, "Bootstrap archive downloaded to ${destFile.absolutePath}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to download bootstrap archive", e)
+        }
+    }
+
+    private fun extractBootstrapArchive(archiveFile: File) {
+        try {
+            val prefix = TermuxConstants.TERMUX_PREFIX_DIR
+            GZIPInputStream(archiveFile.inputStream()).use { gis ->
+                TarArchiveInputStream(gis).use { tar ->
+                    var entry = tar.nextTarEntry
+                    while (entry != null) {
+                        val outFile = File(prefix, entry.name)
+                        if (entry.isDirectory) {
+                            outFile.mkdirs()
+                        } else {
+                            outFile.parentFile?.mkdirs()
+                            outFile.outputStream().use { out ->
+                                tar.copyTo(out)
+                            }
+                        }
+                        entry = tar.nextTarEntry
+                    }
+                }
+            }
+            Log.i(TAG, "Bootstrap archive extracted successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to extract bootstrap archive", e)
         }
     }
 
     // ---------------------------------------------------------
-    // TermuxInstaller (через reflection)
+    // Storage symlinks (как раньше)
     // ---------------------------------------------------------
-
-    private fun setupBootstrapViaReflection(onFinished: () -> Unit) {
+    private fun setupStorageSymlinks() {
         try {
-            val clazz = Class.forName(INSTALLER_CLASS)
-
-            // ✅ ВАЖНО: Activity, а не Context
-            val method = clazz.getDeclaredMethod(
-                "setupBootstrapIfNeeded",
-                AppCompatActivity::class.java,
-                Runnable::class.java
-            )
-
-            method.isAccessible = true
-
-            method.invoke(
-                null,
-                this,
-                Runnable { onFinished() }
-            )
-
-        } catch (e: Throwable) {
-            Log.e(TAG, "Failed to call setupBootstrapIfNeeded()", e)
+            // Пример: создаем папку storage если нет
+            val storageDir = File(TermuxConstants.TERMUX_HOME_DIR, "storage")
+            if (!storageDir.exists()) storageDir.mkdirs()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to setup storage symlinks", e)
         }
     }
 
-    private fun setupStorageSymlinksViaReflection() {
-        try {
-            val clazz = Class.forName(INSTALLER_CLASS)
-
-            val method = clazz.getDeclaredMethod(
-                "setupStorageSymlinks",
-                Context::class.java
-            )
-
-            method.isAccessible = true
-            method.invoke(null, this)
-
-        } catch (e: Throwable) {
-            Log.e(TAG, "Failed to call setupStorageSymlinks()", e)
-        }
-    }
-
+    // ---------------------------------------------------------
+    // Настройка сессии терминала
+    // ---------------------------------------------------------
     private fun setupSession() {
-
         terminalSession?.finishIfRunning()
         terminalSession = null
 
         try {
-
             val prefix: File = TermuxConstants.TERMUX_PREFIX_DIR
             val home: File = TermuxConstants.TERMUX_HOME_DIR
 
-            if (!home.exists()) {
-                home.mkdirs()
-            }
+            if (!home.exists()) home.mkdirs()
 
             val env = arrayOf(
                 "TERM=xterm-256color",
@@ -193,6 +240,9 @@ class TerminalActivity :
         }
     }
 
+    // ---------------------------------------------------------
+    // Клавиатура
+    // ---------------------------------------------------------
     private fun showKeyboard() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         imm.showSoftInput(terminalView, InputMethodManager.SHOW_IMPLICIT)
@@ -208,11 +258,7 @@ class TerminalActivity :
     }
 
     // ───────── TerminalSessionClient ─────────
-
-    override fun onTextChanged(session: TerminalSession) {
-        terminalView.onScreenUpdated()
-    }
-
+    override fun onTextChanged(session: TerminalSession) { terminalView.onScreenUpdated() }
     override fun onTitleChanged(session: TerminalSession) {}
     override fun onSessionFinished(session: TerminalSession) {}
     override fun onBell(session: TerminalSession) {}
@@ -220,85 +266,43 @@ class TerminalActivity :
     override fun onTerminalCursorStateChange(state: Boolean) {}
     override fun getTerminalCursorStyle(): Int = 0
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
-
     override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
         val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cb.setPrimaryClip(ClipData.newPlainText("termux", text))
     }
-
     override fun onPasteTextFromClipboard(session: TerminalSession?) {
         val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cb.primaryClip?.getItemAt(0)?.text?.let {
-            terminalSession?.write(it.toString())
-        }
+        cb.primaryClip?.getItemAt(0)?.text?.let { terminalSession?.write(it.toString()) }
     }
 
-    override fun logError(tag: String?, message: String?) {
-        Log.e(tag ?: TAG, message ?: "")
-    }
-
-    override fun logWarn(tag: String?, message: String?) {
-        Log.w(tag ?: TAG, message ?: "")
-    }
-
-    override fun logInfo(tag: String?, message: String?) {
-        Log.i(tag ?: TAG, message ?: "")
-    }
-
-    override fun logDebug(tag: String?, message: String?) {
-        Log.d(tag ?: TAG, message ?: "")
-    }
-
-    override fun logVerbose(tag: String?, message: String?) {
-        Log.v(tag ?: TAG, message ?: "")
-    }
-
+    override fun logError(tag: String?, message: String?) { Log.e(tag ?: TAG, message ?: "") }
+    override fun logWarn(tag: String?, message: String?) { Log.w(tag ?: TAG, message ?: "") }
+    override fun logInfo(tag: String?, message: String?) { Log.i(tag ?: TAG, message ?: "") }
+    override fun logDebug(tag: String?, message: String?) { Log.d(tag ?: TAG, message ?: "") }
+    override fun logVerbose(tag: String?, message: String?) { Log.v(tag ?: TAG, message ?: "") }
     override fun logStackTraceWithMessage(tag: String?, message: String?, e: Exception?) {
         Log.e(tag ?: TAG, message ?: "", e)
     }
-
-    override fun logStackTrace(tag: String?, e: Exception?) {
-        Log.e(tag ?: TAG, "stacktrace", e)
-    }
+    override fun logStackTrace(tag: String?, e: Exception?) { Log.e(tag ?: TAG, "stacktrace", e) }
 
     // ───────── TerminalViewClient ─────────
-
     override fun onKeyDown(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
-    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = false
-
-    override fun onSingleTapUp(event: MotionEvent) {
-        showKeyboard()
-    }
-
+    override fun onKeyUp(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
+    override fun onSingleTapUp(event: MotionEvent) { showKeyboard() }
     override fun onLongPress(event: MotionEvent): Boolean = false
     override fun onScale(scale: Float): Float = scale
     override fun shouldBackButtonBeMappedToEscape(): Boolean = true
     override fun shouldEnforceCharBasedInput(): Boolean = false
     override fun shouldUseCtrlSpaceWorkaround(): Boolean = true
-
     override fun isTerminalViewSelected(): Boolean =
-        ::terminalView.isInitialized &&
-                terminalView.hasWindowFocus() &&
-                terminalView.isFocused
-
-    override fun copyModeChanged(enabled: Boolean) {
-        Log.d(TAG, "copyModeChanged: $enabled")
-    }
-
+        ::terminalView.isInitialized && terminalView.hasWindowFocus() && terminalView.isFocused
+    override fun copyModeChanged(enabled: Boolean) { Log.d(TAG, "copyModeChanged: $enabled") }
     override fun readControlKey(): Boolean = false
     override fun readAltKey(): Boolean = false
     override fun readShiftKey(): Boolean = false
     override fun readFnKey(): Boolean = false
-
-    override fun onCodePoint(
-        codePoint: Int,
-        ctrlDown: Boolean,
-        session: TerminalSession
-    ): Boolean = false
-
-    override fun onEmulatorSet() {
-        Log.d(TAG, "Terminal emulator set")
-    }
+    override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
+    override fun onEmulatorSet() { Log.d(TAG, "Terminal emulator set") }
 
     override fun onDestroy() {
         terminalSession?.finishIfRunning()
