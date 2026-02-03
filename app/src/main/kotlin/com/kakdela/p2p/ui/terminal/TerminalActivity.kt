@@ -9,8 +9,6 @@ import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.WindowManager
-import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import android.widget.ImageButton
 import androidx.appcompat.app.AppCompatActivity
@@ -26,13 +24,14 @@ import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
 import java.io.File
 
-class TerminalActivity : AppCompatActivity(),
+class TerminalActivity :
+    AppCompatActivity(),
     TerminalSessionClient,
     TerminalViewClient {
 
-    private lateinit var mTerminalView: TerminalView
-    private lateinit var mDrawerLayout: DrawerLayout
-    private var mTerminalSession: TerminalSession? = null
+    private lateinit var terminalView: TerminalView
+    private lateinit var drawerLayout: DrawerLayout
+    private var terminalSession: TerminalSession? = null
 
     companion object {
         private const val TAG = "TerminalActivity"
@@ -43,151 +42,128 @@ class TerminalActivity : AppCompatActivity(),
         super.onCreate(savedInstanceState)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
         setContentView(R.layout.activity_termux)
 
-        mTerminalView = findViewById(R.id.terminal_view)
-        mDrawerLayout = findViewById(R.id.drawer_layout)
+        terminalView = findViewById(R.id.terminal_view)
+        drawerLayout = findViewById(R.id.drawer_layout)
 
         val settingsButton: ImageButton = findViewById(R.id.settings_button)
         val newSessionButton: MaterialButton = findViewById(R.id.new_session_button)
         val toggleKeyboardButton: MaterialButton = findViewById(R.id.toggle_keyboard_button)
 
-        mTerminalView.setTerminalViewClient(this)
-
-        mTerminalView.apply {
-            setTextSize(35)
-            keepScreenOn = true
-            setOnClickListener { showSoftKeyboard() }
-        }
+        terminalView.setTerminalViewClient(this)
+        terminalView.setTextSize(35)
+        terminalView.keepScreenOn = true
+        terminalView.setOnClickListener { showKeyboard() }
 
         settingsButton.setOnClickListener {
-            if (!mDrawerLayout.isDrawerOpen(GravityCompat.START)) {
-                mDrawerLayout.openDrawer(GravityCompat.START)
-            } else {
-                mDrawerLayout.closeDrawer(GravityCompat.START)
-            }
+            if (drawerLayout.isDrawerOpen(GravityCompat.START))
+                drawerLayout.closeDrawer(GravityCompat.START)
+            else
+                drawerLayout.openDrawer(GravityCompat.START)
         }
 
         newSessionButton.setOnClickListener {
-            setupTerminalSession()
-            mDrawerLayout.closeDrawer(GravityCompat.START)
+            setupSession()
+            drawerLayout.closeDrawer(GravityCompat.START)
         }
 
         toggleKeyboardButton.setOnClickListener {
-            toggleSoftKeyboard()
+            toggleKeyboard()
         }
 
         TermuxInstaller.setupBootstrapIfNeeded(this, Runnable {
             TermuxInstaller.setupStorageSymlinks(this)
-            setupTerminalSession()
-
-            mTerminalView.requestFocus()
-            mTerminalView.postDelayed({
-                showSoftKeyboard()
-            }, 400)
+            setupSession()
+            terminalView.requestFocus()
+            terminalView.postDelayed({ showKeyboard() }, 300)
         })
     }
 
-    private fun setupTerminalSession() {
-        mTerminalSession?.finishIfRunning()
-        mTerminalSession = null
+    private fun setupSession() {
+        terminalSession?.finishIfRunning()
+        terminalSession = null
 
         try {
-            val prefixDir = TermuxConstants.TERMUX_PREFIX_DIR.absolutePath
-            val homeDir = TermuxConstants.TERMUX_HOME_DIR.absolutePath
+            val prefix = TermuxConstants.TERMUX_PREFIX_DIR.absolutePath
+            val home = TermuxConstants.TERMUX_HOME_DIR.absolutePath
 
-            val tmpDir = File(prefixDir, "tmp").absolutePath
-
-            File(homeDir).mkdirs()
-            File(tmpDir).mkdirs()
+            File(home).mkdirs()
+            File("$prefix/tmp").mkdirs()
 
             val env = arrayOf(
                 "TERM=xterm-256color",
-                "HOME=$homeDir",
-                "PREFIX=$prefixDir",
-                "TMPDIR=$tmpDir",
-                "PATH=$prefixDir/bin:$prefixDir/bin/applets",
-                "LD_LIBRARY_PATH=$prefixDir/lib",
-                "LANG=en_US.UTF-8",
-                "ANDROID_ROOT=${System.getenv("ANDROID_ROOT") ?: "/system"}",
-                "ANDROID_DATA=${System.getenv("ANDROID_DATA") ?: "/data"}"
+                "HOME=$home",
+                "PREFIX=$prefix",
+                "PATH=$prefix/bin:$prefix/bin/applets",
+                "LD_LIBRARY_PATH=$prefix/lib",
+                "LANG=en_US.UTF-8"
             )
 
-            val shellPath = when {
-                File("$prefixDir/bin/bash").canExecute() -> "$prefixDir/bin/bash"
-                File("$prefixDir/bin/sh").canExecute() -> "$prefixDir/bin/sh"
+            val shell = when {
+                File("$prefix/bin/bash").canExecute() -> "$prefix/bin/bash"
+                File("$prefix/bin/sh").canExecute() -> "$prefix/bin/sh"
                 else -> "/system/bin/sh"
             }
 
-            val session = TerminalSession(
-                shellPath,
-                homeDir,
+            terminalSession = TerminalSession(
+                shell,
+                home,
                 arrayOf("-l"),
                 env,
                 2000,
                 this
             )
 
-            mTerminalSession = session
-            mTerminalView.attachSession(session)
-            mTerminalView.onScreenUpdated()
+            terminalView.attachSession(terminalSession)
+            terminalView.onScreenUpdated()
 
-        } catch (e: Throwable) {
-            Log.e(TAG, "Failed to setup terminal session", e)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to start terminal", t)
         }
     }
 
-    private fun showSoftKeyboard() {
-        if (!mTerminalView.hasFocus()) {
-            mTerminalView.requestFocus()
-        }
+    private fun showKeyboard() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        imm.showSoftInput(mTerminalView, InputMethodManager.SHOW_IMPLICIT)
+        imm.showSoftInput(terminalView, InputMethodManager.SHOW_IMPLICIT)
     }
 
-    private fun toggleSoftKeyboard() {
+    private fun toggleKeyboard() {
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-        if (imm.isAcceptingText) {
-            imm.hideSoftInputFromWindow(mTerminalView.windowToken, 0)
-        } else {
+        if (imm.isAcceptingText)
+            imm.hideSoftInputFromWindow(terminalView.windowToken, 0)
+        else
             @Suppress("DEPRECATION")
             imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
-        }
     }
 
-    // --------------------------------------------------------------------
+    // ─────────────────────────────────────────────
     // TerminalSessionClient
-    // --------------------------------------------------------------------
+    // ─────────────────────────────────────────────
 
     override fun onTextChanged(session: TerminalSession) {
-        mTerminalView.onScreenUpdated()
+        terminalView.onScreenUpdated()
     }
 
     override fun onTitleChanged(session: TerminalSession) {}
-
     override fun onSessionFinished(session: TerminalSession) {}
-
-    override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("Termux", text)
-        clipboard.setPrimaryClip(clip)
-    }
-
-    override fun onPasteTextFromClipboard(session: TerminalSession?) {
-        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = clipboard.primaryClip
-        if (clip != null && clip.itemCount > 0) {
-            val text = clip.getItemAt(0).coerceToText(this).toString()
-            mTerminalSession?.write(text)
-        }
-    }
-
     override fun onBell(session: TerminalSession) {}
     override fun onColorsChanged(session: TerminalSession) {}
     override fun onTerminalCursorStateChange(state: Boolean) {}
     override fun getTerminalCursorStyle(): Int = 0
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
+
+    override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
+        val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cb.setPrimaryClip(ClipData.newPlainText("termux", text))
+    }
+
+    override fun onPasteTextFromClipboard(session: TerminalSession?) {
+        val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cb.primaryClip?.getItemAt(0)?.text?.let {
+            terminalSession?.write(it.toString())
+        }
+    }
 
     override fun logError(tag: String?, message: String?) {
         Log.e(tag ?: TAG, message ?: "")
@@ -214,67 +190,40 @@ class TerminalActivity : AppCompatActivity(),
     }
 
     override fun logStackTrace(tag: String?, e: Exception?) {
-        Log.e(tag ?: TAG, "Stack trace", e)
+        Log.e(tag ?: TAG, "stacktrace", e)
     }
 
-    // --------------------------------------------------------------------
-    // TerminalViewClient (АКТУАЛЬНЫЙ API)
-    // --------------------------------------------------------------------
+    // ─────────────────────────────────────────────
+    // TerminalViewClient — АКТУАЛЬНЫЙ API
+    // ─────────────────────────────────────────────
 
     override fun onKeyDown(
         keyCode: Int,
         event: KeyEvent,
         session: TerminalSession
-    ): Boolean {
-        return false
-    }
+    ): Boolean = false
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = false
 
     override fun onSingleTapUp(event: MotionEvent) {
-        showSoftKeyboard()
+        showKeyboard()
     }
 
-    // --------------------------------------------------------------------
-    // Остальные методы сохранены, но больше не override,
-    // т.к. их убрали из TerminalViewClient
-    // --------------------------------------------------------------------
+    override fun onLongPress(event: MotionEvent) {}
 
-    fun onCreateInputConnection(outAttrs: EditorInfo?): InputConnection? {
-        if (mTerminalSession == null) return null
-        return mTerminalView.onCreateInputConnection(outAttrs)
-    }
+    override fun onScale(scale: Float): Float = scale
 
-    fun onKeyUp(keyCode: Int, e: KeyEvent?): Boolean = false
+    // ─────────────────────────────────────────────
 
-    fun onLongPress(event: MotionEvent?): Boolean = false
-
-    fun onScale(scale: Float, focusX: Float, focusY: Float): Boolean = false
-
-    fun shouldCopyOnLongPress(): Boolean = true
-
-    fun shouldPasteOnLongPress(): Boolean = true
-
-    fun shouldEnqueueInputOnSoftwareKeyboard(): Boolean = true
-
-    fun isTerminalViewScalingDisabled(): Boolean = false
-
-    // --------------------------------------------------------------------
-
-    override fun onResume() {
-        super.onResume()
-        mTerminalView.onScreenUpdated()
-    }
-
-    @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (mDrawerLayout.isDrawerOpen(GravityCompat.START)) {
-            mDrawerLayout.closeDrawer(GravityCompat.START)
-        } else {
+        if (drawerLayout.isDrawerOpen(GravityCompat.START))
+            drawerLayout.closeDrawer(GravityCompat.START)
+        else
             super.onBackPressed()
-        }
     }
 
     override fun onDestroy() {
+        terminalSession?.finishIfRunning()
         super.onDestroy()
-        mTerminalSession?.finishIfRunning()
     }
     }
