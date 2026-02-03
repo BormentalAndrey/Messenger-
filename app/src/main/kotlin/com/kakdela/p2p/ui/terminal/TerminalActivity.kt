@@ -17,7 +17,6 @@ import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import com.google.android.material.button.MaterialButton
 import com.kakdela.p2p.R
-import com.kakdela.p2p.termux.TermuxInstaller
 import com.termux.shared.termux.TermuxConstants
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
@@ -36,6 +35,7 @@ class TerminalActivity :
 
     companion object {
         private const val TAG = "TerminalActivity"
+        private const val INSTALLER_CLASS = "com.kakdela.p2p.termux.TermuxInstaller"
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -53,7 +53,10 @@ class TerminalActivity :
         val toggleKeyboardButton: MaterialButton = findViewById(R.id.toggle_keyboard_button)
 
         terminalView.setTerminalViewClient(this)
-        terminalView.setTextSize(35f)
+
+        // В твоей версии TermuxView принимает Int
+        terminalView.setTextSize(35)
+
         terminalView.keepScreenOn = true
         terminalView.setOnClickListener { showKeyboard() }
 
@@ -82,11 +85,55 @@ class TerminalActivity :
             }
         })
 
-        TermuxInstaller.setupBootstrapIfNeeded(this) {
-            TermuxInstaller.setupStorageSymlinks(this)
+        setupBootstrapViaReflection {
+            setupStorageSymlinksViaReflection()
             setupSession()
             terminalView.requestFocus()
             terminalView.postDelayed({ showKeyboard() }, 300)
+        }
+    }
+
+    // ---------------------------------------------------------
+    // TermuxInstaller is package-private → reflection
+    // ---------------------------------------------------------
+
+    private fun setupBootstrapViaReflection(onFinished: () -> Unit) {
+        try {
+            val clazz = Class.forName(INSTALLER_CLASS)
+
+            val method = clazz.getDeclaredMethod(
+                "setupBootstrapIfNeeded",
+                Context::class.java,
+                Runnable::class.java
+            )
+
+            method.isAccessible = true
+
+            method.invoke(
+                null,
+                this,
+                Runnable { onFinished() }
+            )
+
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to call setupBootstrapIfNeeded()", e)
+        }
+    }
+
+    private fun setupStorageSymlinksViaReflection() {
+        try {
+            val clazz = Class.forName(INSTALLER_CLASS)
+
+            val method = clazz.getDeclaredMethod(
+                "setupStorageSymlinks",
+                Context::class.java
+            )
+
+            method.isAccessible = true
+            method.invoke(null, this)
+
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to call setupStorageSymlinks()", e)
         }
     }
 
@@ -228,8 +275,8 @@ class TerminalActivity :
 
     override fun isTerminalViewSelected(): Boolean =
         ::terminalView.isInitialized &&
-            terminalView.hasWindowFocus() &&
-            terminalView.isFocused
+                terminalView.hasWindowFocus() &&
+                terminalView.isFocused
 
     override fun copyModeChanged(enabled: Boolean) {
         Log.d(TAG, "copyModeChanged: $enabled")
