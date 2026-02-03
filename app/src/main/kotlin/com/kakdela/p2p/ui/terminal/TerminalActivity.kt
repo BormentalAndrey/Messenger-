@@ -283,7 +283,7 @@ class TerminalActivity :
     override fun logStackTrace(tag: String?, e: Exception?) { Log.e(tag ?: TAG, "stacktrace", e) }
 
     // ───────── TerminalViewClient ─────────
-    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean = false
+    override fun onKeyDown(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = false
     override fun onSingleTapUp(event: MotionEvent) { showKeyboard() }
     override fun onLongPress(event: MotionEvent): Boolean = false
