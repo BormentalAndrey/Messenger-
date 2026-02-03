@@ -17,7 +17,7 @@ import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import com.google.android.material.button.MaterialButton
 import com.kakdela.p2p.R
-import com.termux.app.TermuxInstaller
+import com.kakdela.p2p.termux.TermuxInstaller
 import com.termux.shared.termux.TermuxConstants
 import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
