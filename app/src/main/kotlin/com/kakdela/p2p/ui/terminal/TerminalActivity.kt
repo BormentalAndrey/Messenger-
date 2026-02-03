@@ -233,6 +233,10 @@ class TerminalActivity :
         return true
     }
 
+    override fun shouldEnforceCharBasedInput(): Boolean {
+        return false
+    }
+
     // ─────────────────────────────────────────────
 
     @Deprecated("Handled via OnBackPressedDispatcher")
