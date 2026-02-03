@@ -72,7 +72,7 @@ class TerminalActivity :
             toggleKeyboard()
         }
 
-        // OnBackPressedDispatcher вместо устаревшего onBackPressed
+        // Используем OnBackPressedDispatcher вместо устаревшего onBackPressed
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 if (drawerLayout.isDrawerOpen(GravityCompat.START))
@@ -83,12 +83,12 @@ class TerminalActivity :
         })
 
         // Запуск Termux bootstrap
-        TermuxInstaller.setupBootstrapIfNeeded(this, Runnable {
+        TermuxInstaller.setupBootstrapIfNeeded(this) {
             TermuxInstaller.setupStorageSymlinks(this)
             setupSession()
             terminalView.requestFocus()
             terminalView.postDelayed({ showKeyboard() }, 300)
-        })
+        }
     }
 
     private fun setupSession() {
@@ -96,12 +96,14 @@ class TerminalActivity :
         terminalSession = null
 
         try {
-            // Используем свои директории, overridePrefixDir больше не существует
+            // Создаем свои директории Termux в dataDir
             val prefix = File(applicationContext.dataDir, "usr")
             val home = File(applicationContext.dataDir, "home")
 
             home.mkdirs()
             File(prefix, "tmp").mkdirs()
+            File(prefix, "bin/applets").mkdirs()
+            File(prefix, "lib").mkdirs()
 
             val env = arrayOf(
                 "TERM=xterm-256color",
