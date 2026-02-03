@@ -1,4 +1,4 @@
-package com.termux.app;
+package com.kakdela.p2p.termux;
 
 import android.app.Activity;
 import android.app.AlertDialog;
