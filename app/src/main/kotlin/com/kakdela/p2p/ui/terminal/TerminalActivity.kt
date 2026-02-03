@@ -11,6 +11,7 @@ import android.view.MotionEvent
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.ImageButton
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
@@ -71,6 +72,15 @@ class TerminalActivity :
         toggleKeyboardButton.setOnClickListener {
             toggleKeyboard()
         }
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (drawerLayout.isDrawerOpen(GravityCompat.START))
+                    drawerLayout.closeDrawer(GravityCompat.START)
+                else
+                    finish()
+            }
+        })
 
         TermuxInstaller.setupBootstrapIfNeeded(this, Runnable {
             TermuxInstaller.setupStorageSymlinks(this)
@@ -194,32 +204,40 @@ class TerminalActivity :
     }
 
     // ─────────────────────────────────────────────
-    // TerminalViewClient — АКТУАЛЬНЫЙ API
+    // TerminalViewClient — актуальный API
     // ─────────────────────────────────────────────
 
     override fun onKeyDown(
         keyCode: Int,
         event: KeyEvent,
         session: TerminalSession
-    ): Boolean = false
+    ): Boolean {
+        return false
+    }
 
-    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = false
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        return false
+    }
 
     override fun onSingleTapUp(event: MotionEvent) {
         showKeyboard()
     }
 
-    override fun onLongPress(event: MotionEvent) {}
+    override fun onLongPress(event: MotionEvent): Boolean {
+        return false
+    }
 
     override fun onScale(scale: Float): Float = scale
 
+    override fun shouldBackButtonBeMappedToEscape(): Boolean {
+        return true
+    }
+
     // ─────────────────────────────────────────────
 
+    @Deprecated("Handled via OnBackPressedDispatcher")
     override fun onBackPressed() {
-        if (drawerLayout.isDrawerOpen(GravityCompat.START))
-            drawerLayout.closeDrawer(GravityCompat.START)
-        else
-            super.onBackPressed()
+        super.onBackPressed()
     }
 
     override fun onDestroy() {
