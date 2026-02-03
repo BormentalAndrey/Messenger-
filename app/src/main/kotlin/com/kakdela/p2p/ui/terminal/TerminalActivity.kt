@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
@@ -23,12 +24,12 @@ import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.zip.GZIPInputStream
-import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 
 class TerminalActivity :
     AppCompatActivity(),
@@ -41,7 +42,17 @@ class TerminalActivity :
 
     companion object {
         private const val TAG = "TerminalActivity"
-        private const val BOOTSTRAP_URL = "https://example.com/bootstrap.tar.gz"
+
+        // GitHub Termux bootstrap release
+        private const val GITHUB_BASE_URL =
+            "https://github.com/termux/termux-packages/releases/download/bootstrap"
+
+        private val ARCH_BOOTSTRAPS = mapOf(
+            "armeabi-v7a" to "bootstrap-aarch32.tar.gz",
+            "arm64-v8a" to "bootstrap-aarch64.tar.gz",
+            "x86" to "bootstrap-x86_32.tar.gz",
+            "x86_64" to "bootstrap-x86_64.tar.gz"
+        )
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -92,7 +103,12 @@ class TerminalActivity :
             .setTitle("Установка Termux")
             .setMessage("Скачать системные компоненты Termux (bootstrap)?")
             .setPositiveButton("Да") { _, _ ->
-                downloadAndSetupBootstrap {
+                val arch = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+                val archiveName = ARCH_BOOTSTRAPS[arch] ?: ARCH_BOOTSTRAPS["arm64-v8a"]!!
+                val url = "$GITHUB_BASE_URL/$archiveName"
+                Log.i(TAG, "Selected architecture: $arch, bootstrap URL: $url")
+
+                downloadAndSetupBootstrap(url) {
                     setupStorageSymlinks()
                     setupSession()
                     terminalView.requestFocus()
@@ -112,14 +128,14 @@ class TerminalActivity :
     // ---------------------------------------------------------
     // Скачивание и установка bootstrap
     // ---------------------------------------------------------
-    private fun downloadAndSetupBootstrap(onFinished: () -> Unit) {
+    private fun downloadAndSetupBootstrap(url: String, onFinished: () -> Unit) {
         Thread {
             try {
                 val tmpDir = File(TermuxConstants.TERMUX_PREFIX_DIR, "tmp")
                 if (!tmpDir.exists()) tmpDir.mkdirs()
 
                 val archiveFile = File(tmpDir, "bootstrap.tar.gz")
-                downloadBootstrapArchive(BOOTSTRAP_URL, archiveFile)
+                downloadBootstrapArchive(url, archiveFile)
                 extractBootstrapArchive(archiveFile)
                 onFinished()
             } catch (e: Exception) {
@@ -284,7 +300,7 @@ class TerminalActivity :
 
     // ───────── TerminalViewClient ─────────
     override fun onKeyDown(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
-    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = false
+    override fun onKeyUp(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
     override fun onSingleTapUp(event: MotionEvent) { showKeyboard() }
     override fun onLongPress(event: MotionEvent): Boolean = false
     override fun onScale(scale: Float): Float = scale
