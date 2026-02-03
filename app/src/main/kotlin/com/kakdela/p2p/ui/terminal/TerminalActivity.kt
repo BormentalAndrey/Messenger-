@@ -241,6 +241,12 @@ class TerminalActivity :
         return true
     }
 
+    override fun isTerminalViewSelected(): Boolean {
+        return ::terminalView.isInitialized &&
+                terminalView.hasWindowFocus() &&
+                terminalView.isFocused
+    }
+
     // ─────────────────────────────────────────────
 
     @Deprecated("Handled via OnBackPressedDispatcher")
