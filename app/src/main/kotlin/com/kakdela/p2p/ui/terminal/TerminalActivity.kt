@@ -187,8 +187,6 @@ class TerminalActivity :
     // TerminalViewClient
     // ────────────────────────────────
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
-    override fun onKeyUp(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
     override fun onSingleTapUp(event: MotionEvent) { showKeyboard() }
     override fun onLongPress(event: MotionEvent): Boolean = false
     override fun onScale(scale: Float): Float = scale
