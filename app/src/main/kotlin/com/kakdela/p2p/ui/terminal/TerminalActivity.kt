@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
@@ -46,9 +45,6 @@ class TerminalActivity :
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_termux)
 
-        // Перенос Termux PREFIX в getDataDir для возможности exec
-        TermuxConstants.overridePrefixDir(File(applicationContext.dataDir, "usr"))
-
         terminalView = findViewById(R.id.terminal_view)
         drawerLayout = findViewById(R.id.drawer_layout)
 
@@ -86,6 +82,7 @@ class TerminalActivity :
             }
         })
 
+        // Запуск Termux bootstrap
         TermuxInstaller.setupBootstrapIfNeeded(this, Runnable {
             TermuxInstaller.setupStorageSymlinks(this)
             setupSession()
@@ -151,9 +148,9 @@ class TerminalActivity :
             imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
     }
 
-    // ─────────────────────────────────────────────
+    // ────────────────────────────────
     // TerminalSessionClient
-    // ─────────────────────────────────────────────
+    // ────────────────────────────────
 
     override fun onTextChanged(session: TerminalSession) { terminalView.onScreenUpdated() }
     override fun onTitleChanged(session: TerminalSession) {}
@@ -186,12 +183,12 @@ class TerminalActivity :
     }
     override fun logStackTrace(tag: String?, e: Exception?) { Log.e(tag ?: TAG, "stacktrace", e) }
 
-    // ─────────────────────────────────────────────
-    // TerminalViewClient — полный API
-    // ─────────────────────────────────────────────
+    // ────────────────────────────────
+    // TerminalViewClient
+    // ────────────────────────────────
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
-    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = false
+    override fun onKeyUp(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
     override fun onSingleTapUp(event: MotionEvent) { showKeyboard() }
     override fun onLongPress(event: MotionEvent): Boolean = false
     override fun onScale(scale: Float): Float = scale
@@ -208,8 +205,6 @@ class TerminalActivity :
     override fun readFnKey(): Boolean = false
     override fun onCodePoint(codePoint: Int, ctrlDown: Boolean, session: TerminalSession): Boolean = false
     override fun onEmulatorSet() { Log.d(TAG, "Terminal emulator set") }
-
-    // ─────────────────────────────────────────────
 
     @Deprecated("Handled via OnBackPressedDispatcher")
     override fun onBackPressed() { super.onBackPressed() }
