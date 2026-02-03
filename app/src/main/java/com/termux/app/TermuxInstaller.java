@@ -96,7 +96,11 @@ public final class TermuxInstaller {
 
             } catch (Exception e) {
 
-                Logger.logError(LOG_TAG, "Bootstrap error", e);
+                // ВАЖНО: в Logger нет overload с Throwable
+                Logger.logError(
+                        LOG_TAG,
+                        "Bootstrap error:\n" + Log.getStackTraceString(e)
+                );
 
                 activity.runOnUiThread(() -> {
                     if (progress.isShowing()) progress.dismiss();
@@ -130,7 +134,8 @@ public final class TermuxInstaller {
         return BOOTSTRAP_BASE_URL + "/bootstrap-" + arch + ".zip";
     }
 
-    private static void downloadFile(String urlStr, File dest,
+    private static void downloadFile(String urlStr,
+                                     File dest,
                                      ProgressDialog progress,
                                      Activity activity) throws Exception {
 
@@ -285,20 +290,22 @@ public final class TermuxInstaller {
                                                 Runnable whenDone,
                                                 String message) {
 
-        new AlertDialog.Builder(activity)
-                .setTitle("Ошибка установки")
-                .setMessage(
-                        "Не удалось загрузить компоненты Termux.\n\n" +
-                                "Детали: " + message + "\n\n" +
-                                "Проверьте интернет."
-                )
-                .setCancelable(false)
-                .setNegativeButton("Выход",
-                        (d, w) -> activity.finish())
-                .setPositiveButton("Повторить",
-                        (d, w) ->
-                                setupBootstrapIfNeeded(activity, whenDone))
-                .show();
+        activity.runOnUiThread(() ->
+                new AlertDialog.Builder(activity)
+                        .setTitle("Ошибка установки")
+                        .setMessage(
+                                "Не удалось загрузить компоненты Termux.\n\n" +
+                                        "Детали: " + message + "\n\n" +
+                                        "Проверьте интернет."
+                        )
+                        .setCancelable(false)
+                        .setNegativeButton("Выход",
+                                (d, w) -> activity.finish())
+                        .setPositiveButton("Повторить",
+                                (d, w) ->
+                                        setupBootstrapIfNeeded(activity, whenDone))
+                        .show()
+        );
     }
 
     public static void setupStorageSymlinks(Context context) {
@@ -351,7 +358,12 @@ public final class TermuxInstaller {
                 }
 
             } catch (Throwable e) {
-                Logger.logError(LOG_TAG, "Storage symlink error", e);
+
+                // ВАЖНО: снова без overload с Throwable
+                Logger.logError(
+                        LOG_TAG,
+                        "Storage symlink error:\n" + Log.getStackTraceString(e)
+                );
             }
 
         }).start();
@@ -374,4 +386,4 @@ public final class TermuxInstaller {
 
         file.delete();
     }
-}
+                    }
