@@ -237,6 +237,10 @@ class TerminalActivity :
         return false
     }
 
+    override fun shouldUseCtrlSpaceWorkaround(): Boolean {
+        return true
+    }
+
     // ─────────────────────────────────────────────
 
     @Deprecated("Handled via OnBackPressedDispatcher")
