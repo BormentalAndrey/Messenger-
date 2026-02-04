@@ -25,10 +25,7 @@ import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
-import java.io.BufferedReader
-import java.io.File
-import java.io.FileOutputStream
-import java.io.InputStreamReader
+import java.io.*
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.zip.ZipEntry
@@ -45,20 +42,17 @@ class TerminalActivity :
 
     companion object {
         private const val TAG = "TerminalActivity"
-        // Точный тег релиза из вашего скриншота. 
-        // Символ '+' в URL ДОЛЖЕН быть заменен на %2B
-        private const val RELEASE_TAG = "bootstrap-2024.12.18-r1%2Bapt-android-7"
+        // ВАЖНО: Используем точку перед android-7 (как в GitHub)
+        private const val BOOTSTRAP_TAG = "bootstrap-2024.12.18-r1+apt.android-7"
     }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        
-        // Установка вашего XML
         setContentView(R.layout.activity_termux)
 
-        // Привязка ID из предоставленного XML
+        // Инициализация View из вашего XML
         terminalView = findViewById(R.id.terminal_view)
         drawerLayout = findViewById(R.id.drawer_layout)
 
@@ -70,19 +64,12 @@ class TerminalActivity :
         terminalView.setTextSize(35)
         terminalView.keepScreenOn = true
         
-        // Фокус и клавиатура по тапу
-        terminalView.setOnTouchListener { v, event ->
-            if (event.action == MotionEvent.ACTION_UP) {
-                v.performClick()
-                showKeyboard()
-            }
-            terminalView.onTouchEvent(event)
-        }
+        // Открытие клавиатуры при клике на терминал
+        terminalView.setOnClickListener { showKeyboard() }
 
         settingsButton.setOnClickListener {
-            // В вашем XML кнопка настроек внутри Drawer, обычно она вызывает внешнее меню
-            // Но здесь мы просто добавим лог для проверки нажатия
-            Log.d(TAG, "Settings clicked")
+            // Можно добавить открытие активити настроек здесь
+            Log.d(TAG, "Settings button clicked")
         }
 
         newSessionButton.setOnClickListener {
@@ -96,11 +83,10 @@ class TerminalActivity :
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
+                if (drawerLayout.isDrawerOpen(GravityCompat.START))
                     drawerLayout.closeDrawer(GravityCompat.START)
-                } else {
+                else
                     finish()
-                }
             }
         })
 
@@ -117,23 +103,25 @@ class TerminalActivity :
         }
 
         AlertDialog.Builder(this)
-            .setTitle("Установка системы")
-            .setMessage("Требуется загрузка компонентов Termux. Продолжить?")
+            .setTitle("Установка Termux")
+            .setMessage("Необходимо загрузить базовые компоненты системы. Продолжить?")
             .setPositiveButton("Загрузить") { _, _ ->
                 val arch = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
-                
                 val archiveName = when {
-                    arch.contains("aarch64") || arch.contains("arm64") -> "bootstrap-aarch64.zip"
+                    arch.contains("arm64") || arch.contains("aarch64") -> "bootstrap-aarch64.zip"
                     arch.contains("armeabi") || arch.contains("arm") -> "bootstrap-arm.zip"
                     arch.contains("x86_64") -> "bootstrap-x86_64.zip"
-                    arch.contains("i686") || arch.contains("x86") -> "bootstrap-i686.zip"
+                    arch.contains("x86") || arch.contains("i686") -> "bootstrap-i686.zip"
                     else -> "bootstrap-aarch64.zip"
                 }
 
-                val downloadUrl = "https://github.com/termux/termux-packages/releases/download/$RELEASE_TAG/$archiveName"
+                // Заменяем '+' на '%2B' для корректного URL GitHub
+                val encodedTag = BOOTSTRAP_TAG.replace("+", "%2B")
+                val downloadUrl = "https://github.com/termux/termux-packages/releases/download/$encodedTag/$archiveName"
+                
                 startBootstrapDownload(downloadUrl)
             }
-            .setNegativeButton("Выход") { _, _ -> finish() }
+            .setNegativeButton("Отмена") { _, _ -> finish() }
             .setCancelable(false)
             .show()
     }
@@ -141,7 +129,7 @@ class TerminalActivity :
     private fun startBootstrapDownload(urlStr: String) {
         val progressDialog = ProgressDialog(this).apply {
             setTitle("Загрузка")
-            setMessage("Скачивание системных файлов...")
+            setMessage("Подготовка...")
             setIndeterminate(true)
             setCancelable(false)
             show()
@@ -152,15 +140,16 @@ class TerminalActivity :
                 val tmpDir = File(filesDir, "tmp").apply { if (!exists()) mkdirs() }
                 val zipFile = File(tmpDir, "bootstrap.zip")
 
-                // 1. Скачивание с обработкой редиректов
+                // 1. Скачивание
+                runOnUiThread { progressDialog.setMessage("Скачивание файлов...") }
                 downloadFile(urlStr, zipFile)
 
-                // 2. Распаковка ZIP
-                runOnUiThread { progressDialog.setMessage("Распаковка...") }
+                // 2. Распаковка
+                runOnUiThread { progressDialog.setMessage("Распаковка (это займет время)...") }
                 unzipBootstrap(zipFile)
 
-                // 3. Создание симлинков (Критично для работы Bash)
-                runOnUiThread { progressDialog.setMessage("Конфигурация...") }
+                // 3. Создание симлинков (Критично для Linux команд)
+                runOnUiThread { progressDialog.setMessage("Настройка системы...") }
                 applySymlinks()
 
                 zipFile.delete()
@@ -168,16 +157,17 @@ class TerminalActivity :
                 runOnUiThread {
                     progressDialog.dismiss()
                     setupSession()
+                    showKeyboard()
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Install error: ${e.message}")
+                Log.e(TAG, "Install Error", e)
                 runOnUiThread {
                     progressDialog.dismiss()
                     AlertDialog.Builder(this)
-                        .setTitle("Ошибка сети")
-                        .setMessage("Не удалось скачать файл (404 или нет интернета).\n\nURL: $urlStr")
+                        .setTitle("Ошибка загрузки")
+                        .setMessage(e.localizedMessage ?: "Неизвестная ошибка")
                         .setPositiveButton("Повторить") { _, _ -> checkAndInstallBootstrap() }
-                        .setNegativeButton("Отмена") { _, _ -> finish() }
+                        .setNegativeButton("Выход") { _, _ -> finish() }
                         .show()
                 }
             }
@@ -187,15 +177,12 @@ class TerminalActivity :
     private fun downloadFile(urlStr: String, destFile: File) {
         val url = URL(urlStr)
         val conn = url.openConnection() as HttpURLConnection
-        conn.apply {
-            connectTimeout = 15000
-            readTimeout = 15000
-            instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "Termux-Android-App")
-        }
+        conn.connectTimeout = 30000
+        conn.readTimeout = 30000
+        conn.instanceFollowRedirects = true
 
         if (conn.responseCode >= 400) {
-            throw Exception("HTTP ${conn.responseCode}")
+            throw IOException("Сервер вернул ошибку ${conn.responseCode} для URL: $urlStr")
         }
 
         conn.inputStream.use { input ->
@@ -218,9 +205,10 @@ class TerminalActivity :
                     outputFile.parentFile?.mkdirs()
                     FileOutputStream(outputFile).use { zis.copyTo(it) }
 
-                    // Выдача прав на выполнение
-                    if (entry.name.contains("bin/") || entry.name.endsWith(".so")) {
+                    // Установка прав доступа на исполнение
+                    if (entry.name.contains("bin/") || entry.name.endsWith(".so") || entry.name.contains("libexec/")) {
                         outputFile.setExecutable(true, false)
+                        outputFile.setReadable(true, false)
                     }
                 }
                 zis.closeEntry()
@@ -231,26 +219,26 @@ class TerminalActivity :
 
     private fun applySymlinks() {
         val usrDir = File(filesDir, "usr")
-        val symlinkFile = File(usrDir, "SYMLINKS.txt")
-        if (!symlinkFile.exists()) return
+        val symlinksTxt = File(usrDir, "SYMLINKS.txt")
+        if (!symlinksTxt.exists()) return
 
         try {
-            symlinkFile.readLines().forEach { line ->
+            symlinksTxt.readLines().forEach { line ->
                 val parts = line.split("←")
                 if (parts.size == 2) {
-                    val linkFile = File(usrDir, parts[0])
+                    val linkPath = File(usrDir, parts[0])
                     val target = parts[1]
-                    linkFile.delete()
+                    linkPath.delete()
                     try {
-                        Os.symlink(target, linkFile.absolutePath)
+                        Os.symlink(target, linkPath.absolutePath)
                     } catch (e: Exception) {
-                        Log.w(TAG, "Symlink fail: ${parts[0]}")
+                        Log.e(TAG, "Symlink error: ${parts[0]} -> $target", e)
                     }
                 }
             }
-            symlinkFile.delete()
+            symlinksTxt.delete()
         } catch (e: Exception) {
-            Log.e(TAG, "Symlinks error", e)
+            Log.e(TAG, "Symlinks processing error", e)
         }
     }
 
@@ -269,21 +257,17 @@ class TerminalActivity :
             )
 
             val shellPath = File(usrDir, "bin/bash").absolutePath
-            
             terminalSession = TerminalSession(shellPath, homeDir.absolutePath, arrayOf("-l"), env, 2000, this)
+            
             terminalView.attachSession(terminalSession)
             terminalView.onScreenUpdated()
-            
-            runOnUiThread {
-                terminalView.requestFocus()
-                showKeyboard()
-            }
         } catch (e: Exception) {
-            Log.e(TAG, "Session startup failed", e)
+            Log.e(TAG, "Failed to start terminal session", e)
         }
     }
 
     private fun showKeyboard() {
+        terminalView.requestFocus()
         val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         imm.showSoftInput(terminalView, InputMethodManager.SHOW_IMPLICIT)
     }
@@ -293,23 +277,27 @@ class TerminalActivity :
         imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
     }
 
-    // --- Реализация TerminalSessionClient с корректными Unit возвратами ---
-    override fun onTextChanged(session: TerminalSession) { terminalView.onScreenUpdated() }
+    // --- Реализация интерфейсов ---
+
+    override fun onTextChanged(session: TerminalSession) = terminalView.onScreenUpdated()
     override fun onTitleChanged(session: TerminalSession) {}
-    override fun onSessionFinished(session: TerminalSession) { finish() }
+    override fun onSessionFinished(session: TerminalSession) = finish()
     override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
         val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cb.setPrimaryClip(ClipData.newPlainText("termux", text))
     }
     override fun onPasteTextFromClipboard(session: TerminalSession?) {
         val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cb.primaryClip?.getItemAt(0)?.text?.let { terminalSession?.write(it.toString()) }
+        val clip = cb.primaryClip?.getItemAt(0)?.text
+        if (clip != null) terminalSession?.write(clip.toString())
     }
     override fun onBell(session: TerminalSession) {}
     override fun onColorsChanged(session: TerminalSession) {}
     override fun onTerminalCursorStateChange(state: Boolean) {}
     override fun getTerminalCursorStyle(): Int = 0 
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
+
+    // Логирование (возвращает Unit)
     override fun logError(tag: String, msg: String) { Log.e(tag, msg) }
     override fun logWarn(tag: String, msg: String) { Log.w(tag, msg) }
     override fun logInfo(tag: String, msg: String) { Log.i(tag, msg) }
@@ -318,7 +306,7 @@ class TerminalActivity :
     override fun logStackTraceWithMessage(tag: String, msg: String, e: Exception) { Log.e(tag, msg, e) }
     override fun logStackTrace(tag: String, e: Exception) { Log.e(tag, "Stack", e) }
 
-    // --- Реализация TerminalViewClient ---
+    // Касания и жесты
     override fun onKeyDown(keyCode: Int, e: KeyEvent, s: TerminalSession): Boolean = false
     override fun onKeyUp(k: Int, e: KeyEvent): Boolean = false
     override fun onSingleTapUp(e: MotionEvent) { showKeyboard() }
