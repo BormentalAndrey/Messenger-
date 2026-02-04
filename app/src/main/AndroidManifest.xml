@@ -60,6 +60,8 @@
         android:theme="@style/Theme.Kakdela"
         android:usesCleartextTraffic="true"
         android:hardwareAccelerated="true"
+        android:extractNativeLibs="true"
+        android:requestLegacyExternalStorage="true"
         tools:targetApi="34">
 
         <activity
