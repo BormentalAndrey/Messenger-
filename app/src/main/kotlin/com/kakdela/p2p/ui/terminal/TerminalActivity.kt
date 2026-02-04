@@ -25,7 +25,10 @@ import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
-import java.io.*
+import java.io.BufferedInputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.zip.ZipEntry
@@ -43,11 +46,8 @@ class TerminalActivity :
     companion object {
         private const val TAG = "TerminalActivity"
 
-        // Актуальный тег на февраль 2026 (обновляйте при необходимости)
-        // Смотрите https://github.com/termux/termux-packages/releases
         private const val BOOTSTRAP_TAG = "bootstrap-2026.02.01-r1+apt.android-7"
 
-        // Имена файлов точно такие, как в релизах termux/termux-packages
         private const val BOOTSTRAP_AARCH64 = "bootstrap-aarch64.zip"
         private const val BOOTSTRAP_ARM = "bootstrap-arm.zip"
         private const val BOOTSTRAP_I686 = "bootstrap-i686.zip"
@@ -75,7 +75,6 @@ class TerminalActivity :
 
         settingsButton.setOnClickListener {
             Log.d(TAG, "Settings button clicked")
-            // Здесь можно открыть настройки, если они есть
         }
 
         newSessionButton.setOnClickListener {
@@ -100,6 +99,17 @@ class TerminalActivity :
         checkAndInstallBootstrap()
     }
 
+    private fun showErrorAndExit(message: String) {
+        runOnUiThread {
+            AlertDialog.Builder(this)
+                .setTitle("Ошибка")
+                .setMessage(message)
+                .setPositiveButton("Закрыть") { _, _ -> finish() }
+                .setCancelable(false)
+                .show()
+        }
+    }
+
     private fun checkAndInstallBootstrap() {
         val prefixDir = File(filesDir, "usr")
         val bashFile = File(prefixDir, "bin/bash")
@@ -120,7 +130,8 @@ class TerminalActivity :
                 }
 
                 val encodedTag = BOOTSTRAP_TAG.replace("+", "%2B")
-                val downloadUrl = "https://github.com/termux/termux-packages/releases/download/$encodedTag/$archiveName"
+                val downloadUrl =
+                    "https://github.com/termux/termux-packages/releases/download/$encodedTag/$archiveName"
 
                 startBootstrapDownload(downloadUrl, archiveName)
             }
@@ -155,19 +166,21 @@ class TerminalActivity :
                 val tmpDir = File(filesDir, "tmp").apply { mkdirs() }
                 val zipFile = File(tmpDir, archiveName)
 
-                // Скачивание
-                runOnUiThread { progressDialog.setMessage("Загрузка базовой системы (~25–30 МБ)...") }
+                runOnUiThread {
+                    progressDialog.setMessage("Загрузка базовой системы (~25–30 МБ)...")
+                }
                 downloadFile(urlStr, zipFile)
 
-                // Распаковка
-                runOnUiThread { progressDialog.setMessage("Распаковка файлов...") }
+                runOnUiThread {
+                    progressDialog.setMessage("Распаковка файлов...")
+                }
                 unzipBootstrap(zipFile)
 
-                // Симлинки (очень важный шаг!)
-                runOnUiThread { progressDialog.setMessage("Создание символьных ссылок...") }
+                runOnUiThread {
+                    progressDialog.setMessage("Создание символьных ссылок...")
+                }
                 applySymlinks()
 
-                // Удаляем временный zip
                 zipFile.delete()
 
                 runOnUiThread {
@@ -184,8 +197,10 @@ class TerminalActivity :
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Bootstrap installation failed", e)
+
                 runOnUiThread {
                     progressDialog.dismiss()
+
                     val msg = when {
                         e.message?.contains("404") == true ->
                             "Файл не найден на сервере (404).\n\nВозможно, вышел новый релиз bootstrap.\nПроверьте https://github.com/termux/termux-packages/releases"
@@ -195,8 +210,12 @@ class TerminalActivity :
                     AlertDialog.Builder(this@TerminalActivity)
                         .setTitle("Ошибка установки")
                         .setMessage(msg)
-                        .setPositiveButton("Повторить") { _, _ -> checkAndInstallBootstrap() }
-                        .setNegativeButton("Выход") { _, _ -> finish() }
+                        .setPositiveButton("Повторить") { _, _ ->
+                            checkAndInstallBootstrap()
+                        }
+                        .setNegativeButton("Выход") { _, _ ->
+                            finish()
+                        }
                         .setCancelable(false)
                         .show()
                 }
@@ -225,8 +244,10 @@ class TerminalActivity :
 
     private fun unzipBootstrap(zipFile: File) {
         val rootDir = filesDir
+
         ZipInputStream(BufferedInputStream(zipFile.inputStream(), 8192)).use { zis ->
             var entry: ZipEntry? = zis.nextEntry
+
             while (entry != null) {
                 val outputFile = File(rootDir, entry.name)
 
@@ -234,12 +255,13 @@ class TerminalActivity :
                     outputFile.mkdirs()
                 } else {
                     outputFile.parentFile?.mkdirs()
+
                     FileOutputStream(outputFile).use { fos ->
                         zis.copyTo(fos, bufferSize = 8192)
                     }
 
-                    // Делаем исполняемыми бинарники и библиотеки
-                    if (entry.name.startsWith("usr/bin/") ||
+                    if (
+                        entry.name.startsWith("usr/bin/") ||
                         entry.name.startsWith("usr/libexec/") ||
                         entry.name.endsWith(".so") ||
                         entry.name.endsWith("/bash") ||
@@ -247,8 +269,10 @@ class TerminalActivity :
                     ) {
                         outputFile.setExecutable(true, false)
                     }
+
                     outputFile.setReadable(true, false)
                 }
+
                 zis.closeEntry()
                 entry = zis.nextEntry
             }
@@ -284,7 +308,9 @@ class TerminalActivity :
                     }
                 }
             }
+
             symlinksFile.delete()
+
         } catch (e: Exception) {
             Log.e(TAG, "Ошибка обработки SYMLINKS.txt", e)
         }
@@ -299,7 +325,7 @@ class TerminalActivity :
                 "TERM=xterm-256color",
                 "HOME=${homeDir.absolutePath}",
                 "PREFIX=${usrDir.absolutePath}",
-                "PATH=\( {usrDir.absolutePath}/bin: \){usrDir.absolutePath}/local/bin",
+                "PATH=${usrDir.absolutePath}/bin:${usrDir.absolutePath}/local/bin",
                 "LD_LIBRARY_PATH=${usrDir.absolutePath}/lib",
                 "LANG=en_US.UTF-8",
                 "ANDROID_DATA=/data",
@@ -323,8 +349,10 @@ class TerminalActivity :
 
             terminalView.attachSession(terminalSession)
             terminalView.onScreenUpdated()
+
         } catch (e: Exception) {
             Log.e(TAG, "Не удалось запустить сессию терминала", e)
+
             runOnUiThread {
                 AlertDialog.Builder(this)
                     .setTitle("Ошибка запуска терминала")
@@ -352,7 +380,7 @@ class TerminalActivity :
     }
 
     // -------------------------------------------------------------------------
-    // Реализация TerminalSessionClient
+    // TerminalSessionClient
     // -------------------------------------------------------------------------
 
     override fun onTextChanged(session: TerminalSession) {
@@ -360,7 +388,6 @@ class TerminalActivity :
     }
 
     override fun onTitleChanged(session: TerminalSession) {
-        // можно обновить заголовок активности, если хотите
     }
 
     override fun onSessionFinished(session: TerminalSession) {
@@ -380,11 +407,10 @@ class TerminalActivity :
     }
 
     override fun onBell(session: TerminalSession) {
-        // можно добавить вибрацию или звук
     }
 
     // -------------------------------------------------------------------------
-    // Реализация TerminalViewClient (многие методы можно оставить пустыми)
+    // TerminalViewClient
     // -------------------------------------------------------------------------
 
     override fun onSingleTapUp(e: MotionEvent) {
@@ -409,9 +435,11 @@ class TerminalActivity :
 
     override fun onCodePoint(cp: Int, ctrl: Boolean, session: TerminalSession): Boolean = false
 
-    override fun onEmulatorSet() {}
+    override fun onEmulatorSet() {
+    }
 
-    override fun copyModeChanged(copyMode: Boolean) {}
+    override fun copyModeChanged(copyMode: Boolean) {
+    }
 
     override fun readControlKey(): Boolean = false
 
@@ -423,20 +451,46 @@ class TerminalActivity :
 
     override fun getTerminalCursorStyle(): Int = 0
 
-    override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
+    override fun setTerminalShellPid(session: TerminalSession, pid: Int) {
+    }
 
-    override fun onTerminalCursorStateChange(state: Boolean) {}
+    override fun onTerminalCursorStateChange(state: Boolean) {
+    }
 
-    override fun onColorsChanged(session: TerminalSession) {}
+    override fun onColorsChanged(session: TerminalSession) {
+    }
 
-    // Логирование
-    override fun logError(tag: String, msg: String) = Log.e(tag, msg)
-    override fun logWarn(tag: String, msg: String) = Log.w(tag, msg)
-    override fun logInfo(tag: String, msg: String) = Log.i(tag, msg)
-    override fun logDebug(tag: String, msg: String) = Log.d(tag, msg)
-    override fun logVerbose(tag: String, msg: String) = Log.v(tag, msg)
-    override fun logStackTraceWithMessage(tag: String, msg: String, e: Exception) = Log.e(tag, msg, e)
-    override fun logStackTrace(tag: String, e: Exception) = Log.e(tag, "Stack trace", e)
+    // -------------------------------------------------------------------------
+    // Логирование (ВАЖНО: должны возвращать Unit)
+    // -------------------------------------------------------------------------
+
+    override fun logError(tag: String, msg: String) {
+        Log.e(tag, msg)
+    }
+
+    override fun logWarn(tag: String, msg: String) {
+        Log.w(tag, msg)
+    }
+
+    override fun logInfo(tag: String, msg: String) {
+        Log.i(tag, msg)
+    }
+
+    override fun logDebug(tag: String, msg: String) {
+        Log.d(tag, msg)
+    }
+
+    override fun logVerbose(tag: String, msg: String) {
+        Log.v(tag, msg)
+    }
+
+    override fun logStackTraceWithMessage(tag: String, msg: String, e: Exception) {
+        Log.e(tag, msg, e)
+    }
+
+    override fun logStackTrace(tag: String, e: Exception) {
+        Log.e(tag, "Stack trace", e)
+    }
 
     override fun onDestroy() {
         terminalSession?.finishIfRunning()
