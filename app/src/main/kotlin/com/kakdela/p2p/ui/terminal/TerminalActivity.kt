@@ -110,7 +110,6 @@ class TerminalActivity :
             .setPositiveButton("Скачать") { _, _ ->
                 val arch = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
                 
-                // Выбор архива согласно архитектуре процессора
                 val archiveName = when {
                     arch.contains("arm64") -> "bootstrap-aarch64.zip"
                     arch.contains("armeabi") -> "bootstrap-arm.zip"
@@ -143,14 +142,11 @@ class TerminalActivity :
                 val tmpDir = File(filesDir, "tmp").apply { if (!exists()) mkdirs() }
                 val zipFile = File(tmpDir, "bootstrap.zip")
 
-                // 1. Скачивание
                 downloadFile(urlStr, zipFile)
 
-                // 2. Распаковка
                 runOnUiThread { progressDialog.setMessage("Распаковка файлов...") }
                 unzipBootstrap(zipFile)
 
-                // 3. Настройка симлинков (обязательно для Linux-структуры)
                 runOnUiThread { progressDialog.setMessage("Настройка системы...") }
                 applySymlinks()
 
@@ -202,7 +198,6 @@ class TerminalActivity :
             while (entry != null) {
                 val outputFile = File(rootDir, entry.name)
                 
-                // Защита от Path Traversal
                 if (!outputFile.canonicalPath.startsWith(rootDir.canonicalPath)) {
                     throw SecurityException("Некорректный путь в архиве: ${entry.name}")
                 }
@@ -213,7 +208,6 @@ class TerminalActivity :
                     outputFile.parentFile?.mkdirs()
                     FileOutputStream(outputFile).use { zis.copyTo(it) }
 
-                    // Установка прав на исполнение для папок bin и lib
                     if (entry.name.contains("bin/") || entry.name.contains("libexec/") || entry.name.endsWith(".so")) {
                         outputFile.setExecutable(true, false)
                         outputFile.setReadable(true, false)
@@ -297,35 +291,64 @@ class TerminalActivity :
             .toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
     }
 
-    // --- Реализация интерфейсов (обязательно для работы библиотеки) ---
+    // --- Реализация интерфейсов ---
 
-    override fun onTextChanged(session: TerminalSession) = terminalView.onScreenUpdated()
+    override fun onTextChanged(session: TerminalSession) {
+        terminalView.onScreenUpdated()
+    }
+
     override fun onTitleChanged(session: TerminalSession) {}
-    override fun onSessionFinished(session: TerminalSession) = finish()
+
+    override fun onSessionFinished(session: TerminalSession) {
+        finish()
+    }
+
     override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
         val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cb.setPrimaryClip(ClipData.newPlainText("termux", text))
     }
+
     override fun onPasteTextFromClipboard(session: TerminalSession?) {
         val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cb.primaryClip?.getItemAt(0)?.coerceToText(this)?.let { terminalSession?.write(it.toString()) }
+        cb.primaryClip?.getItemAt(0)?.coerceToText(this)?.let { 
+            terminalSession?.write(it.toString()) 
+        }
     }
+
     override fun onBell(session: TerminalSession) {}
     override fun onColorsChanged(session: TerminalSession) {}
     override fun onTerminalCursorStateChange(state: Boolean) {}
     override fun getTerminalCursorStyle(): Int = 0 
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
-    override fun logError(tag: String, msg: String) = Log.e(tag, msg)
-    override fun logWarn(tag: String, msg: String) = Log.w(tag, msg)
-    override fun logInfo(tag: String, msg: String) = Log.i(tag, msg)
-    override fun logDebug(tag: String, msg: String) = Log.d(tag, msg)
-    override fun logVerbose(tag: String, msg: String) = Log.v(tag, msg)
-    override fun logStackTraceWithMessage(tag: String, msg: String, e: Exception) = Log.e(tag, msg, e)
-    override fun logStackTrace(tag: String, e: Exception) = Log.e(tag, "Stack", e)
+
+    // Исправленные методы логирования (теперь возвращают Unit)
+    override fun logError(tag: String, msg: String) {
+        Log.e(tag, msg)
+    }
+    override fun logWarn(tag: String, msg: String) {
+        Log.w(tag, msg)
+    }
+    override fun logInfo(tag: String, msg: String) {
+        Log.i(tag, msg)
+    }
+    override fun logDebug(tag: String, msg: String) {
+        Log.d(tag, msg)
+    }
+    override fun logVerbose(tag: String, msg: String) {
+        Log.v(tag, msg)
+    }
+    override fun logStackTraceWithMessage(tag: String, msg: String, e: Exception) {
+        Log.e(tag, msg, e)
+    }
+    override fun logStackTrace(tag: String, e: Exception) {
+        Log.e(tag, "Stack", e)
+    }
 
     override fun onKeyDown(keyCode: Int, e: KeyEvent, s: TerminalSession): Boolean = false
     override fun onKeyUp(k: Int, e: KeyEvent): Boolean = false
-    override fun onSingleTapUp(e: MotionEvent) = showKeyboard()
+    override fun onSingleTapUp(e: MotionEvent) {
+        showKeyboard()
+    }
     override fun onLongPress(e: MotionEvent): Boolean = false
     override fun onScale(s: Float): Float = s
     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
