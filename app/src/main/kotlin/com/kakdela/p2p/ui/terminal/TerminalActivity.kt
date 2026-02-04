@@ -110,7 +110,6 @@ class TerminalActivity :
             .setPositiveButton("Скачать") { _, _ ->
                 val arch = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
                 
-                // Выбираем файл архитектуры
                 var archiveName = "bootstrap-aarch64.tar.gz" 
                 if (arch.contains("arm64")) archiveName = "bootstrap-aarch64.tar.gz"
                 else if (arch.contains("armeabi")) archiveName = "bootstrap-arm.tar.gz"
@@ -149,7 +148,6 @@ class TerminalActivity :
                 Log.i(TAG, "Extracting bootstrap...")
                 extractBootstrapArchive(archiveFile, usrDir)
 
-                // Обработка SYMLINKS.txt
                 setupSymlinks(usrDir)
 
                 archiveFile.delete()
@@ -207,7 +205,6 @@ class TerminalActivity :
                 while (entry != null) {
                     val outputFile = File(rootDir, entry.name)
                     
-                    // Защита пути
                     if (!outputFile.canonicalPath.startsWith(rootDir.canonicalPath)) {
                         throw SecurityException("Invalid path in archive: ${entry.name}")
                     }
@@ -230,7 +227,6 @@ class TerminalActivity :
                             tar.copyTo(out)
                         }
 
-                        // Установка прав на исполнение (chmod 700)
                         if (entry.name.contains("bin/") || entry.name.contains("libexec/")) {
                             outputFile.setExecutable(true, true)
                             try {
@@ -246,9 +242,7 @@ class TerminalActivity :
     
     private fun setupSymlinks(usrDir: File) {
         val symlinkFile = File(usrDir, "SYMLINKS.txt")
-        if (!symlinkFile.exists()) {
-            return
-        }
+        if (!symlinkFile.exists()) return
 
         try {
             BufferedReader(InputStreamReader(symlinkFile.inputStream())).use { reader ->
@@ -299,7 +293,6 @@ class TerminalActivity :
             
             if (!homeDir.exists()) homeDir.mkdirs()
 
-            // Выносим переменные, чтобы избежать ошибок парсинга строк в Kotlin
             val androidRoot = System.getenv("ANDROID_ROOT") ?: "/system"
             val androidData = System.getenv("ANDROID_DATA") ?: "/data"
 
@@ -362,11 +355,7 @@ class TerminalActivity :
 
     override fun onTitleChanged(session: TerminalSession) {}
 
-    override fun onSessionFinished(session: TerminalSession) {
-        if (session == terminalSession) {
-            // session finished
-        }
-    }
+    override fun onSessionFinished(session: TerminalSession) {}
 
     override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
         val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -385,7 +374,10 @@ class TerminalActivity :
     override fun onBell(session: TerminalSession) {}
     override fun onColorsChanged(session: TerminalSession) {}
     override fun onTerminalCursorStateChange(state: Boolean) {}
-    override fun getTerminalCursorStyle(): Int = TerminalSession.CURSOR_STYLE_BLOCK
+    
+    // ИСПРАВЛЕНИЕ: Используем 0 вместо TerminalSession.CURSOR_STYLE_BLOCK
+    override fun getTerminalCursorStyle(): Int = 0 
+    
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
 
     override fun logError(tag: String, message: String) { Log.e(tag, message) }
@@ -400,9 +392,7 @@ class TerminalActivity :
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent, session: TerminalSession): Boolean = false
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean = false
-    override fun onSingleTapUp(event: MotionEvent) {
-        showKeyboard()
-    }
+    override fun onSingleTapUp(event: MotionEvent) { showKeyboard() }
     override fun onLongPress(event: MotionEvent): Boolean = false
     override fun onScale(scale: Float): Float = scale
     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
