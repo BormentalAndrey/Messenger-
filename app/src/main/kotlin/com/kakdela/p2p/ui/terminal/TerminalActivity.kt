@@ -46,7 +46,6 @@ class TerminalActivity :
     companion object {
         private const val TAG = "TerminalActivity"
 
-        // Актуальный bootstrap на февраль 2026
         private const val BOOTSTRAP_TAG = "bootstrap-2026.02.01-r1+apt.android-7"
 
         private const val BOOTSTRAP_AARCH64 = "bootstrap-aarch64.zip"
@@ -215,16 +214,24 @@ class TerminalActivity :
         val rootDir = filesDir
         val buffer = ByteArray(8192)
 
-        // ✔ ВАЖНО: используем реальный packageName приложения
-        val stripPrefix = "data/data/${packageName}/files/"
+        val stripPrefixes = listOf(
+            "data/data/com.termux/files/",
+            "data/data/${packageName}/files/"
+        )
 
         ZipInputStream(BufferedInputStream(zipFile.inputStream())).use { zis ->
             var entry: ZipEntry? = zis.nextEntry
             while (entry != null) {
+
                 var name = entry.name
-                if (name.startsWith(stripPrefix)) {
-                    name = name.substring(stripPrefix.length)
+
+                for (p in stripPrefixes) {
+                    if (name.startsWith(p)) {
+                        name = name.substring(p.length)
+                        break
+                    }
                 }
+
                 if (name.isEmpty()) {
                     zis.closeEntry()
                     entry = zis.nextEntry
@@ -293,7 +300,6 @@ class TerminalActivity :
         try {
             val usrDir = File(filesDir, "usr")
             val homeDir = File(filesDir, "home").apply { if (!exists()) mkdirs() }
-
             val tmpDir = File(usrDir, "tmp").apply { if (!exists()) mkdirs() }
 
             val bashFile = File(usrDir, "bin/bash")
@@ -350,11 +356,10 @@ class TerminalActivity :
         }
     }
 
-    // --- TerminalSessionClient ---
-
     override fun onTextChanged(session: TerminalSession) { terminalView.onScreenUpdated() }
     override fun onTitleChanged(session: TerminalSession) {}
     override fun onSessionFinished(session: TerminalSession) { finish() }
+
     override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
         val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cb.setPrimaryClip(ClipData.newPlainText("Termux", text))
@@ -368,36 +373,32 @@ class TerminalActivity :
     override fun onBell(session: TerminalSession) {}
     override fun onColorsChanged(session: TerminalSession) {}
     override fun onTerminalCursorStateChange(state: Boolean) {}
-    override fun getTerminalCursorStyle(): Int { return 0 }
+    override fun getTerminalCursorStyle(): Int = 0
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
 
-    // --- TerminalViewClient ---
-
     override fun onSingleTapUp(e: MotionEvent) { showKeyboard() }
-    override fun onLongPress(e: MotionEvent): Boolean { return false }
-    override fun onScale(scale: Float): Float { return scale }
-    override fun shouldBackButtonBeMappedToEscape(): Boolean { return false }
-    override fun shouldEnforceCharBasedInput(): Boolean { return false }
-    override fun shouldUseCtrlSpaceWorkaround(): Boolean { return false }
-    override fun isTerminalViewSelected(): Boolean { return true }
+    override fun onLongPress(e: MotionEvent): Boolean = false
+    override fun onScale(scale: Float): Float = scale
+    override fun shouldBackButtonBeMappedToEscape(): Boolean = false
+    override fun shouldEnforceCharBasedInput(): Boolean = false
+    override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
+    override fun isTerminalViewSelected(): Boolean = true
     override fun copyModeChanged(copyMode: Boolean) {}
-    override fun onKeyDown(keyCode: Int, e: KeyEvent, session: TerminalSession): Boolean { return false }
-    override fun onCodePoint(cp: Int, ctrl: Boolean, session: TerminalSession): Boolean { return false }
+    override fun onKeyDown(keyCode: Int, e: KeyEvent, session: TerminalSession): Boolean = false
+    override fun onCodePoint(cp: Int, ctrl: Boolean, session: TerminalSession): Boolean = false
     override fun onEmulatorSet() {}
-    override fun readControlKey(): Boolean { return false }
-    override fun readAltKey(): Boolean { return false }
-    override fun readShiftKey(): Boolean { return false }
-    override fun readFnKey(): Boolean { return false }
+    override fun readControlKey(): Boolean = false
+    override fun readAltKey(): Boolean = false
+    override fun readShiftKey(): Boolean = false
+    override fun readFnKey(): Boolean = false
 
-    // --- Logging ---
-
-    override fun logError(tag: String, msg: String): Unit { Log.e(tag, msg) }
-    override fun logWarn(tag: String, msg: String): Unit { Log.w(tag, msg) }
-    override fun logInfo(tag: String, msg: String): Unit { Log.i(tag, msg) }
-    override fun logDebug(tag: String, msg: String): Unit { Log.d(tag, msg) }
-    override fun logVerbose(tag: String, msg: String): Unit { Log.v(tag, msg) }
-    override fun logStackTraceWithMessage(tag: String, msg: String, e: Exception): Unit { Log.e(tag, msg, e) }
-    override fun logStackTrace(tag: String, e: Exception): Unit { Log.e(tag, "Stack", e) }
+    override fun logError(tag: String, msg: String) { Log.e(tag, msg) }
+    override fun logWarn(tag: String, msg: String) { Log.w(tag, msg) }
+    override fun logInfo(tag: String, msg: String) { Log.i(tag, msg) }
+    override fun logDebug(tag: String, msg: String) { Log.d(tag, msg) }
+    override fun logVerbose(tag: String, msg: String) { Log.v(tag, msg) }
+    override fun logStackTraceWithMessage(tag: String, msg: String, e: Exception) { Log.e(tag, msg, e) }
+    override fun logStackTrace(tag: String, e: Exception) { Log.e(tag, "Stack", e) }
 
     override fun onDestroy() {
         terminalSession?.finishIfRunning()
