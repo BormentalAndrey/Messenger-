@@ -47,7 +47,6 @@ class TerminalActivity :
         private const val TAG = "TerminalActivity"
 
         // Актуальный bootstrap на февраль 2026
-        // '+' обязательно кодируем как %2B в URL
         private const val BOOTSTRAP_TAG = "bootstrap-2026.02.01-r1+apt.android-7"
 
         private const val BOOTSTRAP_AARCH64 = "bootstrap-aarch64.zip"
@@ -383,9 +382,8 @@ class TerminalActivity :
 
     // --- TerminalViewClient ---
 
-    override fun onSingleTapUp(e: MotionEvent): Boolean {
+    override fun onSingleTapUp(e: MotionEvent) {
         showKeyboard()
-        return true
     }
 
     override fun onLongPress(e: MotionEvent): Boolean = false
@@ -400,12 +398,6 @@ class TerminalActivity :
     override fun copyModeChanged(copyMode: Boolean) {}
 
     override fun onKeyDown(
-        keyCode: Int,
-        e: KeyEvent,
-        session: TerminalSession
-    ): Boolean = false
-
-    override fun onKeyUp(
         keyCode: Int,
         e: KeyEvent,
         session: TerminalSession
