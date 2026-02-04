@@ -46,9 +46,9 @@ class TerminalActivity :
     companion object {
         private const val TAG = "TerminalActivity"
 
-        // Используем стабильный релиз bootstrap. 
-        // ВАЖНО: Символ '+' в теге требует аккуратного энкодинга в URL.
-        private const val BOOTSTRAP_TAG = "bootstrap-2024.12.18-r1+apt.android-7"
+        // Актуальный bootstrap на февраль 2026
+        // '+' обязательно кодируем как %2B в URL
+        private const val BOOTSTRAP_TAG = "bootstrap-2026.02.01-r1+apt.android-7"
 
         private const val BOOTSTRAP_AARCH64 = "bootstrap-aarch64.zip"
         private const val BOOTSTRAP_ARM = "bootstrap-arm.zip"
@@ -116,7 +116,6 @@ class TerminalActivity :
         val prefixDir = File(filesDir, "usr")
         val bashFile = File(prefixDir, "bin/bash")
 
-        // Проверка: если bash существует и он исполняемый - запускаем сессию
         if (bashFile.exists() && bashFile.canExecute()) {
             setupSession()
             return
@@ -133,7 +132,8 @@ class TerminalActivity :
                 }
 
                 val encodedTag = BOOTSTRAP_TAG.replace("+", "%2B")
-                val downloadUrl = "https://github.com/termux/termux-packages/releases/download/$encodedTag/$archiveName"
+                val downloadUrl =
+                    "https://github.com/termux/termux-packages/releases/download/$encodedTag/$archiveName"
 
                 startBootstrapDownload(downloadUrl, archiveName)
             }
@@ -146,9 +146,9 @@ class TerminalActivity :
         val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: return null
         return when {
             abi.contains("arm64") || abi.contains("aarch64") -> BOOTSTRAP_AARCH64
-            abi.contains("armeabi") || abi.contains("arm") -> BOOTSTRAP_ARM
             abi.contains("x86_64") -> BOOTSTRAP_X86_64
             abi.contains("x86") || abi.contains("i686") -> BOOTSTRAP_I686
+            abi.contains("armeabi") || abi.contains("arm") -> BOOTSTRAP_ARM
             else -> null
         }
     }
@@ -185,7 +185,11 @@ class TerminalActivity :
                 Log.e(TAG, "Bootstrap error", e)
                 runOnUiThread {
                     progressDialog.dismiss()
-                    val msg = if (e.message?.contains("404") == true) "Файл не найден (404). Проверьте версию BOOTSTRAP_TAG." else e.localizedMessage
+                    val msg =
+                        if (e.message?.contains("404") == true)
+                            "Файл не найден (404). Проверьте BOOTSTRAP_TAG."
+                        else e.localizedMessage ?: "Неизвестная ошибка"
+
                     AlertDialog.Builder(this@TerminalActivity)
                         .setTitle("Ошибка установки")
                         .setMessage(msg)
@@ -200,12 +204,12 @@ class TerminalActivity :
     private fun downloadFile(urlStr: String, destFile: File) {
         val url = URL(urlStr)
         val conn = url.openConnection() as HttpURLConnection
-        conn.connectTimeout = 30000
-        conn.readTimeout = 60000
+        conn.connectTimeout = 30_000
+        conn.readTimeout = 60_000
         conn.instanceFollowRedirects = true
 
         if (conn.responseCode >= 400) {
-            throw IOException("HTTP Error ${conn.responseCode} для $urlStr")
+            throw IOException("HTTP ${conn.responseCode} для $urlStr")
         }
 
         conn.inputStream.use { input ->
@@ -222,14 +226,14 @@ class TerminalActivity :
         ZipInputStream(BufferedInputStream(zipFile.inputStream())).use { zis ->
             var entry: ZipEntry? = zis.nextEntry
             while (entry != null) {
-                // Все файлы bootstrap Termux ДОЛЖНЫ попадать в папку files/usr
-                // Если в архиве файлы уже начинаются с usr/, путь будет верным.
+
                 val outputFile = File(rootDir, entry.name)
 
                 if (entry.isDirectory) {
                     outputFile.mkdirs()
                 } else {
                     outputFile.parentFile?.mkdirs()
+
                     FileOutputStream(outputFile).use { fos ->
                         var len: Int
                         while (zis.read(buffer).also { len = it } > 0) {
@@ -237,12 +241,16 @@ class TerminalActivity :
                         }
                     }
 
-                    // ВАЖНО: Установка прав на выполнение для всех бинарников и библиотек
-                    if (entry.name.contains("bin/") || entry.name.contains("libexec/") || entry.name.endsWith(".so")) {
+                    if (
+                        entry.name.startsWith("usr/bin/") ||
+                        entry.name.startsWith("usr/libexec/") ||
+                        entry.name.endsWith(".so")
+                    ) {
                         outputFile.setExecutable(true, false)
                         outputFile.setReadable(true, false)
                     }
                 }
+
                 zis.closeEntry()
                 entry = zis.nextEntry
             }
@@ -261,8 +269,10 @@ class TerminalActivity :
                     if (parts.size == 2) {
                         val linkFile = File(usrDir, parts[0].trim())
                         val target = parts[1].trim()
+
                         linkFile.parentFile?.mkdirs()
-                        linkFile.delete()
+                        if (linkFile.exists()) linkFile.delete()
+
                         try {
                             Os.symlink(target, linkFile.absolutePath)
                         } catch (e: Exception) {
@@ -281,10 +291,16 @@ class TerminalActivity :
         try {
             val usrDir = File(filesDir, "usr")
             val homeDir = File(filesDir, "home").apply { if (!exists()) mkdirs() }
-            
-            // Гарантируем права на выполнение основного бинарника перед запуском
+
+            val tmpDir = File(usrDir, "tmp").apply {
+                if (!exists()) mkdirs()
+            }
+
             val bashFile = File(usrDir, "bin/bash")
-            if (!bashFile.exists()) throw IOException("bash не найден по пути: ${bashFile.absolutePath}")
+            if (!bashFile.exists()) {
+                throw IOException("bash не найден: ${bashFile.absolutePath}")
+            }
+
             bashFile.setExecutable(true, false)
 
             val env = arrayOf(
@@ -294,7 +310,7 @@ class TerminalActivity :
                 "PATH=${usrDir.absolutePath}/bin:${usrDir.absolutePath}/bin/applets",
                 "LD_LIBRARY_PATH=${usrDir.absolutePath}/lib",
                 "LANG=en_US.UTF-8",
-                "TMPDIR=${usrDir.absolutePath}/tmp"
+                "TMPDIR=${tmpDir.absolutePath}"
             )
 
             terminalSession = TerminalSession(
@@ -302,7 +318,7 @@ class TerminalActivity :
                 homeDir.absolutePath,
                 arrayOf("--login"),
                 env,
-                2000, // Увеличенный буфер строк для истории
+                2000,
                 this
             )
 
@@ -314,7 +330,7 @@ class TerminalActivity :
             runOnUiThread {
                 AlertDialog.Builder(this)
                     .setTitle("Ошибка терминала")
-                    .setMessage(e.localizedMessage)
+                    .setMessage(e.localizedMessage ?: "Ошибка инициализации")
                     .setPositiveButton("ОК") { _, _ -> finish() }
                     .show()
             }
@@ -337,17 +353,28 @@ class TerminalActivity :
     }
 
     // --- TerminalSessionClient ---
-    override fun onTextChanged(session: TerminalSession) = terminalView.onScreenUpdated()
+
+    override fun onTextChanged(session: TerminalSession) =
+        terminalView.onScreenUpdated()
+
     override fun onTitleChanged(session: TerminalSession) {}
-    override fun onSessionFinished(session: TerminalSession) = finish()
+
+    override fun onSessionFinished(session: TerminalSession) {
+        finish()
+    }
+
     override fun onCopyTextToClipboard(session: TerminalSession, text: String) {
         val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cb.setPrimaryClip(ClipData.newPlainText("Termux", text))
     }
+
     override fun onPasteTextFromClipboard(session: TerminalSession?) {
         val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        cb.primaryClip?.getItemAt(0)?.text?.let { terminalSession?.write(it.toString()) }
+        cb.primaryClip?.getItemAt(0)?.text?.let {
+            terminalSession?.write(it.toString())
+        }
     }
+
     override fun onBell(session: TerminalSession) {}
     override fun onColorsChanged(session: TerminalSession) {}
     override fun onTerminalCursorStateChange(state: Boolean) {}
@@ -355,35 +382,80 @@ class TerminalActivity :
     override fun setTerminalShellPid(session: TerminalSession, pid: Int) {}
 
     // --- TerminalViewClient ---
-    override fun onSingleTapUp(e: MotionEvent) = showKeyboard()
+
+    override fun onSingleTapUp(e: MotionEvent): Boolean {
+        showKeyboard()
+        return true
+    }
+
     override fun onLongPress(e: MotionEvent): Boolean = false
+
     override fun onScale(scale: Float): Float = scale
+
     override fun shouldBackButtonBeMappedToEscape(): Boolean = false
     override fun shouldEnforceCharBasedInput(): Boolean = false
     override fun shouldUseCtrlSpaceWorkaround(): Boolean = false
     override fun isTerminalViewSelected(): Boolean = true
+
     override fun copyModeChanged(copyMode: Boolean) {}
-    override fun onKeyDown(keyCode: Int, e: KeyEvent, session: TerminalSession): Boolean = false
-    override fun onKeyUp(keyCode: Int, e: KeyEvent): Boolean = false
-    override fun onCodePoint(cp: Int, ctrl: Boolean, session: TerminalSession): Boolean = false
+
+    override fun onKeyDown(
+        keyCode: Int,
+        e: KeyEvent,
+        session: TerminalSession
+    ): Boolean = false
+
+    override fun onKeyUp(
+        keyCode: Int,
+        e: KeyEvent,
+        session: TerminalSession
+    ): Boolean = false
+
+    override fun onCodePoint(
+        cp: Int,
+        ctrl: Boolean,
+        session: TerminalSession
+    ): Boolean = false
+
     override fun onEmulatorSet() {}
+
     override fun readControlKey(): Boolean = false
     override fun readAltKey(): Boolean = false
     override fun readShiftKey(): Boolean = false
     override fun readFnKey(): Boolean = false
 
     // --- Logging ---
-    override fun logError(tag: String, msg: String) { Log.e(tag, msg) }
-    override fun logWarn(tag: String, msg: String) { Log.w(tag, msg) }
-    override fun logInfo(tag: String, msg: String) { Log.i(tag, msg) }
-    override fun logDebug(tag: String, msg: String) { Log.d(tag, msg) }
-    override fun logVerbose(tag: String, msg: String) { Log.v(tag, msg) }
-    override fun logStackTraceWithMessage(tag: String, msg: String, e: Exception) { Log.e(tag, msg, e) }
-    override fun logStackTrace(tag: String, e: Exception) { Log.e(tag, "Stack", e) }
+
+    override fun logError(tag: String, msg: String) {
+        Log.e(tag, msg)
+    }
+
+    override fun logWarn(tag: String, msg: String) {
+        Log.w(tag, msg)
+    }
+
+    override fun logInfo(tag: String, msg: String) {
+        Log.i(tag, msg)
+    }
+
+    override fun logDebug(tag: String, msg: String) {
+        Log.d(tag, msg)
+    }
+
+    override fun logVerbose(tag: String, msg: String) {
+        Log.v(tag, msg)
+    }
+
+    override fun logStackTraceWithMessage(tag: String, msg: String, e: Exception) {
+        Log.e(tag, msg, e)
+    }
+
+    override fun logStackTrace(tag: String, e: Exception) {
+        Log.e(tag, "Stack", e)
+    }
 
     override fun onDestroy() {
         terminalSession?.finishIfRunning()
         super.onDestroy()
     }
     }
-    
