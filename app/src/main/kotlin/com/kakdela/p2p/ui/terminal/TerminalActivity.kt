@@ -215,7 +215,8 @@ class TerminalActivity :
         val rootDir = filesDir
         val buffer = ByteArray(8192)
 
-        val stripPrefix = "data/data/com.termux/files/"
+        // ✔ ВАЖНО: используем реальный packageName приложения
+        val stripPrefix = "data/data/${packageName}/files/"
 
         ZipInputStream(BufferedInputStream(zipFile.inputStream())).use { zis ->
             var entry: ZipEntry? = zis.nextEntry
@@ -358,10 +359,12 @@ class TerminalActivity :
         val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cb.setPrimaryClip(ClipData.newPlainText("Termux", text))
     }
+
     override fun onPasteTextFromClipboard(session: TerminalSession?) {
         val cb = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cb.primaryClip?.getItemAt(0)?.text?.let { terminalSession?.write(it.toString()) }
     }
+
     override fun onBell(session: TerminalSession) {}
     override fun onColorsChanged(session: TerminalSession) {}
     override fun onTerminalCursorStateChange(state: Boolean) {}
@@ -386,7 +389,7 @@ class TerminalActivity :
     override fun readShiftKey(): Boolean { return false }
     override fun readFnKey(): Boolean { return false }
 
-    // --- Logging (fixed Unit return types) ---
+    // --- Logging ---
 
     override fun logError(tag: String, msg: String): Unit { Log.e(tag, msg) }
     override fun logWarn(tag: String, msg: String): Unit { Log.w(tag, msg) }
@@ -400,4 +403,4 @@ class TerminalActivity :
         terminalSession?.finishIfRunning()
         super.onDestroy()
     }
-    }
+}
